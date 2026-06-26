@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String           @id @default(uuid())
+  name            String
+  email           String           @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  projects        PromptProject[]
+  builderSessions BuilderSession[]
+}
+
+model PromptProject {
+  id                           String               @id @default(uuid())
+  userId                       String
+  user                         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                         String
+  agentName                    String
+  useCase                      String
+  industry                     String
+  status                       String               @default("draft") // draft | published | archived
+  welcomeMessage               String
+  agentPrompt                  String
+  systemPrompt                 String
+  blueprintJson                String
+  qualityScore                 Int                  @default(0)
+  completionScore              Int                  @default(0)
+  safetyScore                  Int                  @default(0)
+  voiceStyleScore              Int                  @default(0)
+  structureScore               Int                  @default(0)
+  edgeCaseScore                Int                  @default(0)
+  humanQualityScore            Int                  @default(0)
+  hallucinationResistanceScore Int                  @default(0)
+  minimumManualEditScore       Int                  @default(0)
+  version                      Int                  @default(1)
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  variables                    DynamicVariable[]
+  functions                    SuggestedFunction[]
+  knowledgeNotes               KnowledgeBaseNote[]
+  versions                     PromptVersion[]
+  testScenarios                TestScenario[]
+  qualityIssues                PromptQualityIssue[]
+}
+
+model BuilderSession {
+  id                     String   @id @default(uuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentStep            Int      @default(1)
+  selectedTemplate       String   @default("")
+  useCase                String   @default("")
+  industry               String   @default("")
+  businessSnapshotJson   String   @default("{}")
+  missionJson            String   @default("{}")
+  conversationDesignJson String   @default("{}")
+  personalityJson        String   @default("{}")
+  gapAuditJson           String   @default("{}")
+  followupAnswersJson    String   @default("{}")
+  refinedBlueprintJson   String   @default("{}")
+  generatedProjectId     String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model DynamicVariable {
+  id             String        @id @default(uuid())
+  projectId      String
+  project        PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key            String
+  label          String
+  type           String        @default("business") // business | caller | task | tool_output | runtime | static
+  required       Boolean       @default(true)
+  defaultValue   String        @default("")
+  source         String        @default("static")
+  description    String        @default("")
+  usedInSections String        @default("")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model SuggestedFunction {
+  id                  String        @id @default(uuid())
+  projectId           String
+  project             PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name                String
+  category            String
+  description         String
+  purposeInPrompt     String
+  requiredInputsJson  String        @default("[]")
+  expectedOutputsJson String        @default("[]")
+  enabled             Boolean       @default(true)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model KnowledgeBaseNote {
+  id        String        @id @default(uuid())
+  projectId String
+  project   PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  category  String        @default("General")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model PromptVersion {
+  id            String        @id @default(uuid())
+  projectId     String
+  project       PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version       Int
+  agentPrompt   String
+  systemPrompt  String
+  blueprintJson String
+  changeSummary String
+  createdAt     DateTime      @default(now())
+}
+
+model TestScenario {
+  id                    String        @id @default(uuid())
+  projectId             String
+  project               PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title                 String
+  persona               String
+  callerGoal            String
+  sampleCallerMessage   String
+  expectedAgentBehavior String
+  riskLevel             String        @default("low")
+  createdAt             DateTime      @default(now())
+}
+
+model PromptQualityIssue {
+  id             String        @id @default(uuid())
+  projectId      String
+  project        PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  severity       String        // low | medium | high | critical
+  category       String
+  issue          String
+  recommendation String
+  resolved       Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
