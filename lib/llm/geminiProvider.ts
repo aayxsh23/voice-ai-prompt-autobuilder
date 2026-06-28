@@ -1,4 +1,3 @@
-// lib/llm/geminiProvider.ts
 import { GoogleGenAI } from '@google/genai';
 import {
   BlueprintJson,
@@ -19,8 +18,10 @@ import {
   ChatMessage,
   BuilderChatTurnResponse,
 } from './types';
+import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
+import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
+import { validateCallFlowPlan } from "@/lib/pipeline/validators/CallFlowValidator";
 
-// Fail fast if the environment is not configured
 if (!process.env.GEMINI_API_KEY) {
   throw new Error("FATAL: GEMINI_API_KEY is missing. The compiler cannot run.");
 }
@@ -28,21 +29,78 @@ if (!process.env.GEMINI_API_KEY) {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export const COMPILER_GENERATION_CONFIG = {
-  temperature: 0.1, // Near-zero for deterministic script generation
+  temperature: 0.1,
   topP: 0.4,
   topK: 20,
 };
 
 export const GLOBAL_COMPILER_INSTRUCTION = `
-You are a headless, stateless Enterprise Voice AI Compiler Node.
-Your exclusive function is to output strict, production-ready Voice AI Markdown sub-routines.
-NO PROSE. RAW OUTPUT ONLY. VOICE-FIRST SYNTAX STRICTLY ENFORCED.
-`;
+You are a senior AI voice agent prompt engineer. Your task is to generate production-ready system prompts for voice agents deployed on phone calls.
+
+QUALITY STANDARDS — your output MUST meet ALL of these:
+
+STRUCTURE: Every output must contain these exact sections in this order:
+### AGENT IDENTITY
+### CONTEXT & VARIABLES
+### PRIMARY GOAL
+### CALL FLOW
+### FAQ & KNOWLEDGE DEFLECTION
+### OBJECTION HANDLING
+### TTS & VOICE RULES
+### TOOL & FUNCTION EXECUTION
+### GUARDRAILS
+### MANDATORY EMERGENCY & SCOPE GUARDRAILS — IMMUTABLE
+### CLOSING RULES
+### AI IDENTITY DISCLOSURE
+### OFF-TOPIC HANDLING
+### ENDING RULE
+
+VOICE RULES (mandatory in every output):
+- Every agent turn must be 1–2 short sentences maximum
+- Ask ONE question per turn. Never stack questions
+- Use Say: "..." syntax for all exact agent dialogue lines
+- Phone numbers: spell digit by digit — "four one five, two three four, five six seven eight"
+- Dates: say "Monday the fourteenth of July" not "07/14"
+- Member IDs / reference numbers: spell character by character
+- Email addresses: replace @ with "at", replace . with "dot"
+- Never use bullet points, numbered lists, or markdown in spoken dialogue sections
+- Natural acknowledgements only: "okay", "got it", "understood", "of course"
+
+CALL FLOW FORMAT: Each step must follow this exact template:
+STEP [N]: [STEP LABEL IN CAPS]
+Condition: [when this step activates]
+Say: "[exact agent line]"
+Then: [what to collect or wait for]
+Branch: [if X → go to Step Y | if Y → go to Step Z]
+
+FEW-SHOT EXAMPLE — This is what a production-grade call flow step looks like:
+STEP 2: COLLECT PATIENT VERIFICATION
+Condition: After caller states their request
+Say: "Could I get your full name please?"
+Then: Wait for caller to provide full name. Store as {{patient_name}}.
+Branch: If caller hesitates → Say: "That is just so I can pull up your details. It is kept completely secure." Then re-ask.
+
+FEW-SHOT EXAMPLE — This is what a production-grade FAQ entry looks like:
+
+CLINIC HOURS
+Say: "We are open every day from ten in the morning to five in the evening."
+
+INSURANCE COVERAGE
+Say: "I am not able to confirm coverage directly. I will pass your insurance details to our team and they will follow up with you."
+
+CRITICAL PROHIBITIONS:
+- Never invent clinic hours, addresses, staff names, or policies not provided in the input
+- Never stack two questions in the same Say: "..." line
+- Never use raw markdown formatting inside spoken dialogue
+- Never generate a guardrail as a suggestion — guardrails are non-negotiable rules
+- Never use the phrase "As an AI" — if asked, follow the AI IDENTITY DISCLOSURE section format
+
+OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY.
+`.trim();
 
 export const geminiClient = {
   async generate({ systemInstruction, prompt }: { systemInstruction: string, prompt: string }) {
     const combinedInstruction = `${GLOBAL_COMPILER_INSTRUCTION}\n\nSPECIFIC TASK:\n${systemInstruction}`;
-
     const response = await ai.models.generateContent({
       model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
       contents: prompt,
@@ -51,11 +109,9 @@ export const geminiClient = {
         ...COMPILER_GENERATION_CONFIG
       }
     });
-
     if (!response.text) {
       throw new Error("Compiler Node Failure: LLM returned empty response.");
     }
-
     return { text: response.text };
   }
 };
@@ -75,7 +131,6 @@ export class GeminiProvider implements LlmService {
 
   private async generateJson<T>(prompt: string): Promise<T> {
     const jsonInstruction = `\n\nCRITICAL INSTRUCTION:\nReturn valid JSON only.\nDo not include markdown.\nDo not include code fences.\nDo not include explanations outside the JSON object.`;
-    
     const response = await this.aiInstance.models.generateContent({
       model: this.modelName,
       contents: prompt + jsonInstruction,
@@ -84,12 +139,53 @@ export class GeminiProvider implements LlmService {
         temperature: 0.2
       }
     });
-
     if (!response.text) {
       throw new Error("Gemini API returned empty response.");
     }
-
     return safeParseJson<T>(response.text, {} as T);
+  }
+
+  public async generateRaw(prompt: string): Promise<string> {
+    const response = await this.aiInstance.models.generateContent({
+      model: this.modelName,
+      contents: prompt,
+      config: {
+        systemInstruction: GLOBAL_COMPILER_INSTRUCTION,
+        ...COMPILER_GENERATION_CONFIG
+      }
+    });
+    if (!response.text || response.text.trim() === "") {
+      throw new PromptCompilationError("LLM returned empty or missing response text in generateRaw");
+    }
+    return response.text;
+  }
+
+  async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
+    const { overrides, ...llmInput } = input;
+    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string"}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
+    const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.\nOutput ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}\nBusiness input:\n${JSON.stringify(llmInput, null, 2)}`;
+    const pass1Raw = await this.generateRaw(pass1Prompt);
+    let plan: CallFlowPlan;
+    try {
+      plan = JSON.parse(pass1Raw.replace(/```json|```/g, '').trim()) as CallFlowPlan;
+    } catch {
+      throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
+    }
+    validateCallFlowPlan(plan);
+    const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}]}`;
+    const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}\nSystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
+    const pass2Raw = await this.generateRaw(pass2Prompt);
+    let draft: PromptPackageDraft;
+    try {
+      draft = JSON.parse(pass2Raw.replace(/```json|```/g, '').trim()) as PromptPackageDraft;
+    } catch {
+      throw new PromptCompilationError(`CoT Pass 2 unparseable JSON: ${pass2Raw.substring(0, 300)}`);
+    }
+    for (const field of ['systemPrompt', 'faqCards', 'objectionCards'] as const) {
+      if (!draft[field]) throw new PromptCompilationError(`Missing required field: ${field}`);
+    }
+    draft.callFlowSteps = plan.steps;
+    return draft;
   }
 
   async generateConversationDesign(input: { template: string; business: BusinessSnapshot; mission: CallMission }): Promise<ConversationDesign> {
@@ -103,9 +199,7 @@ export class GeminiProvider implements LlmService {
   }
 
   async generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft> {
-    const compilePrompt = `Compile a production-ready AI voice agent prompt package for: ${JSON.stringify(input)}.
-Return JSON matching PromptPackageDraft schema including agentPrompt, systemPrompt, dynamicVariables, suggestedFunctions, knowledgeBaseSuggestions, faqCards, objectionCards, edgeCaseRules, testScenarios, and qualityReview.`;
-    return this.generateJson<PromptPackageDraft>(compilePrompt);
+    return this.generateWithCoT(input);
   }
 
   async generateAgentPrompt(input: BlueprintJson): Promise<string> {
@@ -138,7 +232,7 @@ Return JSON matching PromptPackageDraft schema including agentPrompt, systemProm
     return draft.faqCards || [];
   }
 
-  async generateObjectionCards(input: BlueprintJson): Promise<{ objection: string; handling: string }[]> {
+  async generateObjectionCards(input: BlueprintJson): Promise<any[]> {
     const draft = await this.generateReviewDraft(input);
     return draft.objectionCards || [];
   }

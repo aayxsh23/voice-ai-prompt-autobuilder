@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Bot, User, Send, Sparkles, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play } from 'lucide-react';
-import { PromptPackageDraft, BusinessSnapshot, CallMission, ConversationDesign, VoicePersonality } from '@/lib/llm/types';
+import { PromptPackageDraft, BusinessSnapshot, CallMission, ConversationDesign, VoicePersonality, SchemaOverrides } from '@/lib/llm/types';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -41,6 +41,14 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [activeTab, setActiveTab] = useState<'agent' | 'system' | 'combined'>('agent');
+  const [overrides, setOverrides] = useState<SchemaOverrides>({
+    faqPairs: [],
+    objectionPairs: [],
+    verbatimLines: [],
+    transferRules: []
+  });
+  const [isOverridePanelOpen, setIsOverridePanelOpen] = useState(false);
+  const [activeOverrideTab, setActiveOverrideTab] = useState<'faq' | 'transfer' | 'verbatim'>('faq');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -102,7 +110,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       const res = await fetch('/api/builder/generate-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blueprint)
+        body: JSON.stringify({ ...blueprint, overrides })
       });
       const data = await res.json();
       if (data) {
@@ -311,6 +319,204 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                   <li><strong className="text-slate-200">Agent Prompt:</strong> Editable identity, flow & variable configuration.</li>
                   <li><strong className="text-slate-200">System Prompt:</strong> Hard gates, pre-turn check & tool definitions (<code className="text-cyan-300">end_call</code>, <code className="text-cyan-300">validate_digit_input</code>).</li>
                 </ul>
+              </div>
+
+              <div className="border border-gray-700 rounded-lg p-4 my-4 bg-gray-900">
+                <button
+                  type="button"
+                  onClick={() => setIsOverridePanelOpen(!isOverridePanelOpen)}
+                  className="w-full flex justify-between items-center font-bold text-white py-2"
+                >
+                  <span>Schema Overrides</span>
+                  <span>{isOverridePanelOpen ? '▴' : '▾'}</span>
+                </button>
+
+                {isOverridePanelOpen && (
+                  <div className="mt-4 border-t border-gray-800 pt-4">
+                    <div className="flex space-x-2 border-b border-gray-800 pb-2">
+                      {(['faq', 'transfer', 'verbatim'] as const).map(tab => (
+                        <button
+                          key={tab}
+                          type="button"
+                          onClick={() => setActiveOverrideTab(tab)}
+                          className={`px-3 py-1 rounded text-sm ${activeOverrideTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`}
+                        >
+                          {tab === 'faq' ? 'FAQ Overrides' : tab === 'transfer' ? 'Transfer Rules' : 'Verbatim Script Lines'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {activeOverrideTab === 'faq' && (
+                      <div className="mt-4 space-y-2">
+                        {(overrides.faqPairs || []).map((faq, idx) => (
+                          <div key={idx} className="flex space-x-2 items-center">
+                            <input
+                              type="text"
+                              placeholder="Question"
+                              value={faq.question}
+                              onChange={e => {
+                                const updated = [...(overrides.faqPairs || [])];
+                                updated[idx] = { ...updated[idx], question: e.target.value };
+                                setOverrides({ ...overrides, faqPairs: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Answer (Verbatim Agent Line)"
+                              value={faq.answer}
+                              onChange={e => {
+                                const updated = [...(overrides.faqPairs || [])];
+                                updated[idx] = { ...updated[idx], answer: e.target.value };
+                                setOverrides({ ...overrides, faqPairs: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (overrides.faqPairs || []).filter((_, i) => i !== idx);
+                                setOverrides({ ...overrides, faqPairs: updated });
+                              }}
+                              className="text-red-500 px-2 font-bold"
+                            >×</button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setOverrides({ ...overrides, faqPairs: [...(overrides.faqPairs || []), { question: '', answer: '' }] })}
+                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
+                        >+ Add FAQ</button>
+                      </div>
+                    )}
+
+                    {activeOverrideTab === 'transfer' && (
+                      <div className="mt-4 space-y-2">
+                        {(overrides.transferRules || []).map((rule, idx) => (
+                          <div key={idx} className="flex space-x-2 items-center flex-wrap gap-y-2">
+                            <select
+                              value={rule.trigger}
+                              onChange={e => {
+                                const updated = [...(overrides.transferRules || [])];
+                                updated[idx] = { ...updated[idx], trigger: e.target.value as any };
+                                setOverrides({ ...overrides, transferRules: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm"
+                            >
+                              <option value="explicit_request">Explicit Request</option>
+                              <option value="intent_fail_count">Intent Fail Count</option>
+                              <option value="frustration_signal">Frustration Signal</option>
+                              <option value="out_of_scope">Out of Scope</option>
+                            </select>
+                            {rule.trigger === 'intent_fail_count' && (
+                              <input
+                                type="number"
+                                placeholder="Thresh"
+                                value={rule.threshold || ''}
+                                onChange={e => {
+                                  const updated = [...(overrides.transferRules || [])];
+                                  updated[idx] = { ...updated[idx], threshold: parseInt(e.target.value) || undefined };
+                                  setOverrides({ ...overrides, transferRules: updated });
+                                }}
+                                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-16 text-white text-sm"
+                              />
+                            )}
+                            <input
+                              type="text"
+                              placeholder="Phone (E.164)"
+                              value={rule.transferPhoneNumber}
+                              onChange={e => {
+                                const updated = [...(overrides.transferRules || [])];
+                                updated[idx] = { ...updated[idx], transferPhoneNumber: e.target.value };
+                                setOverrides({ ...overrides, transferRules: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-32 text-white text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Department"
+                              value={rule.transferDepartment || ''}
+                              onChange={e => {
+                                const updated = [...(overrides.transferRules || [])];
+                                updated[idx] = { ...updated[idx], transferDepartment: e.target.value };
+                                setOverrides({ ...overrides, transferRules: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-28 text-white text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Say Before Transfer"
+                              value={rule.sayBeforeTransfer}
+                              onChange={e => {
+                                const updated = [...(overrides.transferRules || [])];
+                                updated[idx] = { ...updated[idx], sayBeforeTransfer: e.target.value };
+                                setOverrides({ ...overrides, transferRules: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (overrides.transferRules || []).filter((_, i) => i !== idx);
+                                setOverrides({ ...overrides, transferRules: updated });
+                              }}
+                              className="text-red-500 px-2 font-bold"
+                            >×</button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setOverrides({ ...overrides, transferRules: [...(overrides.transferRules || []), { trigger: 'explicit_request', transferPhoneNumber: '', sayBeforeTransfer: '' }] })}
+                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
+                        >+ Add Transfer Rule</button>
+                      </div>
+                    )}
+
+                    {activeOverrideTab === 'verbatim' && (
+                      <div className="mt-4 space-y-2">
+                        {(overrides.verbatimLines || []).map((v, idx) => (
+                          <div key={idx} className="flex space-x-2 items-center">
+                            <input
+                              type="text"
+                              placeholder="Step Label (e.g. COLLECT VERIFICATION)"
+                              value={v.stepLabel}
+                              onChange={e => {
+                                const updated = [...(overrides.verbatimLines || [])];
+                                updated[idx] = { ...updated[idx], stepLabel: e.target.value };
+                                setOverrides({ ...overrides, verbatimLines: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Exact Spoken Line"
+                              value={v.exactLine}
+                              onChange={e => {
+                                const updated = [...(overrides.verbatimLines || [])];
+                                updated[idx] = { ...updated[idx], exactLine: e.target.value };
+                                setOverrides({ ...overrides, verbatimLines: updated });
+                              }}
+                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = (overrides.verbatimLines || []).filter((_, i) => i !== idx);
+                                setOverrides({ ...overrides, verbatimLines: updated });
+                              }}
+                              className="text-red-500 px-2 font-bold"
+                            >×</button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setOverrides({ ...overrides, verbatimLines: [...(overrides.verbatimLines || []), { stepLabel: '', exactLine: '' }] })}
+                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
+                        >+ Add Custom Line</button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="pt-2">

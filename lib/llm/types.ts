@@ -15,6 +15,21 @@ export interface BusinessSnapshot {
   complianceNotes?: string;
 }
 
+export interface TransferCondition {
+  trigger: 'explicit_request' | 'intent_fail_count' | 'frustration_signal' | 'out_of_scope';
+  threshold?: number;
+  transferPhoneNumber: string;
+  transferDepartment?: string;
+  sayBeforeTransfer: string;
+}
+
+export interface SchemaOverrides {
+  faqPairs?: Array<{ question: string; answer: string }>;
+  objectionPairs?: Array<{ trigger?: string; response?: string; objection?: string; handling?: string }>;
+  verbatimLines?: Array<{ stepLabel: string; exactLine: string }>;
+  transferRules?: TransferCondition[];
+}
+
 export interface CallMission {
   primaryGoal?: string;
   supportedIntents?: string[];
@@ -26,6 +41,7 @@ export interface CallMission {
   refusalRules?: string[];
   closingExpectations?: string[];
   transferPhoneNumber?: string;
+  transferConditions?: TransferCondition[];
 }
 
 export interface IntentDesign {
@@ -132,10 +148,15 @@ export interface PromptPackageDraft {
   suggestedFunctions: SuggestedFunctionSpec[];
   knowledgeBaseSuggestions: { title: string; content: string; category: string }[];
   faqCards: { question: string; answer: string }[];
-  objectionCards: { objection: string; handling: string }[];
+  objectionCards: Array<{ trigger?: string; response?: string; objection?: string; handling?: string }>;
   edgeCaseRules: { scenario: string; action: string }[];
   testScenarios: TestScenarioSpec[];
   qualityReview: QualityReview;
+  primaryGoal?: string;
+  verbatimLines?: { stepLabel: string; exactLine: string }[];
+  transferConditions?: TransferCondition[];
+  callFlowSteps?: any[];
+  systemPromptCompiled?: boolean;
 }
 
 export interface SimulationTurnInput {
@@ -165,12 +186,15 @@ export interface BlueprintJson {
   followupAnswers: Record<string, string>;
   extractedIR?: any;
   compiledSystemPrompt?: string;
+  overrides?: SchemaOverrides;
 }
 
 export interface LlmService {
   generateConversationDesign(input: { template: string; business: BusinessSnapshot; mission: CallMission }): Promise<ConversationDesign>;
   runGapAudit(input: { business: BusinessSnapshot; mission: CallMission; conversation: ConversationDesign; personality: VoicePersonality }): Promise<GapAuditResult>;
   generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft>;
+  generateWithCoT?(input: BlueprintJson): Promise<PromptPackageDraft>;
+  generateRaw?(prompt: string): Promise<string>;
   generateAgentPrompt(input: BlueprintJson): Promise<string>;
   generateSystemPrompt(input: BlueprintJson): Promise<string>;
   extractDynamicVariables(input: BlueprintJson): Promise<DynamicVariableSpec[]>;
@@ -235,3 +259,5 @@ export function safeParseJson<T>(raw: string, fallback: T): T {
     return fallback;
   }
 }
+
+export * from './types/CallFlowPlan';

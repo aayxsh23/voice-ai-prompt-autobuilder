@@ -1,26 +1,59 @@
-// lib/compiler/compilers/StateMachineCompiler.ts
-
-import { geminiClient } from "@/lib/llm/geminiProvider";
 import { VoiceAgentIR } from "../ir/IntermediateRepresentation";
+import { PromptPackageDraft } from "@/lib/llm/types";
+import { CallFlowStep, TransferCondition } from "@/lib/llm/types";
+
+function renderStep(step: CallFlowStep, verbatimLines: Array<{ stepLabel: string; exactLine: string }> = []): string {
+  const override = verbatimLines.find(v => v.stepLabel.toLowerCase().trim() === step.label.toLowerCase().trim());
+  const dialogueLine = override ? override.exactLine : step.generatedLine;
+  return [
+    `STEP ${step.stepNumber}: ${step.label}`,
+    `Condition: ${step.condition}`,
+    `Say: "${dialogueLine}"`,
+    step.branchingConditions.map((b: any) => `Branch: If ${b.condition} → ${b.goToStep}`).join('\n'),
+    `Fallback: ${step.fallbackBehavior}`
+  ].join('\n');
+}
+
+function formatPhoneForTTS(e164: string): string {
+  const clean = e164.replace(/[^\d]/g, '');
+  const digitWords: Record<string, string> = {
+    '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+    '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine'
+  };
+  let digits = clean;
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.substring(1);
+  if (digits.length !== 10) return digits.split('').map(d => digitWords[d] || d).join(' ');
+  const g1 = digits.slice(0, 3).split('').map(d => digitWords[d]).join(' ');
+  const g2 = digits.slice(3, 6).split('').map(d => digitWords[d]).join(' ');
+  const g3 = digits.slice(6, 10).split('').map(d => digitWords[d]).join(' ');
+  return `${g1}, ${g2}, ${g3}`;
+}
+
+function buildHumanTransferSection(conditions: TransferCondition[]): string {
+  if (!conditions || conditions.length === 0) return "";
+  const lines = ["### HUMAN TRANSFER RULES\n"];
+  for (const cond of conditions) {
+    const formattedPhone = formatPhoneForTTS(cond.transferPhoneNumber);
+    const thresholdStr = cond.threshold ? ` (after ${cond.threshold} occurrences)` : "";
+    const deptStr = cond.transferDepartment ? ` to ${cond.transferDepartment}` : "";
+    lines.push(`Trigger: ${cond.trigger}${thresholdStr}${deptStr}`);
+    lines.push(`Action: Say: "${cond.sayBeforeTransfer}" Then transfer to ${formattedPhone}.\n`);
+  }
+  return lines.join("\n");
+}
 
 export class StateMachineCompiler {
-  async compile(ir: VoiceAgentIR): Promise<string> {
-    const contextSummary = ir.context && ir.context.length > 0
-      ? `Pre-loaded Session Context Variables available without asking: ${JSON.stringify(ir.context, null, 2)}`
-      : "No pre-loaded session variables.";
-
-    const response = await geminiClient.generate({
-      systemInstruction: `You are an elite Voice Interface Compiler. Transform IR states into explicit, turn-by-turn dialogue scripts.
-RULE 1: Every state MUST have an exact spoken phrase formatted as Say: "exact text".
-RULE 2: Enforce the turn-taking IRON RULE: Maximum 1-2 short sentences per turn, ending with ONE question.
-RULE 3: Never stack questions. Acknowledge the user's previous answer before moving forward.
-Never ask the caller for details already provided in the Pre-loaded Session Context Variables.`,
-      prompt: `Compile the strict script blocks for these sequential operational states:
-${JSON.stringify(ir.states, null, 2)}
-
-${contextSummary}
-Ensure each state explicitly blocks transition until its required fields are populated.`
-    });
-    return response.text;
+  compile(ir: VoiceAgentIR, draft?: Partial<PromptPackageDraft>): string {
+    let callFlowSection: string;
+    if (draft?.callFlowSteps && draft.callFlowSteps.length > 0) {
+      const renderedSteps = draft.callFlowSteps.map((step: CallFlowStep) =>
+        renderStep(step, draft.verbatimLines ?? [])
+      );
+      callFlowSection = `### CALL FLOW\n\n${renderedSteps.join('\n\n')}\n`;
+    } else {
+      callFlowSection = `### CALL FLOW\n\n(Legacy IR Flow)\n`;
+    }
+    const transferSection = buildHumanTransferSection(draft?.transferConditions ?? []);
+    return `${callFlowSection}\n${transferSection}`.trim();
   }
 }

@@ -1,13 +1,15 @@
 // lib/compiler/ir/IntermediateRepresentation.ts
 
 export interface VoiceAgentIR {
+  identity?: { name?: string; role?: string };
+  mission?: { goal?: string };
   meta: {
     agentName: string;
     companyName: string;
     role: string;
     toneProfile: string[];
     contextScope: string;
-    languageVariant?: string; // e.g. "English", "Hindi (Devanagari)", "Spanish"
+    languageVariant?: string;
   };
   context: {
     key: string; // e.g. "Customer_Name" or "Truck_Number"

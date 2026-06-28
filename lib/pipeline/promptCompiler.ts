@@ -1,57 +1,37 @@
-// lib/pipeline/promptCompiler.ts
-
-import { StateMachineCompiler } from "../compiler/compilers/StateMachineCompiler";
-import { VoiceCompiler } from "../compiler/compilers/VoiceCompiler";
-import { ToolCompiler } from "../compiler/compilers/ToolCompiler";
-import { SafetyCompiler } from "../compiler/compilers/SafetyCompiler";
 import { StateValidator } from "../compiler/validators/StateValidator";
 import { ToolValidator } from "../compiler/validators/ToolValidator";
 import { PromptAssembler } from "../compiler/assembler/PromptAssembler";
 import { PromptOptimizer } from "../compiler/assembler/PromptOptimizer";
 import { VoiceAgentIR } from "../compiler/ir/IntermediateRepresentation";
 import { getLlmClient } from "../llm/llmClient";
-import { BlueprintJson, PromptPackageDraft } from "../llm/types";
+import { BlueprintJson, PromptPackageDraft, SchemaOverrides } from "../llm/types";
+import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
+import { validatePrompt } from "@/lib/pipeline/validators/QualitySecurityValidator";
 
-export async function executePromptCompilationPipeline(extractedIR: VoiceAgentIR): Promise<string> {
-  // 1. Structural Logic Gate Validation
+export async function executePromptCompilationPipeline(extractedIR: VoiceAgentIR, draft?: Partial<PromptPackageDraft>): Promise<string> {
   const stateValidator = new StateValidator();
   const toolValidator = new ToolValidator();
 
   const stateCheck = stateValidator.validate(extractedIR);
   if (!stateCheck.isValid) {
-    throw new Error(`Pipeline Compilation Halting (State Validation): \n${stateCheck.errors.join("\n")}`);
+    throw new PromptCompilationError(`Pipeline Compilation Halting (State Validation): \n${stateCheck.errors.join("\n")}`);
   }
 
   const toolCheck = toolValidator.validate(extractedIR);
   if (!toolCheck.isValid) {
-    throw new Error(`Pipeline Compilation Halting (Tool Validation): \n${toolCheck.errors.join("\n")}`);
+    throw new PromptCompilationError(`Pipeline Compilation Halting (Tool Validation): \n${toolCheck.errors.join("\n")}`);
   }
 
-  // 2. Parallel Module Extraction Generation
-  const stateMachineCompiler = new StateMachineCompiler();
-  const voiceCompiler = new VoiceCompiler();
-  const toolCompiler = new ToolCompiler();
-  const safetyCompiler = new SafetyCompiler();
-
-  const [flowBlock, voiceBlock, toolsBlock, safetyBlock] = await Promise.all([
-    stateMachineCompiler.compile(extractedIR),
-    voiceCompiler.compile(extractedIR),
-    toolCompiler.compile(extractedIR),
-    safetyCompiler.compile(extractedIR)
-  ]);
-
-  // 3. Assemble Blocks into Unified Output Structure
   const assembler = new PromptAssembler();
-  const rawPromptString = assembler.assemble(extractedIR, {
-    flow: flowBlock,
-    voice: voiceBlock,
-    tools: toolsBlock,
-    safety: safetyBlock
-  });
+  const rawPromptString = assembler.assemble(extractedIR, draft);
 
-  // 4. Optimize Syntax
   const optimizer = new PromptOptimizer();
   const completedPromptString = await optimizer.optimize(rawPromptString);
+
+  const validation = validatePrompt(completedPromptString);
+  if (!validation.valid) {
+    throw new PromptCompilationError(`Prompt quality/security validation failed:\n${validation.errors.join("\n")}`);
+  }
 
   return completedPromptString;
 }
@@ -100,17 +80,33 @@ function mapBlueprintToIR(input: BlueprintJson): VoiceAgentIR {
   };
 }
 
+function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrides): PromptPackageDraft {
+  if (!overrides) return draft;
+  const userQuestions = new Set((overrides.faqPairs ?? []).map(f => f.question.toLowerCase().trim()));
+  const dedupedFaqs = (draft.faqCards ?? []).filter(f => !userQuestions.has(f.question.toLowerCase().trim()));
+  const userTriggers = new Set((overrides.objectionPairs ?? []).map(o => (o.trigger || o.objection || '').toLowerCase().trim()));
+  const dedupedObjs = (draft.objectionCards ?? []).filter(o => !userTriggers.has((o.trigger || o.objection || '').toLowerCase().trim()));
+  return {
+    ...draft,
+    faqCards: [...(overrides.faqPairs ?? []), ...dedupedFaqs],
+    objectionCards: [...(overrides.objectionPairs ?? []), ...dedupedObjs],
+    verbatimLines: [...(overrides.verbatimLines ?? []), ...(draft.verbatimLines ?? [])],
+    transferConditions: [...(overrides.transferRules ?? []), ...(draft.transferConditions ?? [])]
+  };
+}
+
 export async function compilePromptPackage(input: BlueprintJson): Promise<PromptPackageDraft> {
   const llm = getLlmClient();
-  const baseDraft = await llm.generateReviewDraft(input);
-
+  let draft = llm.generateWithCoT ? await llm.generateWithCoT(input) : await llm.generateReviewDraft(input);
+  draft = mergeUserOverrides(draft, input.overrides);
   try {
     const ir = mapBlueprintToIR(input);
-    const compiledSystemPrompt = await executePromptCompilationPipeline(ir);
-    baseDraft.systemPrompt = compiledSystemPrompt;
+    const compiledSystemPrompt = await executePromptCompilationPipeline(ir, draft);
+    draft.systemPrompt = compiledSystemPrompt;
+    draft.systemPromptCompiled = true;
   } catch (err) {
-    console.warn("Enterprise compilation warning, maintaining base draft:", err);
+    console.warn("Compilation pipeline error:", err);
+    draft.systemPromptCompiled = false;
   }
-
-  return baseDraft;
+  return draft;
 }

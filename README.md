@@ -203,7 +203,7 @@ The Turbopack compiler will start in `< 500ms`. Open your web browser and naviga
 │   │   └── VersionHistoryPanel    # One-click rollback snapshot list
 │   └── settings/                  # Studio sub-panels (VoiceStyle, Rules, Guardrails, Webhook)
 ├── lib/
-│   ├── compiler/                  # Enterprise Dialnexa Multi-Compiler Pipeline
+│   ├── compiler/                  # Enterprise Voice AI Multi-Compiler Pipeline
 │   │   ├── ir/                    # Intermediate Representation (VoiceAgentIR)
 │   │   ├── blueprint/             # Micro-Extractors (Business, Intent, Entity)
 │   │   ├── validators/            # Programmatic Guards (State, Tool)
