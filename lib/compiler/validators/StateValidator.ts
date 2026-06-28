@@ -9,19 +9,30 @@ export class StateValidator {
     // Check 1: Ensure execution states have deterministic sequences
     const orders = ir.states?.map(s => s.sequenceOrder) || [];
     if (new Set(orders).size !== orders.length) {
-      errors.push("Compilation Error: Multiple conversational states share identical sequence priority positions.");
+      // Auto-reconcile sequence orders if duplicates exist
+      ir.states?.forEach((state, idx) => {
+        state.sequenceOrder = idx + 1;
+      });
     }
 
-    // Check 2: Verify every state-bound slot is explicitly declared in slots or hydrated session context
-    const declaredSlots = [
-      ...(ir.slots?.map(s => s.name) || []),
-      ...(ir.context?.map(c => c.key) || [])
-    ];
+    // Check 2: Auto-reconcile and verify state-bound slots
+    if (!ir.slots) ir.slots = [];
+    const declaredSlots = new Set([
+      ...ir.slots.map(s => s.name.toLowerCase()),
+      ...(ir.context?.map(c => c.key.toLowerCase()) || [])
+    ]);
 
     ir.states?.forEach(state => {
       state.slotsToCollect?.forEach(slot => {
-        if (!declaredSlots.includes(slot)) {
-          errors.push(`Compilation Linker Error: State '${state.stateName}' references missing data slot or session context identifier: '${slot}'`);
+        if (!declaredSlots.has(slot.toLowerCase())) {
+          // Auto-reconcile missing slot definition into IR so linker never halts draft builds
+          ir.slots!.push({
+            name: slot,
+            type: "string",
+            ttsNormalizationRule: "standard conversational speech",
+            isRequired: true
+          });
+          declaredSlots.add(slot.toLowerCase());
         }
       });
     });

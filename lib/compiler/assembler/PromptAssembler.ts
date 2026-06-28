@@ -14,31 +14,35 @@ export class PromptAssembler {
 ## Session Context
 ${sessionContextBlock}
 
-## IDENTITY & ASSIGNED CONTEXT
+### 1. AGENT IDENTITY
 - Agent: ${ir.meta?.agentName || "Voice Agent"}
 - Company Focus: ${ir.meta?.companyName || "Enterprise Client"}
 - Persona Style: ${ir.meta?.role || "Operational Coordinator"} (Operational Pacing: ${ir.meta?.toneProfile?.join(", ") || "Calm, Direct"})
 - Language Variant: ${ir.meta?.languageVariant || "English"}
 
-### CORE OPERATIONAL DIRECTIVES (ALWAYS PASSIVE-ACTIVE)
+### CORE OPERATIONAL DIRECTIVES
 - Never use markdown styling flags inside text blocks.
 - Never output multi-question strings inside single interaction turns.
 - Distinguish pre-loaded Session Context variables from required slot collection targets. Never re-ask callers for verified CRM session data.
 
 ---
 
+### 2. CALL FLOW
 ${components.flow}
 
 ---
 
+### 3. TTS GUARDRAILS
 ${components.voice}
 
 ---
 
+### 4. TOOL FUNCTION EXECUTION
 ${components.tools || ""}
 
 ---
 
+### 5. SAFETY PROTOCOLS & CORRECTION ROUTING
 ${components.safety}
 `.trim();
   }

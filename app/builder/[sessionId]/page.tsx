@@ -72,8 +72,11 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint })
       });
       const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to get response from builder API");
+      }
       if (data) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "Got it. Tell me a bit more about how you'd like the agent to respond." }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "Thank you for providing those comprehensive specifications! Are there any specific scheduling tools, calendar integrations, or transfer numbers this agent needs to work with?" }]);
         if (data.isReadyToGenerate !== undefined) setIsReady(data.isReadyToGenerate);
         if (data.missingDetails) setMissingDetails(data.missingDetails);
         if (data.extractedBlueprint) {

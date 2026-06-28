@@ -203,12 +203,18 @@ The Turbopack compiler will start in `< 500ms`. Open your web browser and naviga
 │   │   └── VersionHistoryPanel    # One-click rollback snapshot list
 │   └── settings/                  # Studio sub-panels (VoiceStyle, Rules, Guardrails, Webhook)
 ├── lib/
-│   ├── llm/                       # GenAI Service Abstraction
-│   │   ├── geminiProvider.ts      # Google GenAI SDK integration (gemini-3.1-flash-lite)
-│   │   ├── mockLlmProvider.ts     # Local deterministic generator fallback
+│   ├── compiler/                  # Enterprise Dialnexa Multi-Compiler Pipeline
+│   │   ├── ir/                    # Intermediate Representation (VoiceAgentIR)
+│   │   ├── blueprint/             # Micro-Extractors (Business, Intent, Entity)
+│   │   ├── validators/            # Programmatic Guards (State, Tool)
+│   │   ├── compilers/             # Micro-Compilers (StateMachine, Voice, Tool, Safety)
+│   │   └── assembler/             # Assembly & Optimization (PromptAssembler, PromptOptimizer)
+│   ├── llm/                       # Lean GenAI Execution Node
+│   │   ├── geminiProvider.ts      # Fail-fast Google GenAI client (temperature 0.1)
+│   │   ├── llmClient.ts           # Client factory
 │   │   └── types.ts               # Shared TypeScript schemas & interfaces
-│   ├── pipeline/                  # Business logic engines (Auditor, Compiler, Evaluator)
-│   └── templates/                 # 15 Industry Starter JSON blueprints
+│   └── pipeline/                  # Master Orchestrator
+│       └── promptCompiler.ts      # Pipeline execution engine
 └── prisma/
     ├── schema.prisma              # Prisma SQLite Database Models (PromptProject, Version, etc)
     └── seed.ts                    # Demo database seeder script

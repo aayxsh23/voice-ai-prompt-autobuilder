@@ -201,18 +201,34 @@ export interface BuilderChatTurnResponse {
 export function safeParseJson<T>(raw: string, fallback: T): T {
   try {
     let cleaned = raw.trim();
-    // Strip markdown fences
-    if (cleaned.startsWith('```json')) {
-      cleaned = cleaned.slice(7);
-    } else if (cleaned.startsWith('```')) {
-      cleaned = cleaned.slice(3);
-    }
-    if (cleaned.endsWith('```')) {
-      cleaned = cleaned.slice(0, -3);
+    // Strip markdown fences if present anywhere
+    const fenceJsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenceJsonMatch && fenceJsonMatch[1]) {
+      cleaned = fenceJsonMatch[1].trim();
+    } else {
+      if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
+      else if (cleaned.startsWith('```')) cleaned = cleaned.slice(3);
+      if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
     }
     cleaned = cleaned.trim();
     return JSON.parse(cleaned) as T;
   } catch (error) {
+    try {
+      // Find the outermost {...} or [...] block
+      const firstObj = raw.indexOf('{');
+      const lastObj = raw.lastIndexOf('}');
+      const firstArr = raw.indexOf('[');
+      const lastArr = raw.lastIndexOf(']');
+      
+      if (firstObj !== -1 && lastObj !== -1 && (firstArr === -1 || firstObj < firstArr)) {
+        return JSON.parse(raw.substring(firstObj, lastObj + 1)) as T;
+      }
+      if (firstArr !== -1 && lastArr !== -1) {
+        return JSON.parse(raw.substring(firstArr, lastArr + 1)) as T;
+      }
+    } catch (e2) {
+      // Ignore fallback extraction errors
+    }
     if (process.env.NODE_ENV !== 'production') {
       console.warn('safeParseJson failed, returning fallback:', error);
     }

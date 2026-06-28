@@ -17,15 +17,15 @@ export const VoiceStylePanel: React.FC<{ project: any; onChange: (key: string, v
         <div>
           <label className="block font-medium text-[#d0d6e0] mb-1.5">Tone</label>
           <Input defaultValue={pers.tone || "Professional, warm"} onBlur={e => {
-            pers.tone = e.target.value;
-            onChange('blueprintJson', JSON.stringify({ ...bp, personality: pers }));
+            const updatedPers = { ...pers, tone: e.target.value };
+            onChange('blueprintJson', JSON.stringify({ ...bp, personality: updatedPers }));
           }} />
         </div>
         <div>
           <label className="block font-medium text-[#d0d6e0] mb-1.5">Pace</label>
           <Input defaultValue={pers.pace || "Moderate"} onBlur={e => {
-            pers.pace = e.target.value;
-            onChange('blueprintJson', JSON.stringify({ ...bp, personality: pers }));
+            const updatedPers = { ...pers, pace: e.target.value };
+            onChange('blueprintJson', JSON.stringify({ ...bp, personality: updatedPers }));
           }} />
         </div>
       </div>
