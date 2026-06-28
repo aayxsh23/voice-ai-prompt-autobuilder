@@ -1,5 +1,7 @@
 export interface BusinessSnapshot {
   businessName?: string;
+  companyName?: string;
+  valueProposition?: string;
   industry?: string;
   location?: string;
   description?: string;
@@ -161,6 +163,8 @@ export interface BlueprintJson {
   conversation: ConversationDesign;
   personality: VoicePersonality;
   followupAnswers: Record<string, string>;
+  extractedIR?: any;
+  compiledSystemPrompt?: string;
 }
 
 export interface LlmService {

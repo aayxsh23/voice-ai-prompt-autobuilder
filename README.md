@@ -39,8 +39,8 @@ The application operates as a multi-stage compilation pipeline:
 
 ```text
 ┌────────────────────────┐      ┌─────────────────────────┐      ┌────────────────────────┐
-│ 1. 15 Starter Schemas  │ ───> │ 2. 7-Step Builder Wizard│ ───> │ 3. Automated Gap Audit │
-│    (Medical, SaaS, etc)│      │    (Mission, Tone, Rules)│      │    (Safety & Logic Scan)│
+│ 1. 15 Starter Schemas  │ ───> │ 2. AI Chatbot Architect │ ───> │ 3. Automated Gap Audit │
+│    (Medical, SaaS, etc)│      │    (Conversational Spec)│      │    (Safety & Logic Scan)│
 └────────────────────────┘      └─────────────────────────┘      └────────────────────────┘
                                                                              │
                                                                              ▼
@@ -179,26 +179,17 @@ The Turbopack compiler will start in `< 500ms`. Open your web browser and naviga
 │   ├── globals.css                # Linear dark color palette variables & base typography
 │   ├── page.tsx                   # Obsidian landing page hero with CTA to studio
 │   ├── dashboard/page.tsx         # Projects hub displaying saved workspace cards
-│   ├── builder/                   # Wizard root view
+│   ├── builder/                   # AI Chatbot Builder root view
 │   │   ├── page.tsx               # Session creation loader
-│   │   └── [sessionId]/page.tsx   # 7-step builder layout container
+│   │   └── [sessionId]/page.tsx   # Interactive conversational architect & preview interface
 │   ├── project/[projectId]/page.tsx # Main Studio Workspace split view
 │   └── api/                       # Next.js Server REST Route Handlers
-│       ├── builder/               # Wizard session endpoints (create, audit, review draft)
+│       ├── builder/               # Chatbot session endpoints (chat turns, generate draft, create project)
 │       └── projects/              # Studio CRUD endpoints (simulate turns, evaluate radar, publish)
 ├── components/
 │   ├── ui/index.tsx               # Design system primitives (Button, Input, Textarea, Card, Badge)
 │   ├── layout/Navbar.tsx          # Minimal top header bar
 │   ├── dashboard/                 # Dashboard project cards
-│   ├── builder/                   # Wizard step components
-│   │   ├── BuilderStepper.tsx     # Top numbered navigation progress bar
-│   │   ├── UseCaseSelector.tsx    # Step 1: Industry starter template picker
-│   │   ├── BusinessSnapshotForm   # Step 2: Company name, website, operating hours
-│   │   ├── CallMissionForm        # Step 3: Primary telephony mission & supported intents
-│   │   ├── ConversationDesign     # Step 4: Intent routing table & readback rules
-│   │   ├── PersonalityDesigner    # Step 5: Vocal tone, speaking pace, empathy settings
-│   │   ├── GapQuestionsForm       # Step 6: Automated vulnerability audit cards
-│   │   └── ReviewDraftPanel       # Step 7: Dual markdown code viewer & compile CTA
 │   ├── project/                   # Studio Workspace panels
 │   │   ├── PromptSettingsSidebar  # Left navigation bar & publish toggle
 │   │   ├── AgentPromptEditor      # Code editor for agent_prompt.md
