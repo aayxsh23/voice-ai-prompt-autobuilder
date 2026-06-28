@@ -25,8 +25,10 @@ export async function executePromptCompilationPipeline(extractedIR: VoiceAgentIR
   const assembler = new PromptAssembler();
   const rawPromptString = assembler.assemble(extractedIR, draft);
 
-  const optimizer = new PromptOptimizer();
-  const completedPromptString = await optimizer.optimize(rawPromptString);
+  // Bypassing optimizer to preserve token overhead, whitespace, and repetitive rules for voice AI adherence
+  // const optimizer = new PromptOptimizer();
+  // const completedPromptString = await optimizer.optimize(rawPromptString);
+  const completedPromptString = rawPromptString;
 
   const validation = validatePrompt(completedPromptString);
   if (!validation.valid) {
@@ -102,7 +104,14 @@ export async function compilePromptPackage(input: BlueprintJson): Promise<Prompt
   try {
     const ir = mapBlueprintToIR(input);
     const compiledSystemPrompt = await executePromptCompilationPipeline(ir, draft);
-    draft.systemPrompt = compiledSystemPrompt;
+    const splitIdx = compiledSystemPrompt.indexOf("### TTS & VOICE RULES");
+    if (splitIdx !== -1) {
+      draft.agentPrompt = compiledSystemPrompt.substring(0, splitIdx).trim();
+      draft.systemPrompt = compiledSystemPrompt.substring(splitIdx).trim();
+    } else {
+      draft.agentPrompt = compiledSystemPrompt;
+      draft.systemPrompt = compiledSystemPrompt;
+    }
     draft.systemPromptCompiled = true;
   } catch (err) {
     console.warn("Compilation pipeline error:", err);

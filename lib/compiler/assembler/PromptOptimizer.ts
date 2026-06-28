@@ -1,11 +1,8 @@
-import { getLlmClient } from "@/lib/llm/llmClient";
+import { geminiClient as baseGeminiClient } from "@/lib/llm/geminiProvider";
 
 export const geminiClient = {
   async generate({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }): Promise<{ text: string }> {
-    const llm = getLlmClient();
-    const combinedString = `System Directive: ${systemInstruction}\n\nTask: ${prompt}`;
-    const text = await (llm.generateRaw ? llm.generateRaw(combinedString) : llm.generateAgentPrompt({} as any));
-    return { text };
+    return baseGeminiClient.generate({ systemInstruction, prompt });
   }
 };
 

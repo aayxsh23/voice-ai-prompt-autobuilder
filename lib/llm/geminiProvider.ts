@@ -145,11 +145,15 @@ export class GeminiProvider implements LlmService {
   }
 
   public async generateRaw(prompt: string): Promise<string> {
+    const isJsonRequest = prompt.includes("ONLY valid JSON") || prompt.includes("JSON matching");
     const response = await this.aiInstance.models.generateContent({
       model: this.modelName,
       contents: prompt,
       config: {
-        systemInstruction: GLOBAL_COMPILER_INSTRUCTION,
+        systemInstruction: isJsonRequest
+          ? "You are an expert AI voice agent architect. Output strictly valid JSON matching the schema requested without markdown formatting or code fences."
+          : GLOBAL_COMPILER_INSTRUCTION,
+        responseMimeType: isJsonRequest ? "application/json" : undefined,
         ...COMPILER_GENERATION_CONFIG
       }
     });
