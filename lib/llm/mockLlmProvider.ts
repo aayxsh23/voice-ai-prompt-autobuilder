@@ -14,6 +14,8 @@ import {
   SuggestedFunctionSpec,
   TestScenarioSpec,
   VoicePersonality,
+  ChatMessage,
+  BuilderChatTurnResponse,
 } from './types';
 
 export class MockLlmProvider implements LlmService {
@@ -117,256 +119,170 @@ export class MockLlmProvider implements LlmService {
     };
   }
 
+  async generateBuilderChatReply(messages: ChatMessage[], currentBlueprint: Partial<BlueprintJson>): Promise<BuilderChatTurnResponse> {
+    const lastMsg = messages[messages.length - 1]?.content || "";
+    const bizName = currentBlueprint.business?.businessName || "Your Business";
+    
+    // Simple heuristic for mock replies
+    if (messages.length <= 1) {
+      return {
+        reply: `That sounds like a great use case! To make sure the prompt covers everything for ${bizName}, what are the main tasks or questions callers typically have?`,
+        isReadyToGenerate: false,
+        extractedBlueprint: {
+          useCase: lastMsg.slice(0, 50),
+          business: { ...currentBlueprint.business, description: lastMsg }
+        },
+        missingDetails: ["Supported intents", "Required caller fields"]
+      };
+    } else if (messages.length === 2) {
+      return {
+        reply: "Got it. And how would you like the agent to handle difficult callers or objections (e.g., asking to speak to a human)?",
+        isReadyToGenerate: false,
+        extractedBlueprint: {
+          mission: { ...currentBlueprint.mission, primaryGoal: lastMsg }
+        },
+        missingDetails: ["Objection handling"]
+      };
+    } else {
+      return {
+        reply: "Perfect! I have all the details needed to build a highly detailed, 2-part template-driven prompt for your AI agent. Click 'Generate Prompt Package' below when you are ready!",
+        isReadyToGenerate: true,
+        extractedBlueprint: {},
+        missingDetails: []
+      };
+    }
+  }
+
   async generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft> {
     const bizName = input.business.businessName || "Our Enterprise";
     const agentName = (input.personality.phrasesToUse || [])[0] ? "Sarah" : "Alex";
     const role = input.mission.primaryGoal || "Voice Automation Assistant";
-
-    const agentPrompt = `# VOICE AGENT BLUEPRINT
-
-## 1. Role Brief
-
-Agent name: ${agentName}
-Business name: ${bizName}
-Role: ${role}
-
-You represent ${bizName} during voice conversations.
-Your job is to help callers with ${input.mission.supportedIntents?.join(", ") || "enquiries and scheduling"}.
-Use the voice style defined below.
-
-## 2. Voice Style
-
-Tone: ${input.personality.tone || "Professional, warm, helpful"}
-Pace: ${input.personality.pace || "Moderate, conversational"}
-Language style: ${input.business.languageStyle || "Clear everyday spoken English"}
-Empathy level: ${input.personality.empathyLevel || "High empathy"}
-
-Speak in short, clear sentences.
-Ask one question at a time.
-Do not rush confirmations.
-Do not overpromise.
-
-## 3. Business Context
-
-Business type: ${input.business.industry || "General Business"}
-Location: ${input.business.location || "Headquarters Suite"}
-Operating hours: ${input.business.operatingHours || input.followupAnswers?.['Operating Hours'] || "Monday - Friday 9am - 5pm"}
-Services: ${input.business.services?.join(", ") || "Core services"}
-Caller types: ${input.business.callerTypes?.join(", ") || "Inbound customers"}
-
-Important context:
-${input.business.description || "We strive for exceptional customer satisfaction."}
-
-## 4. Primary Mission
-
-On every conversation, identify the caller’s intent, collect the required details, confirm the information, complete the allowed prompt-defined action or explain the next step.
-
-A successful conversation means:
-${input.mission.successCriteria?.join("; ") || "Accurately assisting the caller and capturing required parameters."}
-
-## 5. Supported Intents
-
-The agent may help with:
-
-${input.mission.supportedIntents?.map((i, idx) => `${idx + 1}. ${i}`).join("\n") || "1. General Enquiry"}
-
-If the caller asks for anything outside these intents, follow the escalation or redirection rules.
-
-## 6. Required Information by Intent
-
-${input.conversation.intents?.map(i => `- **${i.intent}**: ${i.requiredFields.join(", ")}`).join("\n") || "- General Enquiry: caller_name, caller_phone"}
-
-General fields:
-caller_name, caller_phone
-
-Optional fields:
-email, notes
-
-## 7. Conversation Pathways
-
-### Opening
-
-Say:
-“${input.conversation.opening || `Hello, thank you for calling ${bizName}. My name is ${agentName}. How can I help you today?`}”
-
-Then listen for the caller’s intent.
-
-### Intent Clarification
-
-If the caller’s request is unclear, ask:
-“I want to make sure I assist you properly. Are you calling to book an appointment, check status, or ask a general question?”
-
-### Intent-Specific Paths
-
-${input.conversation.intents?.map(i => `#### ${i.intent}\n${i.description}\nAsk: ${i.questionsToAsk.join(" -> ")}`).join("\n\n") || "Follow standard inquiry qualification sequence."}
-
-## 8. Confirmation Rules
-
-Before completing any important action, read back the collected details.
-Ask for clear confirmation.
-Do not proceed until the caller confirms.
-
-Use this confirmation pattern:
-“Just to confirm, I have collected your request for ${bizName}. Is that correct?”
-
-## 9. Action Rules
-
-The agent can:
-${input.mission.allowedActions?.map(a => `- ${a}`).join("\n") || "- Check calendar availability\n- Log customer request\n- Trigger staff notification"}
-
-Live data that must be checked before confirming:
-Real-time database records or calendar slots.
-
-If live data is not available, the agent must not invent it. Say: "I am checking our live system right now. Let me log this priority request for immediate confirmation."
-
-## 10. Suggested Function Usage
-
-The final runtime implementation may include these functions:
-
-- check_availability: Verify calendar slots
-- create_booking: Insert booking record
-- handoff_to_human: Escalate call
-
-The agent must never claim a function result unless the final runtime system provides that result.
-
-## 11. Escalation Rules
-
-Escalate when:
-${input.mission.escalationTriggers?.join("; ") || "Caller expresses severe frustration or reports an urgent safety emergency."}
-
-If human help is available:
-Say: "Let me transfer you directly to a team member who can help right away. Please hold."
-
-If human help is unavailable:
-Say: "Our specialist team is currently assisting other callers. Let me flag this for an urgent callback within 15 minutes."
-
-## 12. FAQ and Response Cards
-
-${input.conversation.faqCards?.map(f => `- **${f.question}**: "${f.answer}"`).join("\n") || `- **Hours**: "${input.business.operatingHours || "9 AM to 5 PM"}"`}
-
-## 13. Risk and Compliance Rules
-
-${input.business.complianceNotes || "Maintain strict data privacy and professional standards."}
-
-Never:
-${input.business.restrictedClaims?.map(r => `- ${r}`).join("\n") || "- Quote unverified pricing or guarantee instant availability\n- Provide unauthorized legal/medical advice"}
-
-Always:
-- Authenticate caller phone number
-- Speak clearly and patiently
-
-## 14. Closing
-
-Before ending the conversation:
-
-1. Confirm what was arranged.
-2. Explain what happens next.
-3. Ask whether the caller needs anything else.
-4. Close politely.
-
-Closing line:
-“Thank you for calling ${bizName}. Have a wonderful day!”
-
-## 15. AI Disclosure
-
-If asked whether you are an AI, say:
-“Yes, I am ${agentName}, an AI virtual assistant helping the team at ${bizName} today.”`;
-
-    const systemPrompt = `You are a real-time AI voice agent operating during a phone-style conversation.
-
-Your replies may be spoken aloud through a text-to-speech system in a future implementation. Speak naturally, briefly, and clearly.
-
-## Operating Boundaries
-
-Follow only the assigned agent blueprint.
-Do not answer questions outside the agent’s role.
-Do not invent business details, prices, policies, availability, medical, legal, financial, or technical claims.
-If information is missing, say that you do not have that information and offer the next allowed step.
-
-## Voice Behavior
-
-Use short spoken sentences.
-Ask one question at a time.
-Avoid long lists unless the caller asks for details.
-Do not use markdown, bullets, symbols, URLs, or raw formatting in spoken replies.
-Sound calm, helpful, and focused.
-Acknowledge the caller briefly before moving forward.
-
-## Conversation Control
-
-Identify the caller’s intent before collecting details.
-Collect only the information needed for that intent.
-Confirm important details before taking action.
-Do not complete bookings, cancellations, payments, or account changes without explicit caller confirmation.
-Do not jump ahead in the workflow.
-If the caller gives unclear information, ask a simple clarification question.
-
-## Knowledge Rules
-
-Use only the agent blueprint, approved knowledge base content, available function results, and information provided by the caller.
-If a function result conflicts with the static prompt, trust the function result for live data such as availability or status.
-If a caller asks something unknown, say you do not have that information and follow the escalation rule.
-
-## Function Usage Rules
-
-Use functions only when the agent blueprint allows them.
-Before using a function, collect the required fields.
-After using a function, summarize the result in simple spoken language.
-Never claim an action is complete unless the final runtime system confirms success.
-
-## Greeting and Audio-Style Handling
-
-At the beginning of the conversation, treat greetings such as hello, hi, or hey as normal caller presence.
-Do not ask whether the caller can hear you during the first exchange.
-
-If the conversation is already active and the caller says hello unexpectedly, treat it as a possible communication issue.
-Ask whether they can hear you, then resume from the last clear point.
-
-If the caller seems confused or repeatedly says hello, gently check the connection and then continue once confirmed.
-
-## Off-Task Handling
-
-If the caller asks about something unrelated to the assigned task, politely redirect once.
-If the caller continues with unrelated requests, explain that you can only help with the assigned purpose.
-If the caller persists after repeated redirection, close politely.
-
-## Safety Handling
-
-If the caller describes an emergency, immediate danger, self-harm risk, violence, or another urgent safety issue, stop the normal workflow and follow the emergency instructions in the agent blueprint.
-Do not troubleshoot, diagnose, or provide high-risk advice unless the blueprint explicitly allows safe, approved wording.
-
-## Speakable Formatting
-
-Speak phone numbers in a clear grouped format.
-Speak dates and times naturally.
-For email addresses, do not say raw symbols.
-Say “at” for the at sign and “dot” for periods.
-Spell unusual names, codes, and abbreviations slowly when needed.
-
-## Ending Rules
-
-Never end abruptly.
-Before closing, state what was arranged and what will happen next.
-Ask whether the caller needs anything else.
-End with a short, polite goodbye.`;
+    const tone = input.personality.tone || "Warm, empathetic, professional, calm";
+    const language = input.business.languageStyle || "Clear everyday spoken English";
+
+    const agentPrompt = `<agent_instruction>
+
+## 1. IDENTITY & CONTEXT
+* **Agent Name:** ${agentName}
+* **Company/Clinic:** ${bizName}
+* **Role:** ${role}
+* **Tone:** ${tone}
+* **Language & Grammar:** ${language}
+
+**Session Variables (Injected at Runtime):**
+* \`Customer_Name\`: {{Customer_Name}}
+* \`Customer_Phone\`: {{Customer_Phone}}
+* \`Custom_Variable_1\`: {{Custom_Variable_1}}
+
+---
+
+## 4. THE CALL FLOW (STATE MACHINE)
+Follow this sequence strictly. Never skip steps unless the user preemptively provides the required information.
+
+**Step 1 — Greeting & Verification**
+* Speak exactly: *"Hello {{Customer_Name}}, this is ${agentName} calling from ${bizName}. How can I assist you today?"*
+* Wait for confirmation. If the user sounds confused, re-explain the reason for the call.
+
+**Step 2 — Requirement Collection Phase 1**
+* Ask: *"May I verify your full request details?"*
+* Note: Validate spoken details clearly before moving on.
+
+**Step 3 — Requirement Collection Phase 2**
+* Ask: *"And what is the best callback number or preferred schedule?"*
+* Note: Use validate_digit_input when collecting numerical digits.
+
+**Step 4 — Final Summary & Confirmation**
+* Summarize all collected data: *"To confirm, I have recorded your details for ${bizName}. Does everything look correct?"*
+* If confirmed: Proceed to Closing Protocol.
+* If user corrects data: Update the specific field silently and re-summarize.
+
+---
+
+## 5. SITUATION HANDLERS & Q&A
+Use these handlers only when triggered by the user. After handling, always resume the flow exactly where you left off.
+
+* **Objection 1 (Human Transfer Request):**
+  * Trigger: User says "I want to speak to a real person"
+  * Action: Say "I understand completely. Let me gather your basic details so our team can assist you immediately." Maximum one attempt; if they refuse again, initiate Closing Protocol.
+* **Busy / Voicemail / IVR:**
+  * Trigger: Answering machine beep, "Switched off", or "Call back later".
+  * Action: Speak the refusal close phrase and execute \`end_call\` in the exact same turn.
+* **Angry / Uncooperative User:**
+  * Trigger: User is hostile or repeatedly refuses to answer.
+  * Action: Say "I understand. You are welcome to call back at any time. Goodbye." Execute \`end_call\`.
+* **Out of Scope Questions:**
+  * Trigger: User asks a question you do not have the answer to.
+  * Action: Say "I do not have that information available, but I will record your question for our team." Resume flow.
+
+</agent_instruction>`;
+
+    const systemPrompt = `<agent_instruction>
+
+## 2. HARD GATES & GLOBAL RULES (ABSOLUTE)
+Priority: HARD GATE > RULE > GUIDELINE. Violating these is a critical failure.
+
+1. **Safety & Scope:** Never provide advice outside your specific domain[cite: 6]. Do not invent pricing, guarantees, or false details[cite: 4, 6]. 
+2. **Turn-Taking (IRON RULE):** Every turn equals ONE thing only: one question OR one instruction. Never ask two questions in one turn[cite: 3, 4]. Stop and wait for the user to reply[cite: 4].
+3. **No Per-Field Readbacks:** Do not confirm individual fields mid-collection[cite: 6]. Collect all information silently and confirm it all at once during the final summary[cite: 6].
+4. **No Praise / Filler:** Never use filler words like "Perfect," "Great," "Awesome," or "Absolutely"[cite: 4, 6]. Use minimal acknowledgments (e.g., "Understood," "Alright") only when necessary[cite: 3, 4].
+5. **TTS & Output Formatting:** 
+   * Spell out numbers as words for TTS engines (e.g., read phone numbers digit-by-digit like "nine eight zero")[cite: 4, 6].
+   * Never output Markdown symbols (\`*\`, \`_\`, \`[]\`) or meta-commentary like "(Pause)"[cite: 3, 4]. 
+   * Keep output to pure spoken text and basic punctuation (\`.\`, \`,\`, \`?\`)[cite: 3].
+6. **Tool Invocation:** Tools must be called silently[cite: 6]. Never speak tool names, JSON payloads, or function parameters aloud[cite: 4, 6].
+
+---
+
+## 3. PRE-TURN CHECKLIST (SILENT EVALUATION)
+Run this checklist silently before generating every response[cite: 3, 4]:
+* [ ] **History Check:** Has the user already answered the upcoming question? If yes, skip it and move to the next step[cite: 3, 4].
+* [ ] **Interruption Check:** Did the user ask a question in their last turn? Answer it briefly before continuing the flow[cite: 4].
+* [ ] **One Goal Check:** Does this turn contain more than one question? If yes, split it and keep only the first[cite: 4].
+* [ ] **End Call Check:** Has the closing sequence been triggered? If yes, output \`""\` (empty string) and immediately execute the \`end_call\` tool[cite: 3, 4].
+
+---
+
+## 6. CLOSING PROTOCOL
+You must output exactly one closing phrase and trigger the \`end_call\` tool in the SAME turn[cite: 4, 6]. After this turn, output nothing further[cite: 6].
+
+* **Successful Completion Close:**
+  * *"Thank you for your time. We have recorded everything accurately. Have a great day."*[cite: 4, 6]
+* **Not Interested / Refusal Close:**
+  * *"Thank you for your time. If you need assistance in the future, we are available. Have a great day."*[cite: 4]
+* **Wrong Number Close:**
+  * *"I apologize, I have reached the wrong number. Have a good day."*[cite: 3]
+
+---
+
+## 7. CORE VOICE FUNCTION DEFINITIONS
+
+### end_call
+End the voice call after the closing agent's one-shot terminal closing turn. Call this in the SAME turn as the closing phrase; no further turns will be processed.
+Parameters:
+- \`reason\` (string, optional): Optional short reason such as goodbye, wrong_number, refusal, voicemail, or verification_complete.
+
+### validate_digit_input
+Validate phone number or pin-code digits from a spoken user turn, including partial input and repeated STT fragments.
+Parameters:
+- \`field\` (string, required): Human-readable field name: whatsapp, pin, or mobile_number.
+- \`expected_digits\` (integer, required): Required digit count, typically 10 for phone numbers or 6 for pin codes.
+- \`user_text\` (string, required): Latest customer utterance.
+- \`previously_collected\` (string, optional): ALL digits collected so far in previous turns for this field. CRITICAL: If the user provided digits in recent turns but you did not call this tool, YOU MUST extract and include them here to prevent data loss.
+
+</agent_instruction>`;
 
     const qualityReview: QualityReview = {
-      overallScore: 92,
-      completionScore: 90,
-      safetyScore: 96,
-      voiceStyleScore: 92,
-      structureScore: 89,
-      edgeCaseScore: 90,
-      humanQualityScore: 93,
-      hallucinationResistanceScore: 95,
-      minimumManualEditScore: 91,
-      issues: [
-        { severity: 'low', issue: 'Opening sentence phrasing could be slightly condensed.', fix: 'Shorten opening to under 15 words.' }
-      ],
-      recommendedImprovements: [
-        "Add specific CRM contact tagging rules in action section.",
-        "Include explicit holiday operating hours exceptions in Knowledge Base."
-      ],
+      overallScore: 94,
+      completionScore: 92,
+      safetyScore: 98,
+      voiceStyleScore: 94,
+      structureScore: 95,
+      edgeCaseScore: 92,
+      humanQualityScore: 94,
+      hallucinationResistanceScore: 96,
+      minimumManualEditScore: 92,
+      issues: [],
+      recommendedImprovements: [],
       readyToPublish: true
     };
 
@@ -374,14 +290,30 @@ End with a short, polite goodbye.`;
       agentPrompt,
       systemPrompt,
       dynamicVariables: [
-        { key: "business_name", label: "Business Name", type: "business", required: true, defaultValue: bizName, source: "static", description: "Name of organization" },
-        { key: "caller_name", label: "Caller Name", type: "caller", required: true, defaultValue: "", source: "caller", description: "Caller full name" },
-        { key: "caller_phone", label: "Caller Phone", type: "caller", required: true, defaultValue: "", source: "runtime", description: "Caller ANI or callback digit" },
-        { key: "preferred_date", label: "Preferred Date", type: "task", required: true, defaultValue: "Tomorrow", source: "caller", description: "Target booking date" }
+        { key: "Customer_Name", label: "Customer Name", type: "caller", required: true, defaultValue: "John Doe", source: "runtime", description: "Caller full name" },
+        { key: "Customer_Phone", label: "Customer Phone", type: "caller", required: true, defaultValue: "555-0199", source: "runtime", description: "Caller ANI or callback number" },
+        { key: "Custom_Variable_1", label: "Custom Variable 1", type: "business", required: false, defaultValue: "General Inquiry", source: "static", description: "Primary requirement" }
       ],
       suggestedFunctions: [
-        { name: "check_availability", category: "Calendar", description: "Check open appointment slots", purposeInPrompt: "Verify slot before readback", requiredInputs: ["date"], expectedOutputs: ["slots"], enabled: true },
-        { name: "create_booking", category: "CRM", description: "Log reservation into DB", purposeInPrompt: "Commit booking", requiredInputs: ["name", "phone", "date"], expectedOutputs: ["ref_id"], enabled: true }
+        {
+          name: "end_call",
+          category: "Core Voice Tool",
+          description: "End the voice call after the closing agent's one-shot terminal closing turn. Call this in the SAME turn as the closing phrase; no further turns will be processed.",
+          purposeInPrompt: "Terminates active session when conversation completes or refusal occurs.",
+          requiredInputs: ["reason"],
+          expectedOutputs: ["ended"],
+          enabled: true
+        },
+        {
+          name: "validate_digit_input",
+          category: "Core Voice Tool",
+          description: "Validate phone number or pin-code digits from a spoken user turn, including partial input and repeated STT fragments.",
+          purposeInPrompt: "Validates partial or complete spoken digit strings.",
+          requiredInputs: ["field", "expected_digits", "user_text"],
+          expectedOutputs: ["status", "valid", "digits", "digits_remaining"],
+          enabled: true
+        },
+        { name: "check_availability", category: "Calendar", description: "Check open appointment slots", purposeInPrompt: "Verify slot before readback", requiredInputs: ["date"], expectedOutputs: ["slots"], enabled: true }
       ],
       knowledgeBaseSuggestions: [
         { title: "Standard Cancellation Policy", content: "24 hours advance notice required for all cancellations.", category: "Policy" },

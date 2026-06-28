@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Button, Badge } from '../ui';
-import { Sliders, ShieldAlert, Sparkles, History, MessageSquare, Code2, BookOpen } from 'lucide-react';
+import { Sliders, ShieldAlert, Sparkles, History, MessageSquare, Code2, BookOpen, Layers } from 'lucide-react';
 
 interface Props {
   project: any;
@@ -30,6 +30,7 @@ export const PromptSettingsSidebar: React.FC<Props> = ({
   const navs = [
     { id: 'prompt', label: 'Agent Blueprint', icon: Code2 },
     { id: 'system', label: 'System Prompt', icon: Sliders },
+    { id: 'combined', label: 'Combined Final Prompt', icon: Layers },
     { id: 'radar', label: 'Quality Radar', icon: Sparkles },
     { id: 'simulator', label: 'Simulator', icon: MessageSquare },
     { id: 'variables', label: 'Variables', icon: Sliders },

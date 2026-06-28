@@ -156,7 +156,7 @@ export const ReviewDraftPanel: React.FC<Props> = ({
 
       <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={onBack}><ArrowLeft className="mr-2 h-4 w-4" /> Back</Button>
-        <Button onClick={onCreateProject} disabled={creating}>
+        <Button onClick={() => onCreateProject(false)} disabled={creating}>
           {creating ? "Finalizing..." : "Create Project & Open Studio"}
         </Button>
       </div>

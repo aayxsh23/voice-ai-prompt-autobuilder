@@ -166,6 +166,23 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
             </div>
           )}
 
+          {activeTab === 'combined' && (
+            <div className="bg-[#161822] border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="font-bold text-base text-white">Combined Final Runtime Prompt</h3>
+                  <p className="text-xs text-slate-400">This exact combined string is injected into the AI voice engine at call start.</p>
+                </div>
+                <Button onClick={() => navigator.clipboard.writeText(`${project.agentPrompt || ""}\n\n${project.systemPrompt || ""}`)} variant="outline" className="text-xs">
+                  Copy Combined Prompt
+                </Button>
+              </div>
+              <pre className="p-4 bg-slate-950/90 border border-slate-800 rounded-xl font-mono text-xs text-slate-300 overflow-x-auto max-h-[650px] whitespace-pre-wrap leading-relaxed">
+                {`${project.agentPrompt || ""}\n\n${project.systemPrompt || ""}`}
+              </pre>
+            </div>
+          )}
+
           {activeTab === 'radar' && (
             <QualityScoreCard project={project} onReEvaluate={handleReEvaluate} />
           )}

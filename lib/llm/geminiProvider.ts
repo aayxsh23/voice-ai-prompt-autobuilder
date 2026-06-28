@@ -16,6 +16,8 @@ import {
   TestScenarioSpec,
   VoicePersonality,
   safeParseJson,
+  ChatMessage,
+  BuilderChatTurnResponse,
 } from './types';
 
 export class GeminiProvider implements LlmService {
@@ -151,39 +153,76 @@ Return JSON only:
     return this.generateJson<GapAuditResult>(prompt, fallback);
   }
 
+  async generateBuilderChatReply(messages: ChatMessage[], currentBlueprint: Partial<BlueprintJson>): Promise<BuilderChatTurnResponse> {
+    const fallback = await this.mockFallback.generateBuilderChatReply(messages, currentBlueprint);
+    if (!this.ai) return fallback;
+
+    const prompt = `You are an expert AI voice agent architect helping a user build their AI voice agent through an interactive chatbot conversation.
+The user wants to define what they are building. You ask follow-up questions required to fill out all details needed for an AI prompt template.
+Current known blueprint: ${JSON.stringify(currentBlueprint)}
+Conversation history:
+${messages.map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n")}
+
+Respond with JSON only:
+{
+  "reply": "Your next conversational response or follow-up question to the user. Ask clarifying questions if key details like supported intents, required caller fields, or objection handling are missing.",
+  "isReadyToGenerate": boolean (true only if you have enough info about use case, intents, required fields, and tone),
+  "extractedBlueprint": {
+    "useCase": "string",
+    "business": { "businessName": "...", "description": "...", "industry": "..." },
+    "mission": { "primaryGoal": "...", "supportedIntents": ["..."] }
+  },
+  "missingDetails": ["List of missing details"]
+}`;
+
+    return this.generateJson<BuilderChatTurnResponse>(prompt, fallback);
+  }
+
   async generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft> {
     const fallback = await this.mockFallback.generateReviewDraft(input);
     if (!this.ai) return fallback;
 
-    // Orchestration Pass 1: Compile initial package
+    // Orchestration Pass 1: Compile split prompt package strictly matching user's template
     const compilePrompt = `You are an expert voice agent prompt engineer.
 Compile a production-ready AI voice agent prompt package for:
 Blueprint: ${JSON.stringify(input)}
 
-Create a detailed business Agent Prompt and a reusable platform System Prompt.
-The output must feel human-written, avoiding filler, robotic phrasing, and hallucinations.
+CRITICAL REQUIREMENT: Divide the final prompt strictly into two parts:
+1. "agentPrompt": User-editable agent prompt containing ONLY Sections 1, 4, and 5 enclosed in <agent_instruction> tags.
+   - Section 1: IDENTITY & CONTEXT (Agent Name, Company, Role, Tone, Language & Grammar, and Runtime Session Variables).
+   - Section 4: THE CALL FLOW (STATE MACHINE) (Step-by-step sequence).
+   - Section 5: SITUATION HANDLERS & Q&A (Objections, Voicemail, Angry user, Out of scope).
+
+2. "systemPrompt": Core engine system prompt containing ONLY Sections 2, 3, 6, and 7 enclosed in <agent_instruction> tags.
+   - Section 2: HARD GATES & GLOBAL RULES (ABSOLUTE) (Safety, Turn-taking, No per-field readbacks, No filler, TTS rules, Silent tools).
+   - Section 3: PRE-TURN CHECKLIST (SILENT EVALUATION).
+   - Section 6: CLOSING PROTOCOL (One-shot close triggering end_call).
+   - Section 7: CORE VOICE FUNCTION DEFINITIONS (Must include end_call and validate_digit_input definitions).
 
 Return JSON matching this schema:
 {
-  "agentPrompt": "# VOICE AGENT BLUEPRINT\\n...",
-  "systemPrompt": "You are a real-time AI voice agent...",
-  "dynamicVariables": [{"key": "key", "label": "label", "type": "business", "required": true, "defaultValue": "val", "source": "static", "description": "desc"}],
-  "suggestedFunctions": [{"name": "fn", "category": "cat", "description": "desc", "purposeInPrompt": "purp", "requiredInputs": ["in"], "expectedOutputs": ["out"], "enabled": true}],
+  "agentPrompt": "<agent_instruction>\\n## 1. IDENTITY & CONTEXT\\n...\\n## 4. THE CALL FLOW\\n...\\n## 5. SITUATION HANDLERS\\n...</agent_instruction>",
+  "systemPrompt": "<agent_instruction>\\n## 2. HARD GATES & GLOBAL RULES\\n...\\n## 3. PRE-TURN CHECKLIST\\n...\\n## 6. CLOSING PROTOCOL\\n...\\n## 7. CORE VOICE FUNCTION DEFINITIONS\\n...</agent_instruction>",
+  "dynamicVariables": [{"key": "Customer_Name", "label": "Customer Name", "type": "caller", "required": true, "defaultValue": "John Doe", "source": "runtime", "description": "Caller name"}],
+  "suggestedFunctions": [
+    {"name": "end_call", "category": "Core Voice Tool", "description": "End call after closing phrase.", "purposeInPrompt": "Terminates session", "requiredInputs": ["reason"], "expectedOutputs": ["ended"], "enabled": true},
+    {"name": "validate_digit_input", "category": "Core Voice Tool", "description": "Validate spoken digits.", "purposeInPrompt": "Validates digits", "requiredInputs": ["field", "expected_digits", "user_text"], "expectedOutputs": ["valid"], "enabled": true}
+  ],
   "knowledgeBaseSuggestions": [{"title": "T", "content": "C", "category": "Cat"}],
   "faqCards": [{"question": "Q", "answer": "A"}],
   "objectionCards": [{"objection": "O", "handling": "H"}],
   "edgeCaseRules": [{"scenario": "S", "action": "A"}],
   "testScenarios": [{"title": "T", "persona": "easy caller", "callerGoal": "G", "sampleCallerMessage": "M", "expectedAgentBehavior": "B", "riskLevel": "low"}],
   "qualityReview": {
-    "overallScore": 90,
-    "completionScore": 88,
-    "safetyScore": 95,
-    "voiceStyleScore": 90,
-    "structureScore": 88,
-    "edgeCaseScore": 89,
-    "humanQualityScore": 91,
-    "hallucinationResistanceScore": 93,
-    "minimumManualEditScore": 90,
+    "overallScore": 94,
+    "completionScore": 92,
+    "safetyScore": 98,
+    "voiceStyleScore": 94,
+    "structureScore": 95,
+    "edgeCaseScore": 92,
+    "humanQualityScore": 94,
+    "hallucinationResistanceScore": 96,
+    "minimumManualEditScore": 92,
     "issues": [],
     "recommendedImprovements": [],
     "readyToPublish": true
@@ -191,6 +230,33 @@ Return JSON matching this schema:
 }`;
 
     let draft = await this.generateJson<PromptPackageDraft>(compilePrompt, fallback);
+
+    // Enforce mandatory tools in suggestedFunctions
+    const mandatoryTools: SuggestedFunctionSpec[] = [
+      {
+        name: "end_call",
+        category: "Core Voice Tool",
+        description: "End the voice call after the closing agent's one-shot terminal closing turn. Call this in the SAME turn as the closing phrase; no further turns will be processed.",
+        purposeInPrompt: "Terminates active session when conversation completes or refusal occurs.",
+        requiredInputs: ["reason"],
+        expectedOutputs: ["ended"],
+        enabled: true
+      },
+      {
+        name: "validate_digit_input",
+        category: "Core Voice Tool",
+        description: "Validate phone number or pin-code digits from a spoken user turn, including partial input and repeated STT fragments.",
+        purposeInPrompt: "Validates partial or complete spoken digit strings.",
+        requiredInputs: ["field", "expected_digits", "user_text"],
+        expectedOutputs: ["status", "valid", "digits", "digits_remaining"],
+        enabled: true
+      }
+    ];
+    for (const tool of mandatoryTools) {
+      if (!draft.suggestedFunctions?.some(f => f.name === tool.name)) {
+        draft.suggestedFunctions = [tool, ...(draft.suggestedFunctions || [])];
+      }
+    }
 
     // Orchestration Pass 2 & 3: Self-Critique & Improvement Loop
     try {

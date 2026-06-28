@@ -179,6 +179,19 @@ export interface LlmService {
   evaluatePromptQuality(agentPrompt: string, systemPrompt: string, useCase: string): Promise<QualityReview>;
   simulatePromptTurn(input: SimulationTurnInput): Promise<SimulationTurnOutput>;
   improvePromptWithCritique(draft: PromptPackageDraft, critique: QualityReview): Promise<PromptPackageDraft>;
+  generateBuilderChatReply(messages: ChatMessage[], currentBlueprint: Partial<BlueprintJson>): Promise<BuilderChatTurnResponse>;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface BuilderChatTurnResponse {
+  reply: string;
+  isReadyToGenerate: boolean;
+  extractedBlueprint: Partial<BlueprintJson>;
+  missingDetails: string[];
 }
 
 export function safeParseJson<T>(raw: string, fallback: T): T {
