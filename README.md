@@ -94,16 +94,12 @@ An aggregate score aggregating all sub-metrics. A prompt package scoring `< 85%`
 
 ---
 
-## 🤖 LLM Engine & Provider Switch
+## 🤖 LLM Engine & Google GenAI SDK
 
-The studio is powered by an abstracted LLM service layer (`lib/llm/`) supporting hot-swapping between two engines via `.env`:
+The studio is powered by a production-grade LLM service layer (`lib/llm/`) utilizing the official `@google/genai` SDK:
 
-### Option A: Google Gemini SDK (`LLM_PROVIDER="gemini"`)
 *   **SDK**: Uses the official `@google/genai` Node.js SDK.
-*   **Exclusively Gemini 3.1 Flash-Lite**: The application is hardcoded and optimized to use **`gemini-3.1-flash-lite`** (`GEMINI_MODEL="gemini-3.1-flash-lite"`). This model provides ultra-fast structured JSON generation, automated schema repairs, and low-latency self-critique generation.
-
-### Option B: Deterministic Mock Provider (`LLM_PROVIDER="mock"`)
-*   **Offline Fidelity**: If no API key is provided, the studio automatically switches to a deterministic Mock Provider. It generates realistic, production-grade conversational designs and blueprint markdowns using local rule-based templates, allowing full UI/UX testing without API quota usage.
+*   **Gemini 3.1 Flash-Lite**: The application is optimized to use **`gemini-3.1-flash-lite`** (`GEMINI_MODEL="gemini-3.1-flash-lite"`). This model provides ultra-fast structured JSON generation, automated schema repairs, low-latency Chain-of-Thought reasoning, and deterministic prompt compilation.
 
 ---
 
@@ -135,13 +131,10 @@ Open `.env` in any text editor and verify the following required fields:
 # 1. Local SQLite Database
 DATABASE_URL="file:./dev.db"
 
-# 2. Provider Switch ('gemini' or 'mock')
-LLM_PROVIDER="gemini"
-
-# 3. Gemini API Key (Get one from https://aistudio.google.com/)
+# 2. Gemini API Key (Get one from https://aistudio.google.com/)
 GEMINI_API_KEY="AIzaSy...your_api_key_here..."
 
-# 4. Mandatory API Model Identifier
+# 3. Mandatory API Model Identifier
 GEMINI_MODEL="gemini-3.1-flash-lite"
 ```
 

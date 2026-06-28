@@ -100,12 +100,11 @@ OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start outp
 
 export const geminiClient = {
   async generate({ systemInstruction, prompt }: { systemInstruction: string, prompt: string }) {
-    const combinedInstruction = `${GLOBAL_COMPILER_INSTRUCTION}\n\nSPECIFIC TASK:\n${systemInstruction}`;
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
-        systemInstruction: combinedInstruction,
+        systemInstruction: systemInstruction,
         ...COMPILER_GENERATION_CONFIG
       }
     });
@@ -120,7 +119,7 @@ export class GeminiProvider implements LlmService {
   private aiInstance: GoogleGenAI;
   private modelName: string;
 
-  constructor(apiKey?: string, modelName = 'gemini-2.5-flash') {
+  constructor(apiKey?: string, modelName = 'gemini-3.1-flash-lite') {
     this.modelName = process.env.GEMINI_MODEL || modelName;
     const key = apiKey || process.env.GEMINI_API_KEY;
     if (!key) {

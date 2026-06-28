@@ -6,8 +6,8 @@ export interface ValidationResult {
 export function validatePrompt(promptString: string): ValidationResult {
   const errors: string[] = [];
   
-  // a. Unfilled placeholders
-  const placeholderMatches = promptString.match(/\{\{[^}]+\}\}/g);
+  // a. Unfilled placeholders (e.g. [INSERT CLINIC NAME], [TODO], <YOUR COMPANY>)
+  const placeholderMatches = promptString.match(/\[(INSERT|TODO|YOUR|ENTER|ADD)[^\]]*\]/gi) || promptString.match(/<(INSERT|TODO|YOUR|ENTER|ADD)[^>]*>/gi);
   if (placeholderMatches) {
     for (const match of placeholderMatches) errors.push(`Unfilled placeholder detected: ${match}`);
   }
