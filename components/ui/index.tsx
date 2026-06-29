@@ -14,13 +14,13 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'default', size = 'default', ...props }, ref) => {
-    const base = "inline-flex items-center justify-center rounded-[6px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5e6ad2] disabled:pointer-events-none disabled:opacity-50 cursor-pointer";
+    const base = "inline-flex items-center justify-center rounded-[4px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#ff6c02] disabled:pointer-events-none disabled:opacity-50 cursor-pointer tracking-tight";
     const variants = {
-      default: "bg-[#e4f222] text-[#030404] hover:bg-[#d4e220] shadow-[0px_5px_2px_0px_rgba(0,0,0,0.01),0px_3px_2px_0px_rgba(0,0,0,0.04),0px_1px_1px_0px_rgba(0,0,0,0.07),0px_0px_1px_0px_rgba(0,0,0,0.08)]",
-      outline: "border border-[#23252a] bg-transparent hover:bg-[#161718] text-[#d0d6e0]",
-      secondary: "bg-[#161718] text-[#d0d6e0] hover:bg-[#23252a] border border-[#23252a]",
-      ghost: "hover:bg-[#161718] text-[#8a8f98] hover:text-[#f7f8f8]",
-      destructive: "bg-[#eb5757] text-white hover:bg-[#d44040] shadow-sm"
+      default: "bg-[#ff6c02] text-[#f3f3f3] hover:bg-[#ff8025]",
+      outline: "border border-[#303030] bg-transparent hover:bg-[#121212] text-[#909090] hover:text-[#f3f3f3]",
+      secondary: "bg-[#1b1b1b] text-[#f3f3f3] hover:bg-[#252525] border border-[#252525]",
+      ghost: "hover:bg-[#121212] text-[#909090] hover:text-[#f3f3f3]",
+      destructive: "bg-[#eb5757] text-white hover:bg-[#d44040]"
     };
     const sizes = {
       default: "h-10 px-4 py-2 text-sm",
@@ -42,7 +42,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
       <input
         type={type}
         className={cn(
-          "flex h-10 w-full rounded-[6px] bg-[#383b3f] px-3 py-2 text-sm text-[#f7f8f8] placeholder:text-[#62666d] focus:outline-none focus:ring-2 focus:ring-[#5e6ad2] disabled:cursor-not-allowed disabled:opacity-50 shadow-[0px_0px_0px_1px_rgba(0,0,0,0.2)] border-none",
+          "flex h-10 w-full rounded-[8px] bg-[#1b1b1b] px-3 py-2 text-sm text-[#f3f3f3] placeholder:text-[#646464] border border-[#252525] focus:outline-none focus:border-[#ff6c02] disabled:cursor-not-allowed disabled:opacity-50 transition-colors",
           className
         )}
         ref={ref}
@@ -59,7 +59,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
     return (
       <textarea
         className={cn(
-          "flex min-h-[80px] w-full rounded-[6px] bg-[#383b3f] px-3 py-2 text-sm text-[#f7f8f8] placeholder:text-[#62666d] focus:outline-none focus:ring-2 focus:ring-[#5e6ad2] disabled:cursor-not-allowed disabled:opacity-50 shadow-[0px_0px_0px_1px_rgba(0,0,0,0.2)] border-none font-mono",
+          "flex min-h-[80px] w-full rounded-[8px] bg-[#1b1b1b] px-3 py-2 text-sm text-[#f3f3f3] placeholder:text-[#646464] border border-[#252525] focus:outline-none focus:border-[#ff6c02] disabled:cursor-not-allowed disabled:opacity-50 font-mono transition-colors",
           className
         )}
         ref={ref}
@@ -71,15 +71,16 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
 Textarea.displayName = 'Textarea';
 
 /* ── Badge ── */
-export const Badge = ({ children, variant = 'default', className }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'outline'; className?: string }) => {
+export const Badge = ({ children, variant = 'default', className }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'info' | 'outline'; className?: string }) => {
   const variants = {
-    default: "bg-[#161718] text-[#d0d6e0] border-[#23252a]",
-    success: "bg-[#161718] text-[#27a644] border-[#23252a]",
-    warning: "bg-[#161718] text-[#eb5757] border-[#23252a]",
-    outline: "border border-[#23252a] text-[#8a8f98] bg-transparent"
+    default: "bg-[#1b1b1b] text-[#dedede] border border-[#252525]",
+    success: "bg-[#0c0c0c] text-[#27a644] border border-[#252525]",
+    warning: "bg-[#0c0c0c] text-[#ff6c02] border border-[#ff6c02]/40",
+    info: "bg-transparent text-[#55c2ff] border border-[#55c2ff]/40",
+    outline: "border border-[#303030] text-[#909090] bg-transparent"
   };
   return (
-    <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-[2px] text-xs font-medium border", variants[variant], className)}>
+    <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium", variants[variant], className)}>
       {children}
     </span>
   );
@@ -87,5 +88,5 @@ export const Badge = ({ children, variant = 'default', className }: { children: 
 
 /* ── Card ── */
 export const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={cn("rounded-[12px] border border-[#23252a] bg-[#161718] p-6 shadow-[inset_0px_0px_0px_1px_rgb(35,37,42),0px_2px_4px_0px_rgba(0,0,0,0.4)]", className)}>{children}</div>
+  <div className={cn("rounded-[12px] border border-[#252525] bg-[#121212] p-6", className)}>{children}</div>
 );

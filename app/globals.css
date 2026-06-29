@@ -1,40 +1,36 @@
 @import "tailwindcss";
 
 :root {
-  /* ── Linear Color Palette ── */
-  --color-onyx: #08090a;
-  --color-charcoal: #0f1011;
-  --color-obsidian: #161718;
-  --color-graphite: #23252a;
-  --color-iron: #323334;
-  --color-steel: #383b3f;
-  --color-slate-dim: #62666d;
-  --color-fog: #8a8f98;
-  --color-mist: #d0d6e0;
-  --color-platinum: #e5e5e6;
-  --color-snow: #f7f8f8;
-  --color-lime: #e4f222;
-  --color-indigo-accent: #5e6ad2;
-  --color-emerald-accent: #27a644;
-  --color-crimson-accent: #eb5757;
-  --color-cyan-accent: #02b8cc;
-  --color-lime-text: #030404;
+  /* ── BaseHub Color Palette ── */
+  --color-ember-orange: #ff6c02;
+  --color-ember-glow: #ff9b51;
+  --color-glacier-blue: #55c2ff;
+  --color-bone-white: #f3f3f3;
+  --color-ash-gray: #dedede;
+  --color-fog-gray: #909090;
+  --color-slate-gray: #646464;
+  --color-iron-border: #303030;
+  --color-charcoal-edge: #252525;
+  --color-graphite: #1b1b1b;
+  --color-obsidian: #121212;
+  --color-onyx: #0c0c0c;
+  --color-void: #040404;
+  --color-black: #000000;
 
-  /* ── Surfaces ── */
-  --background: var(--color-onyx);
-  --foreground: var(--color-snow);
-  --surface-nav: var(--color-charcoal);
+  /* ── Surfaces & Text ── */
+  --background: var(--color-void);
+  --foreground: var(--color-bone-white);
+  --surface-nav: var(--color-onyx);
   --surface-card: var(--color-obsidian);
-  --surface-input: var(--color-steel);
-  --border-hairline: var(--color-graphite);
-  --border-medium: var(--color-iron);
+  --surface-input: var(--color-graphite);
+  --border-hairline: var(--color-charcoal-edge);
+  --border-medium: var(--color-iron-border);
 
-  /* ── Elevations ── */
-  --shadow-card: 0px 2px 4px 0px rgba(0, 0, 0, 0.4);
-  --shadow-card-inset: inset 0px 0px 0px 1px rgb(35, 37, 42);
-  --shadow-input: 0px 0px 0px 1px rgba(0, 0, 0, 0.2);
-  --shadow-button: 0px 5px 2px 0px rgba(0, 0, 0, 0.01), 0px 3px 2px 0px rgba(0, 0, 0, 0.04), 0px 1px 1px 0px rgba(0, 0, 0, 0.07), 0px 0px 1px 0px rgba(0, 0, 0, 0.08);
-  --shadow-overlay: 0px 4px 32px 0px rgba(8, 9, 10, 0.6);
+  /* ── Radii ── */
+  --radius-cards: 12px;
+  --radius-buttons: 4px;
+  --radius-inputs: 8px;
+  --radius-pills: 9999px;
 }
 
 @theme inline {
@@ -53,18 +49,18 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Scrollbar (Chromium) ── */
+/* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-onyx);
+  background: var(--color-void);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-iron);
+  background: var(--color-charcoal-edge);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-steel);
+  background: var(--color-iron-border);
 }

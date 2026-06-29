@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, User, Send, Sparkles, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play } from 'lucide-react';
+import { Bot, User, Send, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play } from 'lucide-react';
 import { PromptPackageDraft, BusinessSnapshot, CallMission, ConversationDesign, VoicePersonality, SchemaOverrides } from '@/lib/llm/types';
 
 interface Message {
@@ -19,13 +19,13 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hello! I am your AutoPrompt AI Architect. What kind of AI voice agent would you like to build today? Tell me about your business and what tasks you want the voice agent to handle."
+      content: "Hello! I'm your VoiceAgent Architect. What kind of AI voice agent would you like to build today? Tell me about your domain and what workflows you want it to handle."
     }
   ]);
   const [input, setInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [missingDetails, setMissingDetails] = useState<string[]>(['Supported intents', 'Required caller fields', 'Objection handling']);
+  const [missingDetails, setMissingDetails] = useState<string[]>(['Specific Workflows', 'Required Checklist', 'FAQ Details', 'Transfer Rules']);
   
   // Blueprint state gathered during chat
   const [blueprint, setBlueprint] = useState<any>({
@@ -51,11 +51,32 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const [activeOverrideTab, setActiveOverrideTab] = useState<'faq' | 'transfer' | 'verbatim'>('faq');
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const initialPromptHandledRef = useRef(false);
+
+  const handleInputResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  };
 
   useEffect(() => {
     params.then(p => {
       setSessionId(p.sessionId);
       setLoading(false);
+      if (typeof window !== 'undefined' && !initialPromptHandledRef.current) {
+        const urlParams = new URLSearchParams(window.location.search);
+        const initPrompt = urlParams.get('initialPrompt');
+        if (initPrompt) {
+          initialPromptHandledRef.current = true;
+          window.history.replaceState({}, '', `/builder/${p.sessionId}`);
+          setTimeout(() => {
+            handleSendMessage(undefined, initPrompt);
+          }, 100);
+        }
+      }
     });
   }, [params]);
 
@@ -70,7 +91,10 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
 
     const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }];
     setMessages(newMessages);
-    if (!customMsg) setInput('');
+    if (!customMsg) {
+      setInput('');
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    }
     setChatLoading(true);
 
     try {
@@ -84,16 +108,35 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         throw new Error(data.error || "Failed to get response from builder API");
       }
       if (data) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "Thank you for providing those comprehensive specifications! Are there any specific scheduling tools, calendar integrations, or transfer numbers this agent needs to work with?" }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "Thank you for sharing those details! To ensure our prompt is highly detailed and thorough, what exact checklist items or caller details should the agent collect, and what are a couple of common FAQs callers ask?" }]);
         if (data.isReadyToGenerate !== undefined) setIsReady(data.isReadyToGenerate);
         if (data.missingDetails) setMissingDetails(data.missingDetails);
+        
+        let mergedBlueprint = { ...blueprint };
+        let mergedOverrides = { ...overrides };
         if (data.extractedBlueprint) {
-          setBlueprint((prev: any) => ({
-            ...prev,
+          mergedBlueprint = {
+            ...blueprint,
             ...data.extractedBlueprint,
-            business: { ...prev.business, ...(data.extractedBlueprint.business || {}) },
-            mission: { ...prev.mission, ...(data.extractedBlueprint.mission || {}) }
-          }));
+            business: { ...blueprint.business, ...(data.extractedBlueprint.business || {}) },
+            mission: { ...blueprint.mission, ...(data.extractedBlueprint.mission || {}) },
+            conversation: { ...blueprint.conversation, ...(data.extractedBlueprint.conversation || {}) }
+          };
+          setBlueprint(mergedBlueprint);
+          if (data.extractedBlueprint.overrides) {
+            mergedOverrides = {
+              ...overrides,
+              ...(data.extractedBlueprint.overrides || {})
+            };
+            setOverrides(mergedOverrides);
+          }
+        }
+
+        const userAgreed = /\b(yes|generate|go ahead|ready|ok|sure|let's do it|build|looks good|agree|proceed|create|split)\b/i.test(input.trim());
+        if (data.triggerGeneration || ((isReady || data.isReadyToGenerate) && userAgreed)) {
+          setTimeout(() => {
+            handleGeneratePromptPackage(mergedBlueprint, mergedOverrides);
+          }, 300);
         }
       }
     } catch (err) {
@@ -104,13 +147,17 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     }
   };
 
-  const handleGeneratePromptPackage = async () => {
+  const handleGeneratePromptPackage = async (customBlueprint?: any, customOverrides?: any) => {
     setGeneratingDraft(true);
     try {
+      const payload = {
+        ...(customBlueprint || blueprint),
+        overrides: customOverrides || overrides
+      };
       const res = await fetch('/api/builder/generate-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...blueprint, overrides })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data) {
@@ -148,454 +195,210 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-[#0f1117] flex items-center justify-center text-slate-400">Initializing Architect Studio...</div>;
+  if (loading) return <div className="min-h-[80vh] bg-[#040404] flex items-center justify-center text-[#909090] text-sm">Initializing session...</div>;
 
   return (
-    <div className="min-h-screen bg-[#0f1117] text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Top Header */}
-      <header className="border-b border-slate-800 bg-[#161822]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-            <Sparkles className="w-5 h-5 text-white animate-pulse" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
-              AutoPrompt AI Architect
-            </h1>
-            <p className="text-xs text-slate-400">Conversational Prompt Studio & State Machine Splitter</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {isReady && !draft && (
-            <button
-              onClick={handleGeneratePromptPackage}
-              disabled={generatingDraft}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-medium text-sm transition-all duration-200 shadow-lg shadow-emerald-500/20 animate-bounce"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              {generatingDraft ? 'Generating Split Prompts...' : 'Generate Split Prompt Package'}
-            </button>
-          )}
-          {!isReady && !draft && (
-            <button
-              onClick={handleGeneratePromptPackage}
-              disabled={generatingDraft}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 font-medium text-sm transition-all border border-indigo-500/30"
-            >
-              <Sparkles className="w-4 h-4" />
-              {generatingDraft ? 'Generating...' : 'Force Generate Now'}
-            </button>
-          )}
-        </div>
-      </header>
-
+    <div className="flex-1 bg-[#040404] text-[#f3f3f3] flex flex-col font-sans selection:bg-[#ff6c02] selection:text-[#040404]">
       {/* Main Studio Area */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         
-        {/* Chat Conversation Column (2 Cols on desktop when building) */}
-        <div className={`flex flex-col bg-[#161822] border border-slate-800/80 rounded-2xl shadow-2xl overflow-hidden transition-all duration-300 ${draft ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
-          <div className="bg-slate-900/60 border-b border-slate-800 px-4 py-3 flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-2">
-              <Bot className="w-4 h-4 text-indigo-400" /> Requirement Discovery Chat
-            </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">
-              Live Session
-            </span>
-          </div>
+        {/* Chat Conversation Column */}
+        {messages.length === 1 && !chatLoading ? (
+          /* Centered Starting Screen */
+          <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
+            <div className="space-y-6 w-full max-w-3xl text-center">
+              <h1 className="text-[32px] sm:text-[42px] font-semibold text-[#f3f3f3] tracking-tight leading-[1.15]">
+                What kind of Voice AI agent are we building today?
+              </h1>
+              <p className="text-[15px] text-[#909090] max-w-xl mx-auto leading-relaxed">
+                Describe your business workflows, required caller checklist, FAQ answers, and transfer rules. Watch our AI architect a production-grade prompt package.
+              </p>
 
-          {/* Messages Log */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4 max-h-[600px] min-h-[400px]">
-            {messages.map((m, idx) => (
-              <div key={idx} className={`flex items-start gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gradient-to-tr from-indigo-500 to-cyan-500 text-white shadow-md shadow-indigo-500/20'}`}>
-                  {m.role === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
-                </div>
-                <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-800/80 border border-slate-700/50 text-slate-200 rounded-tl-none backdrop-blur-sm'}`}>
-                  {m.content}
-                </div>
-              </div>
-            ))}
-            {chatLoading && (
-              <div className="flex items-center gap-3 text-slate-400 text-xs italic py-2">
-                <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center animate-pulse shrink-0">
-                  <Bot className="w-4 h-4 text-indigo-400" />
-                </div>
-                <span className="animate-pulse">Architect is analyzing your requirements...</span>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* Quick Starter Suggestions */}
-          {messages.length === 1 && (
-            <div className="px-4 py-2 bg-slate-900/40 border-t border-slate-800 flex flex-wrap gap-2 items-center">
-              <span className="text-xs text-slate-400 font-medium mr-1">Suggestions:</span>
-              {[
-                "Dental reception booking & FAQ agent",
-                "Real estate inbound lead qualification",
-                "IT helpdesk ticket dispatcher"
-              ].map((sug, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSendMessage(undefined, sug)}
-                  className="text-xs bg-slate-800 hover:bg-indigo-600/30 hover:border-indigo-500/50 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 transition-all"
+              {/* Dynamic Auto-Expanding Input Bar */}
+              <div className="mt-8 text-left">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }}
+                  className="w-full bg-[#0c0c0c] border border-[#252525] rounded-[16px] p-2 sm:p-3 focus-within:border-[#ff6c02] transition-colors shadow-2xl flex items-center gap-2"
                 >
-                  {sug}
-                </button>
-              ))}
+                  <textarea
+                    ref={textareaRef}
+                    rows={2}
+                    value={input}
+                    onChange={handleInputResize}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    placeholder="Describe your voice agent (e.g. Dental clinic receptionist handling appointments, FAQs, and emergency transfers)..."
+                    disabled={chatLoading}
+                    className="flex-1 bg-transparent border-none px-3 py-2 text-[15px] text-[#f3f3f3] placeholder-[#646464] focus:outline-none resize-none overflow-hidden leading-relaxed"
+                  />
+                  <button
+                    type="submit"
+                    disabled={chatLoading || !input.trim()}
+                    className="bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-40 text-[#040404] font-semibold w-10 h-10 rounded-[10px] flex items-center justify-center transition-colors cursor-pointer shrink-0 mr-0.5"
+                  >
+                    {chatLoading ? (
+                      <div className="w-4 h-4 rounded-full border-2 border-[#040404] border-t-transparent animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
-          )}
-
-          {/* Input Box */}
-          <form onSubmit={handleSendMessage} className="p-3 bg-slate-900/80 border-t border-slate-800 flex gap-2">
-            <input
-              type="text"
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              placeholder="Type your answer or instruction..."
-              disabled={chatLoading}
-              className="flex-1 bg-slate-800/80 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-all"
-            />
-            <button
-              type="submit"
-              disabled={chatLoading || !input.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white p-2.5 rounded-xl flex items-center justify-center transition-all shadow-lg shadow-indigo-600/20 shrink-0"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
-        </div>
-
-        {/* Status / Output Column */}
-        <div className={`flex flex-col gap-6 ${draft ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
-          
-          {!draft ? (
-            /* Requirement Tracker & Blueprint Summary */
-            <div className="bg-[#161822] border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-cyan-400" /> Blueprint Tracker
-                </h3>
-                {isReady ? (
-                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Ready for Generation
-                  </span>
-                ) : (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium">
-                    Gathering Details
-                  </span>
-                )}
-              </div>
-
-              {/* Missing Details Checklist */}
-              <div>
-                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider block mb-2">Required Checklist</span>
-                <div className="space-y-2">
-                  {missingDetails.length === 0 ? (
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      All core requirements captured! You can generate your split prompt now.
-                    </div>
-                  ) : (
-                    missingDetails.map((req, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-xs text-slate-300 bg-slate-900/50 px-3 py-2 rounded-lg border border-slate-800">
-                        <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
-                        <span>Need clarification: <strong className="text-white">{req}</strong></span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              {/* Architecture Info Box */}
-              <div className="bg-gradient-to-br from-indigo-950/40 to-slate-900/60 rounded-xl p-4 border border-indigo-500/20 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
-                  <Layers className="w-4 h-4" /> Split Architecture Engine
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Your prompt will automatically be compiled into two strict layers:
-                </p>
-                <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
-                  <li><strong className="text-slate-200">Agent Prompt:</strong> Editable identity, flow & variable configuration.</li>
-                  <li><strong className="text-slate-200">System Prompt:</strong> Hard gates, pre-turn check & tool definitions (<code className="text-cyan-300">end_call</code>, <code className="text-cyan-300">validate_digit_input</code>).</li>
-                </ul>
-              </div>
-
-              <div className="border border-gray-700 rounded-lg p-4 my-4 bg-gray-900">
-                <button
-                  type="button"
-                  onClick={() => setIsOverridePanelOpen(!isOverridePanelOpen)}
-                  className="w-full flex justify-between items-center font-bold text-white py-2"
-                >
-                  <span>Schema Overrides</span>
-                  <span>{isOverridePanelOpen ? '▴' : '▾'}</span>
-                </button>
-
-                {isOverridePanelOpen && (
-                  <div className="mt-4 border-t border-gray-800 pt-4">
-                    <div className="flex space-x-2 border-b border-gray-800 pb-2">
-                      {(['faq', 'transfer', 'verbatim'] as const).map(tab => (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setActiveOverrideTab(tab)}
-                          className={`px-3 py-1 rounded text-sm ${activeOverrideTab === tab ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`}
-                        >
-                          {tab === 'faq' ? 'FAQ Overrides' : tab === 'transfer' ? 'Transfer Rules' : 'Verbatim Script Lines'}
-                        </button>
-                      ))}
-                    </div>
-
-                    {activeOverrideTab === 'faq' && (
-                      <div className="mt-4 space-y-2">
-                        {(overrides.faqPairs || []).map((faq, idx) => (
-                          <div key={idx} className="flex space-x-2 items-center">
-                            <input
-                              type="text"
-                              placeholder="Question"
-                              value={faq.question}
-                              onChange={e => {
-                                const updated = [...(overrides.faqPairs || [])];
-                                updated[idx] = { ...updated[idx], question: e.target.value };
-                                setOverrides({ ...overrides, faqPairs: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Answer (Verbatim Agent Line)"
-                              value={faq.answer}
-                              onChange={e => {
-                                const updated = [...(overrides.faqPairs || [])];
-                                updated[idx] = { ...updated[idx], answer: e.target.value };
-                                setOverrides({ ...overrides, faqPairs: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = (overrides.faqPairs || []).filter((_, i) => i !== idx);
-                                setOverrides({ ...overrides, faqPairs: updated });
-                              }}
-                              className="text-red-500 px-2 font-bold"
-                            >×</button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setOverrides({ ...overrides, faqPairs: [...(overrides.faqPairs || []), { question: '', answer: '' }] })}
-                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
-                        >+ Add FAQ</button>
-                      </div>
-                    )}
-
-                    {activeOverrideTab === 'transfer' && (
-                      <div className="mt-4 space-y-2">
-                        {(overrides.transferRules || []).map((rule, idx) => (
-                          <div key={idx} className="flex space-x-2 items-center flex-wrap gap-y-2">
-                            <select
-                              value={rule.trigger}
-                              onChange={e => {
-                                const updated = [...(overrides.transferRules || [])];
-                                updated[idx] = { ...updated[idx], trigger: e.target.value as any };
-                                setOverrides({ ...overrides, transferRules: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-sm"
-                            >
-                              <option value="explicit_request">Explicit Request</option>
-                              <option value="intent_fail_count">Intent Fail Count</option>
-                              <option value="frustration_signal">Frustration Signal</option>
-                              <option value="out_of_scope">Out of Scope</option>
-                            </select>
-                            {rule.trigger === 'intent_fail_count' && (
-                              <input
-                                type="number"
-                                placeholder="Thresh"
-                                value={rule.threshold || ''}
-                                onChange={e => {
-                                  const updated = [...(overrides.transferRules || [])];
-                                  updated[idx] = { ...updated[idx], threshold: parseInt(e.target.value) || undefined };
-                                  setOverrides({ ...overrides, transferRules: updated });
-                                }}
-                                className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-16 text-white text-sm"
-                              />
-                            )}
-                            <input
-                              type="text"
-                              placeholder="Phone (E.164)"
-                              value={rule.transferPhoneNumber}
-                              onChange={e => {
-                                const updated = [...(overrides.transferRules || [])];
-                                updated[idx] = { ...updated[idx], transferPhoneNumber: e.target.value };
-                                setOverrides({ ...overrides, transferRules: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-32 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Department"
-                              value={rule.transferDepartment || ''}
-                              onChange={e => {
-                                const updated = [...(overrides.transferRules || [])];
-                                updated[idx] = { ...updated[idx], transferDepartment: e.target.value };
-                                setOverrides({ ...overrides, transferRules: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 w-28 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Say Before Transfer"
-                              value={rule.sayBeforeTransfer}
-                              onChange={e => {
-                                const updated = [...(overrides.transferRules || [])];
-                                updated[idx] = { ...updated[idx], sayBeforeTransfer: e.target.value };
-                                setOverrides({ ...overrides, transferRules: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = (overrides.transferRules || []).filter((_, i) => i !== idx);
-                                setOverrides({ ...overrides, transferRules: updated });
-                              }}
-                              className="text-red-500 px-2 font-bold"
-                            >×</button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setOverrides({ ...overrides, transferRules: [...(overrides.transferRules || []), { trigger: 'explicit_request', transferPhoneNumber: '', sayBeforeTransfer: '' }] })}
-                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
-                        >+ Add Transfer Rule</button>
-                      </div>
-                    )}
-
-                    {activeOverrideTab === 'verbatim' && (
-                      <div className="mt-4 space-y-2">
-                        {(overrides.verbatimLines || []).map((v, idx) => (
-                          <div key={idx} className="flex space-x-2 items-center">
-                            <input
-                              type="text"
-                              placeholder="Step Label (e.g. COLLECT VERIFICATION)"
-                              value={v.stepLabel}
-                              onChange={e => {
-                                const updated = [...(overrides.verbatimLines || [])];
-                                updated[idx] = { ...updated[idx], stepLabel: e.target.value };
-                                setOverrides({ ...overrides, verbatimLines: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Exact Spoken Line"
-                              value={v.exactLine}
-                              onChange={e => {
-                                const updated = [...(overrides.verbatimLines || [])];
-                                updated[idx] = { ...updated[idx], exactLine: e.target.value };
-                                setOverrides({ ...overrides, verbatimLines: updated });
-                              }}
-                              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 flex-1 text-white text-sm"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = (overrides.verbatimLines || []).filter((_, i) => i !== idx);
-                                setOverrides({ ...overrides, verbatimLines: updated });
-                              }}
-                              className="text-red-500 px-2 font-bold"
-                            >×</button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => setOverrides({ ...overrides, verbatimLines: [...(overrides.verbatimLines || []), { stepLabel: '', exactLine: '' }] })}
-                          className="bg-gray-800 hover:bg-gray-700 text-blue-400 text-xs px-3 py-1 rounded mt-2"
-                        >+ Add Custom Line</button>
-                      </div>
-                    )}
+          </div>
+        ) : (
+          <div className={`flex flex-col bg-[#0c0c0c] border border-[#252525] rounded-[12px] overflow-hidden transition-all duration-300 ${(draft || generatingDraft) ? 'lg:col-span-1' : 'lg:col-span-3'}`}>
+            {/* Messages Log */}
+            <div className="flex-1 p-5 overflow-y-auto space-y-4 max-h-[650px] min-h-[450px]">
+              {messages.map((m, idx) => (
+                <div key={idx} className={`flex items-start gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${m.role === 'user' ? 'bg-[#1b1b1b] border border-[#303030] text-[#f3f3f3]' : 'bg-[#ff6c02] text-[#040404]'}`}>
+                    {m.role === 'user' ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
                   </div>
-                )}
-              </div>
+                  <div className={`max-w-[82%] rounded-[12px] px-4 py-3 text-[14px] leading-relaxed border ${m.role === 'user' ? 'bg-[#1b1b1b] border-[#303030] text-[#f3f3f3]' : 'bg-[#121212] border-[#252525] text-[#dedede]'}`}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex items-center gap-3 text-[#909090] text-xs py-2">
+                  <div className="w-7 h-7 rounded-full bg-[#121212] border border-[#252525] flex items-center justify-center animate-pulse shrink-0">
+                    <Bot className="w-3.5 h-3.5 text-[#ff6c02]" />
+                  </div>
+                  <span className="animate-pulse">Thinking...</span>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
 
-              <div className="pt-2">
+            {/* Dynamic Input Box for Ongoing Chat */}
+            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="p-3 bg-[#0c0c0c] border-t border-[#252525] flex flex-col gap-2">
+              <div className="flex items-center gap-2 bg-[#1b1b1b] border border-[#252525] focus-within:border-[#ff6c02] rounded-[8px] p-2 transition-colors">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={input}
+                  onChange={handleInputResize}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  placeholder="Type your answer or instruction..."
+                  disabled={chatLoading}
+                  className="flex-1 bg-transparent border-none px-2 py-1 text-sm text-[#f3f3f3] placeholder-[#646464] focus:outline-none resize-none overflow-hidden leading-relaxed"
+                />
                 <button
-                  onClick={handleGeneratePromptPackage}
-                  disabled={generatingDraft}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-semibold text-sm transition-all shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2"
+                  type="submit"
+                  disabled={chatLoading || !input.trim()}
+                  className="bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-50 text-[#040404] px-3 py-2 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer shrink-0 font-medium"
                 >
-                  <Sparkles className="w-4 h-4" />
-                  {generatingDraft ? 'Compiling Split Package...' : 'Generate Split Prompt Package'}
+                  <Send className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          ) : (
-            /* Prompt Package Preview Tabs */
-            <div className="bg-[#161822] border border-slate-800/80 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 h-full">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div>
-                  <h3 className="font-bold text-base text-white flex items-center gap-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Generated Split Prompt Package
-                  </h3>
-                  <p className="text-xs text-slate-400">Review your separated Agent and System instructions below.</p>
+            </form>
+          </div>
+        )}
+
+        {/* Output Column (Visible when generating or generated) */}
+        {(draft || generatingDraft) && (
+          <div className="flex flex-col gap-6 lg:col-span-2">
+            {generatingDraft && !draft ? (
+              /* Loading Window */
+              <div className="bg-[#0c0c0c] border border-[#252525] rounded-[12px] flex flex-col h-full min-h-[500px] overflow-hidden">
+                <div className="bg-[#121212] px-4 py-3 border-b border-[#252525] flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-[#ff6c02] animate-ping" />
+                  <span className="text-xs font-medium text-[#dedede]">Prompt Studio Preview</span>
                 </div>
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
+                  <div className="w-8 h-8 rounded-full border-2 border-[#ff6c02] border-t-transparent animate-spin" />
+                  <h3 className="text-base font-semibold text-[#f3f3f3]">Compiling Prompt Package...</h3>
+                  <p className="text-sm text-[#909090] max-w-md">Splitting your requirements into distinct Agent Persona tabs and strict System rules.</p>
+                </div>
+              </div>
+            ) : draft ? (
+            /* Split Prompts Studio Window */
+            <div className="bg-[#0c0c0c] border border-[#252525] rounded-[12px] flex flex-col h-full overflow-hidden">
+              {/* Top Title Bar */}
+              <div className="bg-[#121212] px-4 pt-3 pb-2 border-b border-[#252525] flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <span className="w-2 h-2 rounded-full bg-[#ff6c02]" />
+                  <span className="text-xs font-semibold text-[#f3f3f3] flex items-center gap-1.5">
+                    Split Prompts Studio
+                  </span>
+                </div>
+
                 <button
                   onClick={handleCreateProject}
                   disabled={creatingProject}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm transition-all shadow-lg shadow-emerald-600/25 flex items-center gap-2"
+                  className="px-4 py-1.5 rounded-[4px] bg-[#ff6c02] hover:bg-[#ff8025] text-[#f3f3f3] font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  {creatingProject ? 'Saving...' : 'Finalize & Open Workspace'}
-                  <ArrowRight className="w-4 h-4" />
+                  {creatingProject ? 'Saving...' : 'Finalize Workspace'}
+                  <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
 
-              {/* Tabs */}
-              <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 self-start">
+              {/* Tabs Bar */}
+              <div className="bg-[#121212] px-3 pt-2 border-b border-[#252525] flex items-center gap-1 overflow-x-auto">
                 <button
                   onClick={() => setActiveTab('agent')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'agent' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'agent' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
                 >
-                  <User className="w-3.5 h-3.5" /> Agent Prompt (User Editable)
+                  <span>Agent Prompt.tab</span>
+                  {activeTab === 'agent' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
                 </button>
                 <button
                   onClick={() => setActiveTab('system')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'system' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'system' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
                 >
-                  <ShieldAlert className="w-3.5 h-3.5" /> System Prompt (Hard Rules)
+                  <span>System Prompt.tab</span>
+                  {activeTab === 'system' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
                 </button>
                 <button
                   onClick={() => setActiveTab('combined')}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${activeTab === 'combined' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'combined' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
                 >
-                  <Layers className="w-3.5 h-3.5" /> Combined Final Prompt
+                  <span>Combined Final.tab</span>
+                  {activeTab === 'combined' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
                 </button>
               </div>
 
-              {/* Tab Content */}
-              <div className="flex-1 bg-slate-950/80 border border-slate-800 rounded-xl p-4 font-mono text-xs text-slate-300 overflow-y-auto max-h-[500px] whitespace-pre-wrap leading-relaxed selection:bg-indigo-500 selection:text-white">
-                {activeTab === 'agent' && draft.agentPrompt}
-                {activeTab === 'system' && draft.systemPrompt}
-                {activeTab === 'combined' && `${draft.agentPrompt}\n\n${draft.systemPrompt}`}
-              </div>
-
-              {/* Tool Registry Badge List */}
-              <div className="pt-2 border-t border-slate-800/80">
-                <span className="text-xs font-semibold text-slate-400 block mb-2">Embedded Tools & Handlers Registered:</span>
-                <div className="flex flex-wrap gap-2">
-                  {draft.suggestedFunctions?.map((f, i) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-indigo-950/60 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-lg font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                      {f.name}
-                    </span>
-                  ))}
+              {/* Tab Content Window */}
+              <div className="p-5 flex-1 flex flex-col gap-4 bg-[#0c0c0c]">
+                <div className="flex-1 bg-[#040404] border border-[#252525] rounded-[8px] p-4 font-mono text-xs text-[#dedede] overflow-y-auto max-h-[500px] whitespace-pre-wrap leading-relaxed selection:bg-[#ff6c02] selection:text-[#040404]">
+                  {activeTab === 'agent' && draft.agentPrompt}
+                  {activeTab === 'system' && draft.systemPrompt}
+                  {activeTab === 'combined' && `${draft.agentPrompt}\n\n${draft.systemPrompt}`}
                 </div>
-              </div>
 
+                {/* Tool Registry Badge List */}
+                {draft.suggestedFunctions && draft.suggestedFunctions.length > 0 && (
+                  <div className="pt-3 border-t border-[#252525]">
+                    <span className="text-xs font-medium text-[#909090] block mb-2">Embedded Tools Registered:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {draft.suggestedFunctions.map((f, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-transparent text-[#55c2ff] border border-[#55c2ff]/40 px-3 py-1 rounded-full font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#55c2ff]" />
+                          {f.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+          ) : null}
 
         </div>
+        )}
 
       </div>
     </div>

@@ -156,6 +156,13 @@ export interface PromptPackageDraft {
   verbatimLines?: { stepLabel: string; exactLine: string }[];
   transferConditions?: TransferCondition[];
   callFlowSteps?: any[];
+  emergencyTriggers?: string[];
+  outOfScopeTopics?: string[];
+  guardrails?: {
+    emergencyTriggers?: string[];
+    emergencyAction?: string;
+    prohibitions?: string[];
+  };
   systemPromptCompiled?: boolean;
 }
 
@@ -218,6 +225,7 @@ export interface ChatMessage {
 export interface BuilderChatTurnResponse {
   reply: string;
   isReadyToGenerate: boolean;
+  triggerGeneration?: boolean;
   extractedBlueprint: Partial<BlueprintJson>;
   missingDetails: string[];
 }

@@ -3,31 +3,6 @@ import { SafetyCompiler } from "@/lib/compiler/compilers/SafetyCompiler";
 import { VoiceAgentIR } from "@/lib/compiler/ir/IntermediateRepresentation";
 import { PromptPackageDraft } from "@/lib/llm/types";
 
-const HARDCODED_EMERGENCY_BLOCK = `
-### MANDATORY EMERGENCY & SCOPE GUARDRAILS — IMMUTABLE
-
-EMERGENCY DETECTION (ANY of the following triggers immediate redirect):
-- Caller mentions chest pain, difficulty breathing, loss of consciousness
-- Caller mentions self-harm, suicidal thoughts, or harming others
-- Caller mentions severe bleeding, stroke symptoms, or allergic reaction
-- Caller says "emergency", "911", "ambulance", or "dying"
-
-ON EMERGENCY DETECTION — stop ALL current flow immediately:
-Say: "If this is a medical emergency, please call 911 or your local emergency number right away."
-Do NOT collect any further information.
-Do NOT continue the call flow.
-Do NOT ask clarifying questions.
-Wait for the caller to confirm safety before resuming any task.
-
-ABSOLUTE PROHIBITIONS:
-- Never provide a medical diagnosis, treatment recommendation, or triage assessment
-- Never confirm or deny what an insurance plan covers
-- Never invent clinic policies, staff names, or availability not defined in this prompt
-- Never advise on medication dosages, drug interactions, or symptoms
-- Never store, repeat, or confirm sensitive data (SSN, card numbers) if volunteered
-
-Violation of any prohibition above ends the call immediately.
-`.trim();
 
 interface DynamicVariable {
   key: string;
@@ -97,15 +72,69 @@ function buildAiIdentitySection(agentName: string = "Virtual Assistant"): string
   return `### AI IDENTITY DISCLOSURE\n\nMandatory disclosure: If asked if you are a robot or AI, state clearly: Say: "I am ${agentName}, an automated voice assistant helping you today."\n`;
 }
 
-function buildOffTopicSection(): string {
+function buildOffTopicSection(ir: VoiceAgentIR, draft?: any): string {
+  const goal = draft?.primaryGoal || ir?.mission?.goal || ir?.meta?.role || "your primary request";
+  const outOfScopeList = draft?.outOfScopeTopics || draft?.guardrails?.outOfScopeTopics;
+  const outOfScopeText = Array.isArray(outOfScopeList) && outOfScopeList.length > 0
+    ? outOfScopeList.slice(0, 3).join(", ")
+    : "matters outside this task";
+
   return `### OFF-TOPIC HANDLING
 
 RULES FOR OFF-TOPIC DEFLECTION:
-- If the caller asks about topics unrelated to this call's primary goal, deflect politely back to the task.
-- First instance (Strike 1): Say: "I'm only equipped to assist with your appointment scheduling today. Shall we continue with that?"
+- If the caller asks about topics unrelated to this call's primary goal (${goal}), deflect politely back to the task.
+- First instance (Strike 1): Say: "I'm only equipped to assist with ${goal} today. Shall we continue with that?"
 - Second instance on same subject (Strike 2): Say: "I don't have information on that topic, but I can help you complete your request right now. Would you like to proceed?"
-- Third total instance (Call Close): If the caller persists on unrelated subjects a third time, conclude the call.
-Say: "It sounds like you need assistance with matters outside my scope today. Thank you for calling, and please reach out to our main support line for further help. Goodbye."`;
+- Third total instance (Call Close): If the caller persists on unrelated subjects (${outOfScopeText}) a third time, conclude the call.
+Say: "It sounds like you need assistance with matters outside my scope today. Thank you for calling, and please reach out to our support line for further help. Goodbye."`;
+}
+
+function buildDynamicGuardrailsSection(ir: VoiceAgentIR, draft?: any): string {
+  const company = ir?.meta?.companyName || "the organization";
+  const role = ir?.meta?.role || ir?.mission?.goal || "automated assistant";
+  const scope = ir?.meta?.contextScope || "assigned workflows";
+
+  const rawTriggers = draft?.guardrails?.emergencyTriggers || draft?.emergencyTriggers;
+  const customTriggers: string[] = Array.isArray(rawTriggers) && rawTriggers.length > 0
+    ? rawTriggers
+    : [
+        `Caller reports an urgent crisis, physical emergency, or immediate threat to safety relevant to ${scope}`,
+        `Caller expresses severe distress requiring urgent emergency services (police, fire, ambulance)`,
+        `Caller states "emergency", "911", "help me immediately", or demands urgent crisis intervention`
+      ];
+
+  const emergencyAction = draft?.guardrails?.emergencyAction || `Say: "If you are experiencing an immediate emergency or crisis, please hang up and contact 911 or your local emergency services right away."`;
+
+  const rawProhibitions = draft?.guardrails?.prohibitions || draft?.prohibitions;
+  const customProhibitions: string[] = Array.isArray(rawProhibitions) && rawProhibitions.length > 0
+    ? rawProhibitions
+    : [
+        `Never disclose confidential records, account details, or unverified information to unauthorized callers`,
+        `Never invent pricing, policies, operational procedures, or staff names not explicitly defined in this prompt`,
+        `Never make binding legal, contractual, or financial commitments on behalf of ${company}`,
+        `Never provide advice or instructions outside the designated scope of ${role}`,
+        `Never store, repeat, or confirm sensitive identity or payment data (SSN, credit cards, CVV, passwords) if volunteered`
+      ];
+
+  const triggersFormatted = customTriggers.map(t => typeof t === 'string' ? (t.startsWith('- ') ? t : `- ${t}`) : `- Urgent emergency condition`).join('\n');
+  const prohibitionsFormatted = customProhibitions.map(p => typeof p === 'string' ? (p.startsWith('- ') ? p : `- ${p}`) : `- Strict scope adherence`).join('\n');
+
+  return `### MANDATORY EMERGENCY & SCOPE GUARDRAILS — IMMUTABLE
+
+EMERGENCY & CRISIS DETECTION (ANY of the following triggers immediate redirect):
+${triggersFormatted}
+
+ON EMERGENCY DETECTION — stop ALL current flow immediately:
+${emergencyAction}
+Do NOT collect any further information.
+Do NOT continue the call flow.
+Do NOT ask clarifying questions.
+Wait for the caller to confirm safety before resuming any task.
+
+ABSOLUTE PROHIBITIONS:
+${prohibitionsFormatted}
+
+Violation of any prohibition above ends the call immediately.`.trim();
 }
 
 function buildEndingRuleSection(): string {
@@ -125,10 +154,10 @@ export class PromptAssembler {
       buildVoiceRulesSection(),
       buildToolFunctionExecutionSection(ir),
       new SafetyCompiler().buildOperationalScopeGuardrails(ir),
-      HARDCODED_EMERGENCY_BLOCK,
+      buildDynamicGuardrailsSection(ir, actualDraft),
       buildClosingRulesSection(),
       buildAiIdentitySection(ir.identity?.name ?? ir.meta?.agentName ?? "Virtual Assistant"),
-      buildOffTopicSection(),
+      buildOffTopicSection(ir, actualDraft),
       buildEndingRuleSection()
     ];
     return sections.filter(Boolean).join('\n\n');
