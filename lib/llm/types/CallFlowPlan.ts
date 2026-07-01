@@ -6,6 +6,7 @@ export interface CallFlowStep {
   generatedLine: string;
   branchingConditions: Array<{ condition: string; goToStep: number | 'end_call' | 'transfer' }>;
   fallbackBehavior: string;
+  maxRetries?: number;
 }
 
 export interface CallFlowPlan {

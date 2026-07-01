@@ -20,7 +20,6 @@ import {
 } from './types';
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
-import { validateCallFlowPlan } from "@/lib/pipeline/validators/CallFlowValidator";
 
 if (!process.env.GEMINI_API_KEY) {
   throw new Error("FATAL: GEMINI_API_KEY is missing. The compiler cannot run.");
@@ -165,8 +164,18 @@ export class GeminiProvider implements LlmService {
 
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
     const { overrides, ...llmInput } = input;
-    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string"}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
-    const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.\nOutput ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}\nBusiness input:\n${JSON.stringify(llmInput, null, 2)}`;
+    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
+    const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
+Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
+
+MANDATORY RULES FOR CALL FLOW GENERATION:
+1. MULTI-REQUEST ROUTING: If the business handles multiple request types, generate a ROUTE BY REQUEST TYPE step with sub-flows for each intent.
+2. CONFIRMATION READ-BACK: The second-to-last step MUST be a CONFIRM ALL DETAILS step that reads back every collected variable using {{variable_name}} syntax.
+3. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
+4. RETRY LIMITS: Each step that collects information must include maxRetries: 3.
+5. EDGE-CASE BRANCHES: Generate branches for: silence timeout, past dates, caller upset/frustrated, mid-flow transfer request, audio dropout.
+
+Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt);
     let plan: CallFlowPlan;
     try {
@@ -174,9 +183,18 @@ export class GeminiProvider implements LlmService {
     } catch {
       throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
     }
-    validateCallFlowPlan(plan);
     const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
-    const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}\nGenerate custom, unbiased guardrails (emergencyTriggers, emergencyAction, prohibitions) tailored strictly and specifically to this exact business use case and domain. Do NOT use generic or medical rules unless appropriate for this specific task.\nSystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
+    const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
+
+FAQ GENERATION RULE: Generate 8-12 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.
+
+GUARDRAIL GENERATION RULES:
+1. Generate 5-8 guardrails specific to THIS exact business.
+2. Each guardrail must be ENFORCEABLE with specific sub-cases.
+3. Include at least 2 BEHAVIORAL guardrails (what to DO, not just prohibitions).
+4. Include an INVENTION prohibition specific to this business.
+
+SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Raw = await this.generateRaw(pass2Prompt);
     let draft: PromptPackageDraft;
     try {
@@ -209,12 +227,12 @@ export class GeminiProvider implements LlmService {
 
   async generateAgentPrompt(input: BlueprintJson): Promise<string> {
     const draft = await this.generateReviewDraft(input);
-    return draft.agentPrompt;
+    return draft.finalPrompt || draft.agentPrompt || "";
   }
 
   async generateSystemPrompt(input: BlueprintJson): Promise<string> {
     const draft = await this.generateReviewDraft(input);
-    return draft.systemPrompt;
+    return draft.finalPrompt || draft.systemPrompt || "";
   }
 
   async extractDynamicVariables(input: BlueprintJson): Promise<DynamicVariableSpec[]> {
@@ -277,16 +295,31 @@ CURRENT BLUEPRINT STATE:
 ${JSON.stringify(currentBlueprint, null, 2)}
 
 CRITICAL INTERVIEW & ARCHITECTURE INSTRUCTIONS:
-1. INTELLIGENT, DOMAIN-SPECIFIC FOLLOW-UPS: Analyze the user's prompt deeply. Do NOT ask shallow, generic questions like "What is the name of your clinic and which booking system should it integrate with?". Instead, ask important follow-up questions tailored specifically to the user's exact domain, use case, and industry. For example, if they want a clinic receptionist, inquire about what specific appointments or inquiries it handles (e.g., check-ups, insurance verification, rescheduling). If customer support, inquire about common support workflows (e.g., refunds, troubleshooting, order tracking). Adapt dynamically to whatever specific domain they provide.
-2. HIGH-IMPORTANCE DETAILS TO DISCOVER: To generate a superior, highly detailed prompt, give HIGH IMPORTANCE to collecting the following details across consecutive conversation turns:
-   - Specific Workflows & Edge Cases handled by the agent.
-   - Required Checklist / Caller Data Slots: What exact information must the agent collect or verify from the caller during the call (e.g., full name, reference ID, phone number)?
-   - FAQ Details: What are 2-3 specific questions callers commonly ask, and what exact answers should the agent provide?
-   - Transfer & Escalation Rules: When should the agent transfer the call to a human representative, what conditions trigger escalation, and what phone number or department should it transfer to?
-3. TURN-TAKING RULE: Keep your conversational reply warm, professional, and concise (2 to 3 sentences maximum). Warmly acknowledge any specific details the user just provided before asking your next follow-up question. Ask exactly ONE clear, targeted question per turn so the user can answer easily without feeling overwhelmed. Never repeat questions already answered.
-4. COMPLETION DETECTION: Set "isReadyToGenerate" to false until you have successfully gathered sufficient detail across the high-importance categories (Workflows, Required Checklist/Slots, FAQ details, Transfer/Escalation rules). Only set "isReadyToGenerate" to true once these core details are collected, OR if the user provided an exceptionally detailed prompt that already covers them. When true, warmly announce that you have all the high-importance details needed to build a highly detailed prompt package, and invite them to generate it or add any final touches!
-5. EXTRACTION & MISSING DETAILS: Populate "extractedBlueprint" with all discovered structure (business name, industry, mission goals, supported intents, required checklist items, FAQ cards array, transfer conditions). In "missingDetails", list the specific high-importance areas still needed (e.g. ["FAQ details", "Transfer rules", "Required caller checklist"]). If all are gathered, return [].
-6. TRIGGER GENERATION: If you have set "isReadyToGenerate" to true (or previously asked if they want to generate the prompt), AND the user in their latest message agrees or confirms to generate the prompt (e.g. saying "yes", "go ahead", "generate", "ready", "looks good", "let's build it"), you MUST set "triggerGeneration" to true! Otherwise set it to false.
+INTAKE FRAMEWORK — you must cover these 8 categories across the conversation.
+For each uncovered category, generate ONE natural question in the user's domain language. Do NOT ask meta-questions about prompts — ask about the user's business reality.
+
+[1] REQUEST TYPES & SUB-FLOWS (request_types): What distinct request types does this agent handle? Is this inbound, outbound, or both?
+[2] CALLER SEGMENTATION (caller_segmentation): Any meaningful caller type distinctions that change the flow? (new vs returning, verified vs unverified)
+[3] OPERATIONAL CONTEXT (operational_context): What facts does the agent need to answer common questions? (hours, location, policies, confirmation method)
+[4] DATA COLLECTION SLOTS (data_collection): What information must the agent collect, in what order, with what validation?
+[5] ESCALATION & TRANSFER (escalation_triggers): When should the agent stop and transfer? What conditions, number, department?
+[6] FORBIDDEN ACTIONS (forbidden_actions): What must the agent absolutely never do, say, or promise?
+[7] FAQ CONTENT (faq_content): Top 3-5 caller questions with exact answers.
+[8] POST-CALL OUTCOME (post_call_action): What happens after the call? (text, email, callback, human review)
+
+QUESTION STYLE:
+INSTEAD OF: "What checklist items should the agent collect?"
+ASK: "Walk me through a perfect call from start to finish — what information does the agent gather along the way?"
+
+INSTEAD OF: "What are your guardrails?"
+ASK: "What are the two or three things your agent should absolutely never say or do, even if a caller pushes hard?"
+
+Also ask once (not a category):
+- Target deployment platform (Bland, Retell, Vapi, or generic)?
+- Any silence timeout or barge-in preferences?
+
+In "missingDetails", return the IDs of categories not yet covered ("request_types", "caller_segmentation", "operational_context", "data_collection", "escalation_triggers", "forbidden_actions", "faq_content", "post_call_action").
+Set "isReadyToGenerate" only when ALL 8 required categories are populated or clearly addressed.
 
 Return ONLY valid JSON matching the exact schema:
 {
@@ -294,23 +327,23 @@ Return ONLY valid JSON matching the exact schema:
   "isReadyToGenerate": boolean,
   "triggerGeneration": boolean,
   "extractedBlueprint": {
-    "business": { "businessName": "", "industry": "", "description": "" },
+    "business": { "businessName": "", "industry": "", "description": "", "operatingHours": "", "address": "", "confirmationMethod": "", "policies": [], "targetPlatform": "", "callRecordingDisclosure": false, "proactiveAiDisclosure": false },
     "mission": { "primaryGoal": "", "supportedIntents": [], "requiredInformation": [] },
     "personality": { "tone": "" },
     "conversation": { "opening": "", "faqCards": [{ "question": "", "answer": "" }] },
     "overrides": { "faqPairs": [{ "question": "", "answer": "" }], "transferRules": [{ "trigger": "explicit_request", "transferPhoneNumber": "", "sayBeforeTransfer": "" }] }
   },
-  "missingDetails": ["Remaining high importance items"]
+  "missingDetails": ["request_types", "caller_segmentation", "operational_context", "data_collection", "escalation_triggers", "forbidden_actions", "faq_content", "post_call_action"]
 }`;
 
     const res = await this.generateJson<BuilderChatTurnResponse>(prompt);
     if (!res || !res.reply) {
       return {
-        reply: "Thank you for sharing those details! To ensure our prompt is highly detailed and thorough, what exact checklist items or caller details should the agent collect, and what are a couple of common FAQs callers ask?",
-        isReadyToGenerate: messages.length >= 5,
+        reply: "Thank you for sharing those details! Walk me through a perfect call from start to finish — what information does the agent gather along the way?",
+        isReadyToGenerate: false,
         triggerGeneration: false,
         extractedBlueprint: currentBlueprint,
-        missingDetails: ["Required Checklist slots", "FAQ details", "Transfer/Escalation rules"]
+        missingDetails: ["request_types", "caller_segmentation", "operational_context", "data_collection", "escalation_triggers", "forbidden_actions", "faq_content", "post_call_action"]
       };
     }
     return res;

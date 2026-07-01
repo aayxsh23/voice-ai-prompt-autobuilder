@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export interface BusinessSnapshot {
   businessName?: string;
   companyName?: string;
@@ -9,6 +11,14 @@ export interface BusinessSnapshot {
   callerTypes?: string[];
   conversationDirection?: 'inbound' | 'outbound' | 'both' | string;
   operatingHours?: string;
+  address?: string;
+  confirmationMethod?: string;
+  policies?: string[];
+  targetPlatform?: 'bland' | 'retell' | 'vapi' | 'generic' | string;
+  silencePreferences?: string;
+  bargeInPreferences?: string;
+  callRecordingDisclosure?: boolean;
+  proactiveAiDisclosure?: boolean;
   languageStyle?: string;
   sensitiveTopics?: string[];
   restrictedClaims?: string[];
@@ -142,8 +152,10 @@ export interface TestScenarioSpec {
 }
 
 export interface PromptPackageDraft {
-  agentPrompt: string;
-  systemPrompt: string;
+  finalPrompt: string;
+  businessSpec?: BusinessSpecification;
+  agentPrompt?: string;
+  systemPrompt?: string;
   dynamicVariables: DynamicVariableSpec[];
   suggestedFunctions: SuggestedFunctionSpec[];
   knowledgeBaseSuggestions: { title: string; content: string; category: string }[];
@@ -164,6 +176,11 @@ export interface PromptPackageDraft {
     prohibitions?: string[];
   };
   systemPromptCompiled?: boolean;
+  operationalContext?: Record<string, string>;
+  validationStatus?: 'success' | 'warning' | 'failed_review_required';
+  validationErrors?: string[];
+  validationWarnings?: string[];
+  requiresHumanReview?: boolean;
 }
 
 export interface SimulationTurnInput {
@@ -269,3 +286,106 @@ export function safeParseJson<T>(raw: string, fallback: T): T {
 }
 
 export * from './types/CallFlowPlan';
+
+export interface BusinessSpecification {
+  meta: {
+    companyName: string;
+    agentName: string;
+    industry: string;
+    isRegulated: boolean;
+    toneProfile: string[];
+    primaryGoal: string;
+  };
+  businessSnapshot: {
+    operatingHours: string;
+    servicesOffered: string[];
+    policies: {
+      cancellation: string;
+      refunds: string;
+      escalationNumbers: string[];
+    };
+  };
+  callFlowPlan: {
+    steps: Array<{
+      sequenceOrder: number;
+      stateId: string;
+      stateName: string;
+      scriptDirective: string;
+      slotsToCollect: string[];
+      isFallback?: boolean;
+    }>;
+  };
+  knowledgeBase: {
+    faqs: Array<{ question: string; answer: string; isFallback?: boolean }>;
+    objections: Array<{ trigger: string; response: string; isFallback?: boolean }>;
+  };
+  tools: Array<{
+    name: string;
+    description: string;
+    parameters: Record<string, any>;
+    associatedStateId: string;
+  }>;
+  extractedEntities?: {
+    departments: string[];
+    namedContacts: Array<{ label: string; value: string }>;
+    servicesOrOfferings: string[];
+  };
+  resolvedTopics?: string[];
+  capturedTopics?: Array<{ topic: string; summary: string }>;
+}
+
+export const businessSpecificationSchema = z.object({
+  meta: z.object({
+    companyName: z.string().default("Enterprise Client"),
+    agentName: z.string().default("Voice Assistant"),
+    industry: z.string().default("General"),
+    isRegulated: z.boolean().default(false),
+    toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
+    primaryGoal: z.string().default("Assist callers effectively")
+  }),
+  businessSnapshot: z.object({
+    operatingHours: z.string().default("Standard Business Hours"),
+    servicesOffered: z.array(z.string()).default([]),
+    policies: z.object({
+      cancellation: z.string().default("Standard cancellation policy applies."),
+      refunds: z.string().default("Standard refund policy applies."),
+      escalationNumbers: z.array(z.string()).default([])
+    })
+  }),
+  callFlowPlan: z.object({
+    steps: z.array(z.object({
+      sequenceOrder: z.number(),
+      stateId: z.string(),
+      stateName: z.string(),
+      scriptDirective: z.string(),
+      slotsToCollect: z.array(z.string()).default([]),
+      isFallback: z.boolean().optional()
+    })).default([])
+  }),
+  knowledgeBase: z.object({
+    faqs: z.array(z.object({
+      question: z.string(),
+      answer: z.string(),
+      isFallback: z.boolean().optional()
+    })).default([]),
+    objections: z.array(z.object({
+      trigger: z.string(),
+      response: z.string(),
+      isFallback: z.boolean().optional()
+    })).default([])
+  }),
+  tools: z.array(z.object({
+    name: z.string(),
+    description: z.string(),
+    parameters: z.record(z.string(), z.any()).default({}),
+    associatedStateId: z.string()
+  })).default([]),
+  extractedEntities: z.object({
+    departments: z.array(z.string()).default([]),
+    namedContacts: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
+    servicesOrOfferings: z.array(z.string()).default([])
+  }).optional(),
+  resolvedTopics: z.array(z.string()).default([]).optional(),
+  capturedTopics: z.array(z.object({ topic: z.string(), summary: z.string() })).default([]).optional()
+});
+

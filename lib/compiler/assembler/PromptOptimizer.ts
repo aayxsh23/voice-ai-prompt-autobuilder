@@ -7,12 +7,12 @@ export const geminiClient = {
 };
 
 const FROZEN_SECTION_PATTERNS = [
-  /### CALL FLOW[\s\S]*?(?=\n###|\n---|$)/,
-  /### FAQ & KNOWLEDGE DEFLECTION[\s\S]*?(?=\n###|\n---|$)/,
-  /### OBJECTION HANDLING[\s\S]*?(?=\n###|\n---|$)/,
-  /### MANDATORY EMERGENCY[\s\S]*?(?=\n###|\n---|$)/,
-  /### CLOSING RULES[\s\S]*?(?=\n###|\n---|$)/,
-  /### ENDING RULE[\s\S]*?(?=\n###|\n---|$)/,
+  /^### CALL FLOW\n[\s\S]*?(?=\n^### )/m,
+  /^### FAQ[\s\S]*?(?=\n^### )/m,
+  /^### OBJECTION[\s\S]*?(?=\n^### )/m,
+  /^### MANDATORY EMERGENCY[\s\S]*?(?=\n^### )/m,
+  /^### CLOSING RULES[\s\S]*?(?=\n^### )/m,
+  /^### ENDING RULE[\s\S]*?$/m,
 ];
 
 function freezeSections(prompt: string): { sanitized: string; frozen: Map<string, string> } {

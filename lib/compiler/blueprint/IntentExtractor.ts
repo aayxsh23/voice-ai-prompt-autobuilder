@@ -20,7 +20,8 @@ export class IntentExtractor {
         stateName: "Greeting & Verification",
         explicitDialogueScript: 'Say: "Hello {{Customer_Name}}, calling from our operations desk. How can I assist you today?"',
         slotsToCollect: [],
-        fallbackBehavior: "Re-state company identity and ask how to help."
+        fallbackBehavior: "Re-state company identity and ask how to help.",
+        isFallback: true
       },
       {
         sequenceOrder: 2,
@@ -28,7 +29,8 @@ export class IntentExtractor {
         stateName: "Requirement Collection",
         explicitDialogueScript: 'Say: "Could you please provide your 10-digit callback phone number or reference ID?"',
         slotsToCollect: ["phone_number"],
-        fallbackBehavior: "Offer to connect with a human dispatcher if caller cannot locate ID."
+        fallbackBehavior: "Offer to connect with a human dispatcher if caller cannot locate ID.",
+        isFallback: true
       }
     ];
 

@@ -13,8 +13,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const result = await llm.simulatePromptTurn({
       callerMessage: body.callerMessage || "",
       persona: body.persona || "easy caller",
-      currentAgentPrompt: project.agentPrompt,
-      currentSystemPrompt: project.systemPrompt,
+      currentAgentPrompt: project.finalPrompt,
+      currentSystemPrompt: project.finalPrompt,
       conversationHistory: body.conversationHistory || []
     });
 

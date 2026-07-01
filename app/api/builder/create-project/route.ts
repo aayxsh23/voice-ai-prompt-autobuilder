@@ -27,18 +27,18 @@ export async function POST(req: Request) {
         industry,
         status: 'draft',
         welcomeMessage: blueprint?.conversation?.opening || `Hello, thanks for calling ${bizName}.`,
-        agentPrompt: draft?.agentPrompt || "",
-        systemPrompt: draft?.systemPrompt || "",
+        finalPrompt: draft?.finalPrompt || "",
+        businessSpec: typeof draft?.businessSpec === 'object' ? JSON.stringify(draft.businessSpec) : (draft?.businessSpec || "{}"),
         blueprintJson: JSON.stringify(blueprint || {}),
-        qualityScore: draft?.qualityReview?.overallScore || 90,
-        completionScore: draft?.qualityReview?.completionScore || 90,
-        safetyScore: draft?.qualityReview?.safetyScore || 95,
-        voiceStyleScore: draft?.qualityReview?.voiceStyleScore || 92,
-        structureScore: draft?.qualityReview?.structureScore || 88,
-        edgeCaseScore: draft?.qualityReview?.edgeCaseScore || 89,
-        humanQualityScore: draft?.qualityReview?.humanQualityScore || 91,
-        hallucinationResistanceScore: draft?.qualityReview?.hallucinationResistanceScore || 94,
-        minimumManualEditScore: draft?.qualityReview?.minimumManualEditScore || 90,
+        qualityScore: draft?.qualityReview?.overallScore ?? 0,
+        completionScore: draft?.qualityReview?.completionScore ?? 0,
+        safetyScore: draft?.qualityReview?.safetyScore ?? 0,
+        voiceStyleScore: draft?.qualityReview?.voiceStyleScore ?? 0,
+        structureScore: draft?.qualityReview?.structureScore ?? 0,
+        edgeCaseScore: draft?.qualityReview?.edgeCaseScore ?? 0,
+        humanQualityScore: draft?.qualityReview?.humanQualityScore ?? 0,
+        hallucinationResistanceScore: draft?.qualityReview?.hallucinationResistanceScore ?? 0,
+        minimumManualEditScore: draft?.qualityReview?.minimumManualEditScore ?? 0,
         version: 1,
         variables: {
           create: (draft?.dynamicVariables || []).map((v: any) => ({
@@ -83,8 +83,8 @@ export async function POST(req: Request) {
           create: [
             {
               version: 1,
-              agentPrompt: draft?.agentPrompt || "",
-              systemPrompt: draft?.systemPrompt || "",
+              finalPrompt: draft?.finalPrompt || "",
+              businessSpec: typeof draft?.businessSpec === 'object' ? JSON.stringify(draft.businessSpec) : (draft?.businessSpec || "{}"),
               blueprintJson: JSON.stringify(blueprint || {}),
               changeSummary: "Initial project creation from builder wizard"
             }

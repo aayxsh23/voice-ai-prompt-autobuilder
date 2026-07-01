@@ -25,7 +25,21 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const [input, setInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [missingDetails, setMissingDetails] = useState<string[]>(['Specific Workflows', 'Required Checklist', 'FAQ Details', 'Transfer Rules']);
+  const [missingDetails, setMissingDetails] = useState<string[]>([
+    'request_types', 'caller_segmentation', 'operational_context', 'data_collection',
+    'escalation_triggers', 'forbidden_actions', 'faq_content', 'post_call_action'
+  ]);
+
+  const CATEGORY_LABELS: Record<string, string> = {
+    request_types: 'Request Types & Sub-flows',
+    caller_segmentation: 'Caller Segmentation',
+    operational_context: 'Operational Context',
+    data_collection: 'Data Collection Slots',
+    escalation_triggers: 'Escalation & Transfer',
+    forbidden_actions: 'Forbidden Actions',
+    faq_content: 'FAQ Content',
+    post_call_action: 'Post-Call Outcome'
+  };
   
   // Blueprint state gathered during chat
   const [blueprint, setBlueprint] = useState<any>({
@@ -132,7 +146,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
           }
         }
 
-        const userAgreed = /\b(yes|generate|go ahead|ready|ok|sure|let's do it|build|looks good|agree|proceed|create|split)\b/i.test(input.trim());
+        const userAgreed = /\b(yes|yeah|yep|generate|go ahead|ready|ok|okay|sure|let'?s do it|build|looks good|agree|proceed|create|split|finalize|done)\b/i.test(input.trim());
         if (data.triggerGeneration || ((isReady || data.isReadyToGenerate) && userAgreed)) {
           setTimeout(() => {
             handleGeneratePromptPackage(mergedBlueprint, mergedOverrides);
@@ -278,6 +292,20 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
               <div ref={chatEndRef} />
             </div>
 
+            {/* Discovery Progress Bar */}
+            <div className="px-4 py-2 bg-[#121212] border-t border-[#252525] flex items-center justify-between text-xs text-[#909090]">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-[#dedede]">Discovery Progress:</span>
+                <span>{8 - Math.min(missingDetails.length, 8)}/8 Categories Gathered</span>
+              </div>
+              {missingDetails.length > 0 && (
+                <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto max-w-[280px]">
+                  <span className="text-[#ff6c02] shrink-0">Next:</span>
+                  <span className="truncate text-[#dedede]">{CATEGORY_LABELS[missingDetails[0]] || missingDetails[0]}</span>
+                </div>
+              )}
+            </div>
+
             {/* Dynamic Input Box for Ongoing Chat */}
             <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="p-3 bg-[#0c0c0c] border-t border-[#252525] flex flex-col gap-2">
               <div className="flex items-center gap-2 bg-[#1b1b1b] border border-[#252525] focus-within:border-[#ff6c02] rounded-[8px] p-2 transition-colors">
@@ -371,12 +399,27 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                 </button>
               </div>
 
+              {/* Human Review Warning Banner */}
+              {(draft.requiresHumanReview || (draft.validationErrors && draft.validationErrors.length > 0)) && (
+                <div className="bg-[#ff3333]/15 border-b border-[#ff3333]/40 px-4 py-3 flex items-start gap-3">
+                  <ShieldAlert className="w-4 h-4 text-[#ff5555] shrink-0 mt-0.5" />
+                  <div className="text-xs text-[#ffdede]">
+                    <span className="font-semibold text-[#ff5555]">Validation Warning / Human Review Suggested:</span> Automated compiler loop flagged potential structure issues after retries:
+                    <ul className="list-disc ml-4 mt-1 space-y-0.5 text-[#ffb8b8]">
+                      {(draft.validationErrors || ['Quality/Security check warning']).slice(0, 3).map((e, idx) => (
+                        <li key={idx}>{e}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
               {/* Tab Content Window */}
               <div className="p-5 flex-1 flex flex-col gap-4 bg-[#0c0c0c]">
                 <div className="flex-1 bg-[#040404] border border-[#252525] rounded-[8px] p-4 font-mono text-xs text-[#dedede] overflow-y-auto max-h-[500px] whitespace-pre-wrap leading-relaxed selection:bg-[#ff6c02] selection:text-[#040404]">
-                  {activeTab === 'agent' && draft.agentPrompt}
-                  {activeTab === 'system' && draft.systemPrompt}
-                  {activeTab === 'combined' && `${draft.agentPrompt}\n\n${draft.systemPrompt}`}
+                  {activeTab === 'agent' && draft.finalPrompt}
+                  {activeTab === 'system' && draft.finalPrompt}
+                  {activeTab === 'combined' && draft.finalPrompt}
                 </div>
 
                 {/* Tool Registry Badge List */}

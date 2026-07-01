@@ -57,8 +57,7 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        agentPrompt: project.agentPrompt,
-        systemPrompt: project.systemPrompt
+        finalPrompt: project.finalPrompt
       })
     });
     await fetchProject(projectId);
@@ -94,8 +93,8 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        agentPrompt: ver.agentPrompt,
-        systemPrompt: ver.systemPrompt,
+        finalPrompt: ver.finalPrompt,
+        businessSpec: ver.businessSpec,
         blueprintJson: ver.blueprintJson
       })
     });
@@ -141,8 +140,8 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
           {activeTab === 'prompt' && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[700px]">
               <AgentPromptEditor
-                value={project.agentPrompt || ""}
-                onChange={v => setProject({ ...project, agentPrompt: v })}
+                value={project.finalPrompt || ""}
+                onChange={v => setProject({ ...project, finalPrompt: v })}
                 onSave={handleSavePrompt}
                 saving={saving}
               />
@@ -157,8 +156,8 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
           {activeTab === 'system' && (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[700px]">
               <SystemPromptEditor
-                value={project.systemPrompt || ""}
-                onChange={v => setProject({ ...project, systemPrompt: v })}
+                value={project.finalPrompt || ""}
+                onChange={v => setProject({ ...project, finalPrompt: v })}
                 onSave={handleSavePrompt}
                 saving={saving}
               />
@@ -173,12 +172,12 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
                   <h3 className="font-bold text-base text-white">Combined Final Runtime Prompt</h3>
                   <p className="text-xs text-slate-400">This exact combined string is injected into the AI voice engine at call start.</p>
                 </div>
-                <Button onClick={() => navigator.clipboard.writeText(`${project.agentPrompt || ""}\n\n${project.systemPrompt || ""}`)} variant="outline" className="text-xs">
+                <Button onClick={() => navigator.clipboard.writeText(project.finalPrompt || "")} variant="outline" className="text-xs">
                   Copy Combined Prompt
                 </Button>
               </div>
               <pre className="p-4 bg-slate-950/90 border border-slate-800 rounded-xl font-mono text-xs text-slate-300 overflow-x-auto max-h-[650px] whitespace-pre-wrap leading-relaxed">
-                {`${project.agentPrompt || ""}\n\n${project.systemPrompt || ""}`}
+                {project.finalPrompt || ""}
               </pre>
             </div>
           )}

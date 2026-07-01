@@ -9,7 +9,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
     const llm = getLlmClient();
-    const review = await llm.evaluatePromptQuality(project.agentPrompt, project.systemPrompt, project.useCase);
+    const review = await llm.evaluatePromptQuality(project.finalPrompt, project.finalPrompt, project.useCase);
 
     // Update project scores
     const updated = await prisma.promptProject.update({

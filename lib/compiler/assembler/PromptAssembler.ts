@@ -1,165 +1,242 @@
-import { StateMachineCompiler } from "@/lib/compiler/compilers/StateMachineCompiler";
-import { SafetyCompiler } from "@/lib/compiler/compilers/SafetyCompiler";
-import { VoiceAgentIR } from "@/lib/compiler/ir/IntermediateRepresentation";
-import { PromptPackageDraft } from "@/lib/llm/types";
+import { BusinessSpecification } from "@/lib/llm/types";
 
-
-interface DynamicVariable {
-  key: string;
-  label: string;
-  description: string;
-  type: string;
-  required: boolean;
-  defaultValue?: string;
-  source?: string;
-}
-
-function buildAgentIdentitySection(name: string, role?: string): string {
-  const finalRole = role || "Automated Voice Assistant";
-  return `### AGENT IDENTITY\n\nName: ${name}\nRole: ${finalRole}\n`;
-}
-
-function buildContextVariablesSection(ir: VoiceAgentIR, draft?: Partial<PromptPackageDraft>): string {
-  const vars = (draft?.dynamicVariables ?? []) as DynamicVariable[];
-  if (vars.length === 0) {
-    return `### CONTEXT & VARIABLES\n\nNo dynamic variables configured for this session.\n`;
+function formatOperatingHours(hours: any): string {
+  if (!hours) return "Standard Business Hours";
+  if (typeof hours === "string") return hours;
+  if (typeof hours === "object") {
+    return Object.entries(hours).map(([day, range]) => `${day}: ${range}`).join('; ');
   }
-  const lines = vars.map((v: DynamicVariable) => `{{${v.key}}} — ${v.label}: ${v.description} (type: ${v.type}, required: ${v.required})`);
-  return `### CONTEXT & VARIABLES\n\n${lines.join('\n')}\n`;
+  return String(hours);
 }
 
-function buildPrimaryGoalSection(goal: string = "Assist the caller efficiently."): string {
-  return `### PRIMARY GOAL\n\n${goal}\n`;
-}
-
-function buildFaqSection(cards: Array<{ question: string; answer: string }> = []): string {
-  if (cards.length === 0) return "### FAQ & KNOWLEDGE DEFLECTION\n\nNo FAQs defined.\n";
-  return `### FAQ & KNOWLEDGE DEFLECTION\n\n${cards.map(c => `Q: ${c.question}\nA: Say: "${c.answer}"`).join('\n\n')}\n`;
-}
-
-function buildObjectionSection(cards: Array<{ trigger?: string; response?: string; objection?: string; handling?: string }> = []): string {
-  if (cards.length === 0) return "### OBJECTION HANDLING\n\nNo objections defined.\n";
-  return `### OBJECTION HANDLING\n\n${cards.map(c => `Trigger: ${c.trigger || c.objection || ''}\nResponse: Say: "${c.response || c.handling || ''}"`).join('\n\n')}\n`;
-}
-
-function buildVoiceRulesSection(): string {
-  return `### TTS & VOICE RULES
-
-- Every agent turn must be 1–2 short sentences maximum.
-- Ask ONE question per turn. Never stack questions.
-- Phone numbers: spell digit by digit using word form.
-- Dates: say the full date in words, never numeric shorthand.
-- Member IDs and reference numbers: spell character by character.
-- Email addresses: replace @ with "at" and . with "dot".
-- Never use bullet points or markdown in spoken dialogue.
-- Use natural acknowledgements only: okay, got it, understood, of course.`;
-}
-
-function buildToolFunctionExecutionSection(ir: VoiceAgentIR): string {
-  const tools = (ir as any)?.tools ?? [];
-  if (!tools || tools.length === 0) {
-    return `### TOOL & FUNCTION EXECUTION\n\nAvailable runtime tools: end_call, transfer_call.\nExecute functions strictly according to branching condition rules.\n`;
+function formatPolicyString(val: any, defaultVal: string): string {
+  if (!val) return defaultVal;
+  if (typeof val === "string") return val;
+  if (Array.isArray(val)) return val.join("; ");
+  if (typeof val === "object") {
+    return Object.entries(val).map(([k, v]) => `${k}: ${v}`).join('; ');
   }
-  const toolDefs = tools.map((t: any) => `- ${t.name}: ${t.description}`).join('\n');
-  return `### TOOL & FUNCTION EXECUTION\n\n${toolDefs}\n`;
+  return String(val);
 }
 
-function buildClosingRulesSection(): string {
-  return `### CLOSING RULES\n\n1. Confirm caller completed their primary request before concluding.\n2. Offer reference number or confirmation details if applicable.\n3. Thank the caller politely for their time.\n4. Do NOT attempt to upsell or ask unnecessary conversational questions at ending.`;
-}
+export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
+  console.log("[PromptAssembler] assembleUnifiedPrompt() invoked.", {
+    hasSpec: !!spec,
+    specFaqsCount: spec?.knowledgeBase?.faqs?.length || 0,
+    draftFaqsCount: draft?.faqCards?.length || 0,
+    specFaqsFull: spec?.knowledgeBase?.faqs || [],
+    draftFaqsFull: draft?.faqCards || []
+  });
 
-function buildAiIdentitySection(agentName: string = "Virtual Assistant"): string {
-  return `### AI IDENTITY DISCLOSURE\n\nMandatory disclosure: If asked if you are a robot or AI, state clearly: Say: "I am ${agentName}, an automated voice assistant helping you today."\n`;
-}
+  const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
+  const faqQuestionsSet = new Set((spec?.knowledgeBase?.faqs || []).map(f => f.question.toLowerCase().trim()));
+  const faqs = [
+    ...(spec?.knowledgeBase?.faqs || []),
+    ...(draft?.faqCards || []).filter((f: any) => f?.question && !faqQuestionsSet.has(f.question.toLowerCase().trim()))
+  ];
 
-function buildOffTopicSection(ir: VoiceAgentIR, draft?: any): string {
-  const goal = draft?.primaryGoal || ir?.mission?.goal || ir?.meta?.role || "your primary request";
-  const outOfScopeList = draft?.outOfScopeTopics || draft?.guardrails?.outOfScopeTopics;
-  const outOfScopeText = Array.isArray(outOfScopeList) && outOfScopeList.length > 0
-    ? outOfScopeList.slice(0, 3).join(", ")
-    : "matters outside this task";
+  const objTriggersSet = new Set((spec?.knowledgeBase?.objections || []).map(o => o.trigger.toLowerCase().trim()));
+  const draftObjsMapped = (draft?.objectionCards || []).map((o: any) => ({
+    trigger: o.trigger || o.objection || "",
+    response: o.response || o.handling || ""
+  }));
+  const objections = [
+    ...(spec?.knowledgeBase?.objections || []),
+    ...draftObjsMapped.filter((o: any) => o?.trigger && !objTriggersSet.has(o.trigger.toLowerCase().trim()))
+  ];
+  const steps = (spec?.callFlowPlan?.steps && spec.callFlowPlan.steps.length > 0)
+    ? spec.callFlowPlan.steps
+    : (draft?.callFlowSteps || []).map((s: any, idx: number) => ({
+        sequenceOrder: s.sequenceOrder || idx + 1,
+        stateId: s.stateId || `step_${idx + 1}`,
+        stateName: s.stateName || s.label || `Step ${idx + 1}`,
+        scriptDirective: s.scriptDirective || s.explicitDialogueScript || (s.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
+        slotsToCollect: s.slotsToCollect || []
+      }));
 
-  return `### OFF-TOPIC HANDLING
+  // 1. EXACT STATIC SYSTEM PROMPT WRAPPER
+  const customProhibitions = draft?.guardrails?.prohibitions
+    ? '\n' + draft.guardrails.prohibitions.map((p: string) => `- ${p}`).join('\n')
+    : "";
 
-RULES FOR OFF-TOPIC DEFLECTION:
-- If the caller asks about topics unrelated to this call's primary goal (${goal}), deflect politely back to the task.
-- First instance (Strike 1): Say: "I'm only equipped to assist with ${goal} today. Shall we continue with that?"
-- Second instance on same subject (Strike 2): Say: "I don't have information on that topic, but I can help you complete your request right now. Would you like to proceed?"
-- Third total instance (Call Close): If the caller persists on unrelated subjects (${outOfScopeText}) a third time, conclude the call.
-Say: "It sounds like you need assistance with matters outside my scope today. Thank you for calling, and please reach out to our support line for further help. Goodbye."`;
-}
+  const staticSystemPrompt = `You are a voice AI agent for phone conversations. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
 
-function buildDynamicGuardrailsSection(ir: VoiceAgentIR, draft?: any): string {
-  const company = ir?.meta?.companyName || "the organization";
-  const role = ir?.meta?.role || ir?.mission?.goal || "automated assistant";
-  const scope = ir?.meta?.contextScope || "assigned workflows";
+CORE SCOPE (MANDATORY)
+- You have one task only, defined by the current agent objective.
+- You must never respond to requests outside that task.
+- If a request is unrelated, unsafe, or out of context, politely refuse and return to the task.
+- Do not provide advice, explanations, recipes, instructions, opinions, or help of any kind beyond your task.
+- Do not invent information, assume intent, or expand scope.
 
-  const rawTriggers = draft?.guardrails?.emergencyTriggers || draft?.emergencyTriggers;
-  const customTriggers: string[] = Array.isArray(rawTriggers) && rawTriggers.length > 0
-    ? rawTriggers
-    : [
-        `Caller reports an urgent crisis, physical emergency, or immediate threat to safety relevant to ${scope}`,
-        `Caller expresses severe distress requiring urgent emergency services (police, fire, ambulance)`,
-        `Caller states "emergency", "911", "help me immediately", or demands urgent crisis intervention`
-      ];
+VOICE RULES
+- Use phone-friendly language only.
+- Keep 1–2 short sentences per turn.
+- Ask one question at a time.
+- Avoid long explanations or verbal lists.
+- Use natural acknowledgements only, like "okay", "got it", "understood".
 
-  const emergencyAction = draft?.guardrails?.emergencyAction || `Say: "If you are experiencing an immediate emergency or crisis, please hang up and contact 911 or your local emergency services right away."`;
+EMAIL SPEAKABILITY RULES (MANDATORY)
+- Whenever you mention an email address, output it in speakable form for TTS.
+- Never output raw email symbols like "@" or "." in final spoken responses.
+- Replace "@" with " at ".
+- Replace "." with " dot ".
+- In the local part (before @):
+  - Speak digits individually (example: 1512 -> one five one two).
+  - "." -> dot, "_" -> underscore, "-" -> dash, "+" -> plus.
+- For letters:
+  - Speak normal words as words.
+  - Speak isolated letters one by one.
+  - Use "zed" for letter "z" when spelling letters individually.
+- In the domain:
+  - Common words like gmail, yahoo, outlook stay as words.
+  - Very short labels like "inc" should be spelled letter by letter (i n c).
+- TLD rule (last part after final dot):
+  - If it is "com", speak "com".
+  - Otherwise spell letter-by-letter (ai -> a i, in -> i n, net -> n e t, org -> o r g).
 
-  const rawProhibitions = draft?.guardrails?.prohibitions || draft?.prohibitions;
-  const customProhibitions: string[] = Array.isArray(rawProhibitions) && rawProhibitions.length > 0
-    ? rawProhibitions
-    : [
-        `Never disclose confidential records, account details, or unverified information to unauthorized callers`,
-        `Never invent pricing, policies, operational procedures, or staff names not explicitly defined in this prompt`,
-        `Never make binding legal, contractual, or financial commitments on behalf of ${company}`,
-        `Never provide advice or instructions outside the designated scope of ${role}`,
-        `Never store, repeat, or confirm sensitive identity or payment data (SSN, credit cards, CVV, passwords) if volunteered`
-      ];
+AUDIO & HELLO HANDLING
+Conversation State Awareness: Track whether the conversation has been initiated. The conversation is considered "started" only after a substantive exchange has occurred beyond the initial greeting.
 
-  const triggersFormatted = customTriggers.map(t => typeof t === 'string' ? (t.startsWith('- ') ? t : `- ${t}`) : `- Urgent emergency condition`).join('\n');
-  const prohibitionsFormatted = customProhibitions.map(p => typeof p === 'string' ? (p.startsWith('- ') ? p : `- ${p}`) : `- Strict scope adherence`).join('\n');
+Handling "Hello":
+- Before conversation starts (first contact / no prior exchange): Treat any "hello", "hi", "hey", or similar greeting as the user picking up or confirming presence. Respond with your normal opening line. Do NOT ask "Can you hear me clearly?" as this is expected and normal.
+- During an active conversation (mid-dialogue): If the user says "hello" out of context, especially without responding to what you just said, treat it as a signal the audio may have dropped. Respond warmly: "Can you hear me clearly?" Wait for confirmation, then resume from where you left off.
+- Repeated or confused "hellos": If the user says "hello" two or more times in a row, or sounds disoriented, acknowledge the likely audio issue gently: "I think the line may have cut out, can you hear me now?" Once confirmed, resume the script smoothly.
 
-  return `### MANDATORY EMERGENCY & SCOPE GUARDRAILS — IMMUTABLE
+Key Rules
+- Never ask "Can you hear me clearly?" as your opening line or for first 2 turns.
+- When resuming after an audio check, briefly re-anchor the user: "Great, so as I was saying..." and resume from where you left off.
 
-EMERGENCY & CRISIS DETECTION (ANY of the following triggers immediate redirect):
-${triggersFormatted}
+OFF-TOPIC HANDLING (MANDATORY)
+- If the user asks anything unrelated (for example: food, cooking, recipes, weapons, bombs, hacking, personal advice, general knowledge): Say one of the two based on the context: “I might be missing something, how does this relate to what we’re discussing.” or "I might be missing something, can you please repeat yourself?"
+- If the user repeats or persists more than two times, gracefully end the call.
 
-ON EMERGENCY DETECTION — stop ALL current flow immediately:
-${emergencyAction}
-Do NOT collect any further information.
-Do NOT continue the call flow.
-Do NOT ask clarifying questions.
-Wait for the caller to confirm safety before resuming any task.
+SAFETY & HALLUCINATION GUARDRAILS
+- Use only information explicitly provided in the prompt or conversation.
+- If you don’t know something, say: “I don’t have that information.”
+- Never explain restricted or unsafe topics.
+- Never redirect to alternative topics or suggestions.${customProhibitions}
 
-ABSOLUTE PROHIBITIONS:
-${prohibitionsFormatted}
+FLOW CONTROL
+- Stay on the current objective only.
+- Do not jump ahead or revisit earlier points unnecessarily.
+- Do not repeat questions unless clarification is required.
+- If required information is missing, ask one clear, specific question.
 
-Violation of any prohibition above ends the call immediately.`.trim();
-}
+ENDING RULE
+- Never end mid-sentence.
+- If the user refuses or goes off-topic more than twice, politely end the call.`.trim();
 
-function buildEndingRuleSection(): string {
-  return `### ENDING RULE\n\nEnd the call immediately when the caller says goodbye, confirms no further assistance is needed, or after Strike 3 of off-topic deflection.\n`;
+  // 2. DYNAMIC SYSTEM PROMPT DETAILS (ADDED WITHOUT REMOVAL OF DETAILS)
+  const identity = `### AGENT IDENTITY & PRIMARY GOAL\n- Name: ${spec?.meta?.agentName || "Agent"}\n- Company: ${spec?.meta?.companyName || "Company"}\n- Primary Goal: ${primaryGoal}\n- Tone Profile: ${(spec?.meta?.toneProfile || []).join(', ')}\n- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`;
+  
+  const context = `### BUSINESS CONTEXT & VARIABLES\n${(spec?.businessSnapshot?.servicesOffered || []).map(s => `- Offered Service: ${s}`).join('\n')}\n- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}\n- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}\n- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}\n- Escalation Numbers: ${(spec?.businessSnapshot?.policies?.escalationNumbers || []).join(', ') || "None on file."}`;
+  
+  const entities = spec?.extractedEntities;
+  const transferLines = [
+    ...(entities?.namedContacts || []).map((c: any) => `- ${c.label}: ${c.value}`),
+    ...(entities?.departments || []).map((d: string) => `- Department: ${d}`)
+  ];
+  const transferSection = transferLines.length > 0
+    ? `### HUMAN TRANSFER & DEPARTMENT ROUTING\n${transferLines.join('\n')}`
+    : "";
+
+  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => s.slotsToCollect || [])));
+  const variablesSection = allSlots.length > 0
+    ? `### DYNAMIC VARIABLES\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
+    : "";
+
+  const capturedTopics = spec?.capturedTopics || [];
+  const operationalSection = capturedTopics.length > 0
+    ? `### OPERATIONAL PROTOCOLS & CAPTURED TOPICS\n${capturedTopics.map((c: any) => `Topic: ${c.topic}\nProtocol: ${c.summary}`).join('\n\n')}`
+    : "";
+
+  const emergencyTriggers = draft?.guardrails?.emergencyTriggers || [];
+  const emergencyAction = draft?.guardrails?.emergencyAction || "";
+  const emergencyHandling = emergencyTriggers.length > 0
+    ? `### EMERGENCY HANDLING\nIf the caller mentions any of the following: ${emergencyTriggers.join(', ')} — stop the current flow immediately.\n${emergencyAction}`
+    : "";
+
+  const flow = `### CALL FLOW\n${steps.map((step: any) => `STATE: [${step.stateId}] (${step.stateName})\nDirective: ${step.scriptDirective}\nRequired Extractions: ${(step.slotsToCollect || []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')}`;
+  
+  const faqSection = faqs.map((faq: any) => `Q: ${faq.question}\nA: ${faq.answer}`).join('\n\n') || "No specific FAQs defined.";
+  const knowledge = `### FREQUENTLY ASKED QUESTIONS\n${faqSection}`;
+  
+  const objSection = objections.map((obj: any) => `Trigger: ${obj.trigger}\nHandling: ${obj.response}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
+  const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
+  
+  const tools = `### TOOL & FUNCTION EXECUTION\n${JSON.stringify(spec?.tools || [], null, 2)}`;
+
+  // 3. FINAL UNIFIED ASSEMBLY
+  const sections = [
+    staticSystemPrompt,
+    identity,
+    context,
+    transferSection,
+    variablesSection,
+    operationalSection,
+    emergencyHandling,
+    flow,
+    knowledge,
+    objectionHandling,
+    tools
+  ].filter(s => Boolean(s && s.trim().length > 0));
+
+  return sections.join('\n\n---\n\n');
 }
 
 export class PromptAssembler {
-  assemble(ir: VoiceAgentIR, draft?: Partial<PromptPackageDraft> | any): string {
-    const actualDraft = (draft && !draft.flow && !draft.voice) ? draft : undefined;
-    const sections = [
-      buildAgentIdentitySection(ir.identity?.name ?? ir.meta?.agentName ?? "Virtual Assistant", ir.identity?.role ?? ir.meta?.role ?? "Automated Voice Assistant"),
-      buildContextVariablesSection(ir, actualDraft),
-      buildPrimaryGoalSection(actualDraft?.primaryGoal || ir.mission?.goal || ir.meta?.role),
-      new StateMachineCompiler().compile(ir, actualDraft),
-      buildFaqSection(actualDraft?.faqCards ?? []),
-      buildObjectionSection(actualDraft?.objectionCards ?? []),
-      buildVoiceRulesSection(),
-      buildToolFunctionExecutionSection(ir),
-      new SafetyCompiler().buildOperationalScopeGuardrails(ir),
-      buildDynamicGuardrailsSection(ir, actualDraft),
-      buildClosingRulesSection(),
-      buildAiIdentitySection(ir.identity?.name ?? ir.meta?.agentName ?? "Virtual Assistant"),
-      buildOffTopicSection(ir, actualDraft),
-      buildEndingRuleSection()
-    ];
-    return sections.filter(Boolean).join('\n\n');
+  assemble(specOrIr: any, draft?: any): string {
+    console.log("[PromptAssembler] assemble() invoked.", {
+      specOrIrIsSpec: !!(specOrIr && specOrIr.meta && specOrIr.businessSnapshot),
+      draftKeys: draft ? Object.keys(draft) : null
+    });
+    if (specOrIr && specOrIr.meta && specOrIr.businessSnapshot) {
+      return assembleUnifiedPrompt(specOrIr as BusinessSpecification, draft);
+    }
+    console.warn("[PromptAssembler] Legacy fallback branch triggered in assemble()", {
+      hadMeta: !!specOrIr?.meta,
+      hadBusinessSnapshot: !!specOrIr?.businessSnapshot
+    });
+    // Convert legacy IR/draft to BusinessSpecification format deterministically
+    const meta = specOrIr?.meta || draft?.business || {};
+    const existingSnap = specOrIr?.businessSnapshot || draft?.businessSnapshot || {};
+    const existingPolicies = existingSnap?.policies || {};
+    const spec: BusinessSpecification = {
+      meta: {
+        companyName: meta.companyName || meta.businessName || "Enterprise Client",
+        agentName: meta.agentName || "Voice Assistant",
+        industry: meta.industry || "General",
+        isRegulated: false,
+        toneProfile: meta.toneProfile || ["Professional"],
+        primaryGoal: meta.role || meta.description || draft?.primaryGoal || "Assist callers"
+      },
+      businessSnapshot: {
+        operatingHours: existingSnap?.operatingHours || "Standard Business Hours",
+        servicesOffered: existingSnap?.servicesOffered || [],
+        policies: {
+          cancellation: existingPolicies?.cancellation || "Standard cancellation policy applies.",
+          refunds: existingPolicies?.refunds || "Standard refund policy applies.",
+          escalationNumbers: existingPolicies?.escalationNumbers || []
+        }
+      },
+      callFlowPlan: {
+        steps: (draft?.callFlowSteps || specOrIr?.states || []).map((s: any, idx: number) => ({
+          sequenceOrder: s.sequenceOrder || idx + 1,
+          stateId: s.stateId || `step_${idx + 1}`,
+          stateName: s.stateName || s.label || `Step ${idx + 1}`,
+          scriptDirective: s.scriptDirective || s.explicitDialogueScript || (s.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
+          slotsToCollect: s.slotsToCollect || []
+        }))
+      },
+      knowledgeBase: {
+        faqs: draft?.faqCards || [],
+        objections: (draft?.objectionCards || []).map((o: any) => ({ trigger: o.trigger || o.objection || "", response: o.response || o.handling || "" }))
+      },
+      tools: specOrIr?.tools || [],
+      extractedEntities: specOrIr?.extractedEntities || draft?.extractedEntities,
+      resolvedTopics: specOrIr?.resolvedTopics || draft?.resolvedTopics,
+      capturedTopics: specOrIr?.capturedTopics || draft?.capturedTopics
+    };
+    return assembleUnifiedPrompt(spec, draft);
   }
 }

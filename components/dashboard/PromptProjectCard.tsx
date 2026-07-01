@@ -33,11 +33,11 @@ export const PromptProjectCard: React.FC<ProjectCardProps> = ({ project, onDupli
         <div className="grid grid-cols-3 gap-2 pt-2 border-t border-[#25252a] text-center">
           <div className="bg-[#121212] p-1.5 rounded-[4px] border border-[#252525]">
             <span className="block text-[10px] text-[#646464]">Quality</span>
-            <span className="text-[12px] font-mono font-medium text-[#f3f3f3]">{project.qualityScore}%</span>
+            <span className="text-[12px] font-mono font-medium text-[#f3f3f3]">{project.qualityScore ? `${project.qualityScore}%` : '—'}</span>
           </div>
           <div className="bg-[#121212] p-1.5 rounded-[4px] border border-[#252525]">
             <span className="block text-[10px] text-[#646464]">Safety</span>
-            <span className="text-[12px] font-mono font-medium text-[#ff6c02]">{project.safetyScore}%</span>
+            <span className="text-[12px] font-mono font-medium text-[#ff6c02]">{project.safetyScore ? `${project.safetyScore}%` : '—'}</span>
           </div>
           <div className="bg-[#121212] p-1.5 rounded-[4px] border border-[#252525]">
             <span className="block text-[10px] text-[#646464]">Version</span>

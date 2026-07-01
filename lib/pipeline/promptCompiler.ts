@@ -1,85 +1,33 @@
-import { StateValidator } from "../compiler/validators/StateValidator";
-import { ToolValidator } from "../compiler/validators/ToolValidator";
-import { PromptAssembler } from "../compiler/assembler/PromptAssembler";
-import { PromptOptimizer } from "../compiler/assembler/PromptOptimizer";
-import { VoiceAgentIR } from "../compiler/ir/IntermediateRepresentation";
+import { PromptAssembler, assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
 import { getLlmClient } from "../llm/llmClient";
-import { BlueprintJson, PromptPackageDraft, SchemaOverrides } from "../llm/types";
+import { BlueprintJson, PromptPackageDraft, SchemaOverrides, BusinessSpecification } from "../llm/types";
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
-import { validatePrompt } from "@/lib/pipeline/validators/QualitySecurityValidator";
+import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
+import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
+import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
+import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
+import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
+import { ToolPlanner } from "../compiler/planners/ToolPlanner";
 
-export async function executePromptCompilationPipeline(extractedIR: VoiceAgentIR, draft?: Partial<PromptPackageDraft>): Promise<string> {
-  const stateValidator = new StateValidator();
-  const toolValidator = new ToolValidator();
-
-  const stateCheck = stateValidator.validate(extractedIR);
-  if (!stateCheck.isValid) {
-    throw new PromptCompilationError(`Pipeline Compilation Halting (State Validation): \n${stateCheck.errors.join("\n")}`);
-  }
-
-  const toolCheck = toolValidator.validate(extractedIR);
-  if (!toolCheck.isValid) {
-    throw new PromptCompilationError(`Pipeline Compilation Halting (Tool Validation): \n${toolCheck.errors.join("\n")}`);
-  }
-
+export async function executePromptCompilationPipeline(extractedIR: any, draft?: Partial<PromptPackageDraft>): Promise<string> {
   const assembler = new PromptAssembler();
-  const rawPromptString = assembler.assemble(extractedIR, draft);
+  const completedPromptString = assembler.assemble(extractedIR, draft);
 
-  // Bypassing optimizer to preserve token overhead, whitespace, and repetitive rules for voice AI adherence
-  // const optimizer = new PromptOptimizer();
-  // const completedPromptString = await optimizer.optimize(rawPromptString);
-  const completedPromptString = rawPromptString;
+  const varValidation = validateVariableConsistency(completedPromptString, draft?.dynamicVariables || []);
+  const fallbackValidation = validateFallbackDialogue(completedPromptString);
+  const coherenceValidation = validateCoherence(completedPromptString, draft, extractedIR);
 
-  const validation = validatePrompt(completedPromptString);
-  if (!validation.valid) {
-    throw new PromptCompilationError(`Prompt quality/security validation failed:\n${validation.errors.join("\n")}`);
+  const allErrors = [
+    ...varValidation.errors,
+    ...fallbackValidation.errors,
+    ...coherenceValidation.errors
+  ];
+
+  if (allErrors.length > 0) {
+    throw new PromptCompilationError(`Prompt validation failed:\n${allErrors.join("\n")}`);
   }
 
   return completedPromptString;
-}
-
-function mapBlueprintToIR(input: BlueprintJson): VoiceAgentIR {
-  const biz = input.business || {};
-  const mission = input.mission || {};
-  const tone = input.personality?.tone ? [input.personality.tone] : ["Professional", "Calm", "Direct"];
-  const lang = input.personality?.languageVariant || "English";
-
-  const name = biz.companyName || biz.businessName || "Enterprise Client";
-  const desc = biz.valueProposition || biz.description || "General inquiry and customer assistance";
-
-  return {
-    meta: {
-      agentName: name !== "Enterprise Client" ? `${name} Assistant` : "Voice Agent",
-      companyName: name,
-      role: mission.primaryGoal || "Automated Voice Coordinator",
-      toneProfile: tone,
-      contextScope: desc,
-      languageVariant: lang
-    },
-    context: [
-      { key: "Customer_Name", label: "Customer Name", description: "Verified caller name", source: "crm", defaultValue: "Valued Caller" }
-    ],
-    states: [
-      {
-        sequenceOrder: 1,
-        stateId: "greeting",
-        stateName: "Greeting & Verification",
-        explicitDialogueScript: `Say: "Hello {{Customer_Name}}, welcome to ${name}. How can I help you today?"`,
-        slotsToCollect: [],
-        fallbackBehavior: "Clarify caller intent and offer assistance."
-      },
-      {
-        sequenceOrder: 2,
-        stateId: "fulfill_mission",
-        stateName: "Mission Execution",
-        explicitDialogueScript: `Say: "I can help with ${mission.primaryGoal || 'your request'}. Let me get those details for you."`,
-        slotsToCollect: [],
-        fallbackBehavior: "Escalate to human representative if needed."
-      }
-    ],
-    slots: [],
-    tools: []
-  };
 }
 
 function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrides): PromptPackageDraft {
@@ -97,25 +45,115 @@ function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrid
   };
 }
 
-export async function compilePromptPackage(input: BlueprintJson): Promise<PromptPackageDraft> {
-  const llm = getLlmClient();
-  let draft = llm.generateWithCoT ? await llm.generateWithCoT(input) : await llm.generateReviewDraft(input);
-  draft = mergeUserOverrides(draft, input.overrides);
-  try {
-    const ir = mapBlueprintToIR(input);
-    const compiledSystemPrompt = await executePromptCompilationPipeline(ir, draft);
-    const splitIdx = compiledSystemPrompt.indexOf("### TTS & VOICE RULES");
-    if (splitIdx !== -1) {
-      draft.agentPrompt = compiledSystemPrompt.substring(0, splitIdx).trim();
-      draft.systemPrompt = compiledSystemPrompt.substring(splitIdx).trim();
-    } else {
-      draft.agentPrompt = compiledSystemPrompt;
-      draft.systemPrompt = compiledSystemPrompt;
-    }
-    draft.systemPromptCompiled = true;
-  } catch (err) {
-    console.warn("Compilation pipeline error:", err);
-    draft.systemPromptCompiled = false;
+export async function compilePromptPackage(input: BlueprintJson | any): Promise<PromptPackageDraft | any> {
+  let spec: BusinessSpecification;
+
+  if (input.businessSpec && input.businessSpec.meta) {
+    spec = input.businessSpec;
+  } else {
+    const biz = input.business || {};
+    const mission = input.mission || {};
+    const tone = input.personality?.tone ? [input.personality.tone] : ["Professional", "Helpful"];
+    spec = {
+      meta: {
+        companyName: biz.companyName || biz.businessName || "Enterprise Client",
+        agentName: biz.agentName || "Voice Assistant",
+        industry: biz.industry || "General",
+        isRegulated: false,
+        toneProfile: tone,
+        primaryGoal: mission.primaryGoal || biz.description || "Assist callers"
+      },
+      businessSnapshot: {
+        operatingHours: "Standard Business Hours",
+        servicesOffered: [],
+        policies: {
+          cancellation: "Standard cancellation policy applies.",
+          refunds: "Standard refund policy applies.",
+          escalationNumbers: []
+        }
+      },
+      callFlowPlan: { steps: [] },
+      knowledgeBase: { faqs: [], objections: [] },
+      tools: []
+    };
   }
+
+  // Hydrate via specialist planners if missing steps/KB
+  if (spec.callFlowPlan.steps.length === 0) {
+    spec.callFlowPlan.steps = await WorkflowArchitect.planWorkflow(spec);
+  }
+  if (spec.knowledgeBase.faqs.length === 0) {
+    spec.knowledgeBase = await KnowledgeArchitect.planKnowledge(spec);
+  }
+  if (spec.tools.length === 0) {
+    spec.tools = await ToolPlanner.planTools(spec);
+  }
+
+  const llm = getLlmClient();
+  let draft: any = input.extractedIR ? { ...input.extractedIR } : await llm.generateReviewDraft(input);
+  console.log("[compilePromptPackage] CoT draft returned:", {
+    primaryGoal: draft?.primaryGoal,
+    faqsCount: draft?.faqCards?.length,
+    objectionsCount: draft?.objectionCards?.length,
+    guardrails: draft?.guardrails
+  });
+  draft = mergeUserOverrides(draft, input.overrides);
+  draft.businessSpec = spec;
+
+  // Synchronize dynamicVariables with any slots required by call flow steps
+  const steps = (spec.callFlowPlan?.steps && spec.callFlowPlan.steps.length > 0)
+    ? spec.callFlowPlan.steps
+    : (draft?.callFlowSteps || []);
+  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => s.slotsToCollect || [])));
+  draft.dynamicVariables = draft?.dynamicVariables || [];
+  const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v.key));
+  for (const slot of allSlots) {
+    if (!declaredVarKeys.has(slot)) {
+      draft.dynamicVariables.push({
+        key: slot,
+        label: slot,
+        type: 'caller',
+        required: true,
+        defaultValue: '',
+        source: 'extraction',
+        description: `Collected slot: ${slot}`
+      });
+      declaredVarKeys.add(slot);
+    }
+  }
+
+  const finalPrompt = assembleUnifiedPrompt(spec, draft);
+  draft.finalPrompt = finalPrompt;
+
+  const varValidation = validateVariableConsistency(finalPrompt, draft?.dynamicVariables || []);
+  const fallbackValidation = validateFallbackDialogue(finalPrompt);
+  const coherenceValidation = validateCoherence(finalPrompt, draft, spec);
+
+  const validationErrors: string[] = [
+    ...varValidation.errors,
+    ...fallbackValidation.errors,
+    ...coherenceValidation.errors
+  ];
+
+  // Check placeholder integrity
+  const matches = Array.from(finalPrompt.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g));
+  const declaredKeys = new Set((draft?.dynamicVariables || []).map((v: { key: string }) => v.key));
+  for (const match of matches) {
+    const varName = match[1];
+    if (!declaredKeys.has(varName)) {
+      validationErrors.push(`Undeclared dynamic placeholder {{${varName}}} found in prompt text.`);
+    }
+  }
+
+  // Check for suspicious length
+  const totalItems = (draft?.faqCards?.length || 0) + (spec.callFlowPlan?.steps?.length || 0);
+  if (totalItems >= 5 && finalPrompt.length < 800) {
+    validationErrors.push(`Suspiciously short prompt generated (${finalPrompt.length} chars) relative to ${totalItems} operational items.`);
+  }
+
+  draft.validationStatus = validationErrors.length > 0 ? 'warning' : 'success';
+  draft.validationErrors = validationErrors;
+  draft.requiresHumanReview = validationErrors.length > 0;
+
   return draft;
 }

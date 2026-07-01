@@ -32,7 +32,7 @@ export const QualityScoreCard: React.FC<Props> = ({ project, onReEvaluate }) => 
       <div className="flex items-center justify-between border-b border-[#23252a] pb-4">
         <div className="flex items-center space-x-3">
           <div className="h-11 w-11 rounded-[6px] bg-[#0f1011] border border-[#23252a] flex items-center justify-center text-[14px] font-mono font-medium text-[#e4f222]">
-            {project.qualityScore}%
+            {project.qualityScore ? `${project.qualityScore}%` : 'N/A'}
           </div>
           <div>
             <h3 className="font-medium text-[#f7f8f8] text-[14px]">Quality Radar</h3>
@@ -49,9 +49,9 @@ export const QualityScoreCard: React.FC<Props> = ({ project, onReEvaluate }) => 
           <div key={m.label} className="p-3 rounded-[6px] bg-[#0f1011] border border-[#23252a]">
             <span className="block text-[10px] uppercase font-mono text-[#62666d]">{m.label}</span>
             <div className="flex items-center justify-between mt-1.5">
-              <span className={`text-[16px] font-mono font-medium ${m.color}`}>{m.value || 90}%</span>
+              <span className={`text-[16px] font-mono font-medium ${m.color}`}>{m.value ? `${m.value}%` : 'N/A'}</span>
               <div className="w-10 bg-[#23252a] rounded-full h-1 overflow-hidden">
-                <div className="bg-[#e4f222] h-1 rounded-full" style={{ width: `${m.value || 90}%` }} />
+                <div className="bg-[#e4f222] h-1 rounded-full" style={{ width: `${m.value || 0}%` }} />
               </div>
             </div>
           </div>

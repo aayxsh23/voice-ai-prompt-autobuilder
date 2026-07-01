@@ -25,8 +25,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       data: {
         projectId: id,
         version: nextVer,
-        agentPrompt: body.agentPrompt || curr?.agentPrompt || "",
-        systemPrompt: body.systemPrompt || curr?.systemPrompt || "",
+        finalPrompt: body.finalPrompt || curr?.finalPrompt || "",
+        businessSpec: curr?.businessSpec || "{}",
         blueprintJson: curr?.blueprintJson || "{}",
         changeSummary: body.changeSummary || "Manual snapshot"
       }

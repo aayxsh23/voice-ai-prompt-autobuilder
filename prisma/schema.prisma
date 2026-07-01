@@ -27,8 +27,8 @@ model PromptProject {
   industry                     String
   status                       String               @default("draft") // draft | published | archived
   welcomeMessage               String
-  agentPrompt                  String
-  systemPrompt                 String
+  finalPrompt                  String               @default("")
+  businessSpec                 String               @default("{}")
   blueprintJson                String
   qualityScore                 Int                  @default(0)
   completionScore              Int                  @default(0)
@@ -65,6 +65,7 @@ model BuilderSession {
   gapAuditJson           String   @default("{}")
   followupAnswersJson    String   @default("{}")
   refinedBlueprintJson   String   @default("{}")
+  businessSpec           String   @default("{}")
   generatedProjectId     String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -78,12 +79,10 @@ model DynamicVariable {
   label          String
   type           String        @default("business") // business | caller | task | tool_output | runtime | static
   required       Boolean       @default(true)
-  defaultValue   String        @default("")
-  source         String        @default("static")
-  description    String        @default("")
-  usedInSections String        @default("")
+  defaultValue   String
+  source         String        @default("static") // static | api | crm
+  description    String
   createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
 }
 
 model SuggestedFunction {
@@ -91,14 +90,13 @@ model SuggestedFunction {
   projectId           String
   project             PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name                String
-  category            String
+  category            String        @default("Tool") // Navigation | CRM | Database | Communication | Scheduling | Tool
   description         String
   purposeInPrompt     String
   requiredInputsJson  String        @default("[]")
   expectedOutputsJson String        @default("[]")
   enabled             Boolean       @default(true)
   createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
 }
 
 model KnowledgeBaseNote {
@@ -117,8 +115,8 @@ model PromptVersion {
   projectId     String
   project       PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   version       Int
-  agentPrompt   String
-  systemPrompt  String
+  finalPrompt   String        @default("")
+  businessSpec  String        @default("{}")
   blueprintJson String
   changeSummary String
   createdAt     DateTime      @default(now())
