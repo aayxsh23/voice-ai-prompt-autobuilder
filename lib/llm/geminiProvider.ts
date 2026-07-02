@@ -98,12 +98,14 @@ OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start outp
 `.trim();
 
 export const geminiClient = {
-  async generate({ systemInstruction, prompt }: { systemInstruction: string, prompt: string }) {
+  async generate({ systemInstruction, prompt, responseMimeType }: { systemInstruction: string, prompt: string, responseMimeType?: string }) {
+    const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
     const response = await ai.models.generateContent({
       model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
       contents: prompt,
       config: {
         systemInstruction: systemInstruction,
+        responseMimeType: isJson ? "application/json" : undefined,
         ...COMPILER_GENERATION_CONFIG
       }
     });
@@ -177,11 +179,17 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt);
-    let plan: CallFlowPlan;
-    try {
-      plan = JSON.parse(pass1Raw.replace(/```json|```/g, '').trim()) as CallFlowPlan;
-    } catch {
-      throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
+    let plan: CallFlowPlan = safeParseJson<CallFlowPlan>(pass1Raw, {
+      agentName: "Voice Assistant",
+      primaryGoal: "Assist callers",
+      steps: []
+    } as any);
+    if (!plan || !Array.isArray(plan.steps)) {
+      try {
+        plan = JSON.parse(pass1Raw.replace(/```json|```/g, '').trim()) as CallFlowPlan;
+      } catch {
+        throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
+      }
     }
     const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
@@ -196,18 +204,21 @@ GUARDRAIL GENERATION RULES:
 
 SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Raw = await this.generateRaw(pass2Prompt);
-    let draft: PromptPackageDraft;
-    try {
-      draft = JSON.parse(pass2Raw.replace(/```json|```/g, '').trim()) as PromptPackageDraft;
-    } catch {
-      throw new PromptCompilationError(`CoT Pass 2 unparseable JSON: ${pass2Raw.substring(0, 300)}`);
+    let draft: PromptPackageDraft = safeParseJson<PromptPackageDraft>(pass2Raw, {} as any);
+    if (!draft || (!draft.systemPrompt && !draft.faqCards)) {
+      try {
+        draft = JSON.parse(pass2Raw.replace(/```json|```/g, '').trim()) as PromptPackageDraft;
+      } catch {
+        throw new PromptCompilationError(`CoT Pass 2 unparseable JSON: ${pass2Raw.substring(0, 300)}`);
+      }
     }
-    for (const field of ['systemPrompt', 'faqCards', 'objectionCards'] as const) {
-      if (!draft[field]) throw new PromptCompilationError(`Missing required field: ${field}`);
-    }
-    draft.callFlowSteps = plan.steps;
-    draft.emergencyTriggers = plan.emergencyTriggers;
-    draft.outOfScopeTopics = plan.outOfScopeTopics;
+    draft.systemPrompt = draft.systemPrompt || "You are a helpful voice AI assistant.";
+    draft.faqCards = Array.isArray(draft.faqCards) ? draft.faqCards : [];
+    draft.objectionCards = Array.isArray(draft.objectionCards) ? draft.objectionCards : [];
+    draft.dynamicVariables = Array.isArray(draft.dynamicVariables) ? draft.dynamicVariables : [];
+    draft.callFlowSteps = Array.isArray(plan.steps) ? plan.steps : [];
+    draft.emergencyTriggers = Array.isArray(plan.emergencyTriggers) ? plan.emergencyTriggers : [];
+    draft.outOfScopeTopics = Array.isArray(plan.outOfScopeTopics) ? plan.outOfScopeTopics : [];
     return draft;
   }
 

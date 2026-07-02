@@ -38,10 +38,12 @@ Return a JSON array of tool objects with:
     try {
       const response = await geminiClient.generate({
         systemInstruction: "You are a tool definition architect. Return ONLY a valid JSON array of tool objects.",
-        prompt
+        prompt,
+        responseMimeType: "application/json"
       });
-      const tools = safeParseJson(response.text, fallbackTools);
-      return Array.isArray(tools) && tools.length > 0 ? tools : fallbackTools;
+      const parsed = safeParseJson(response.text, fallbackTools);
+      const tools = Array.isArray(parsed) ? parsed : fallbackTools;
+      return tools.length > 0 ? tools : fallbackTools;
     } catch (err) {
       console.warn("ToolPlanner fallback triggered:", err);
       return fallbackTools;

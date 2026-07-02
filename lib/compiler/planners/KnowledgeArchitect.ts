@@ -42,12 +42,23 @@ Return a JSON object with:
     try {
       const response = await geminiClient.generate({
         systemInstruction: "You are a knowledge base curation specialist. Return ONLY valid JSON.",
-        prompt
+        prompt,
+        responseMimeType: "application/json"
       });
       const kb = safeParseJson(response.text, fallbackKB);
+      const rawFaqs = Array.isArray(kb?.faqs) && kb.faqs.length > 0 ? kb.faqs : fallbackKB.faqs;
+      const rawObjs = Array.isArray(kb?.objections) && kb.objections.length > 0 ? kb.objections : fallbackKB.objections;
       return {
-        faqs: Array.isArray(kb?.faqs) ? kb.faqs : fallbackKB.faqs,
-        objections: Array.isArray(kb?.objections) ? kb.objections : (kb?.objections || fallbackKB.objections)
+        faqs: rawFaqs.map((f: any) => ({
+          question: f?.question || f?.q || "General FAQ",
+          answer: f?.answer || f?.a || "Standard policy applies.",
+          isFallback: !!f?.isFallback
+        })),
+        objections: rawObjs.map((o: any) => ({
+          trigger: o?.trigger || o?.objection || "General objection",
+          response: o?.response || o?.handling || "Address calmly and assist.",
+          isFallback: !!o?.isFallback
+        }))
       };
     } catch (err) {
       console.warn("KnowledgeArchitect fallback triggered:", err);

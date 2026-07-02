@@ -20,43 +20,64 @@ function formatPolicyString(val: any, defaultVal: string): string {
 }
 
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
+  const specFaqs = Array.isArray(spec?.knowledgeBase?.faqs) ? spec.knowledgeBase.faqs : [];
+  const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
   console.log("[PromptAssembler] assembleUnifiedPrompt() invoked.", {
     hasSpec: !!spec,
-    specFaqsCount: spec?.knowledgeBase?.faqs?.length || 0,
-    draftFaqsCount: draft?.faqCards?.length || 0,
-    specFaqsFull: spec?.knowledgeBase?.faqs || [],
-    draftFaqsFull: draft?.faqCards || []
+    specFaqsCount: specFaqs.length,
+    draftFaqsCount: draftFaqs.length,
+    specFaqsFull: specFaqs,
+    draftFaqsFull: draftFaqs
   });
 
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
-  const faqQuestionsSet = new Set((spec?.knowledgeBase?.faqs || []).map(f => f.question.toLowerCase().trim()));
+  const faqQuestionsSet = new Set(
+    specFaqs.map(f => String((f as any)?.question || (f as any)?.q || '').toLowerCase().trim()).filter(Boolean)
+  );
   const faqs = [
-    ...(spec?.knowledgeBase?.faqs || []),
-    ...(draft?.faqCards || []).filter((f: any) => f?.question && !faqQuestionsSet.has(f.question.toLowerCase().trim()))
+    ...specFaqs,
+    ...draftFaqs.filter((f: any) => {
+      const q = String(f?.question || f?.q || '').toLowerCase().trim();
+      return q && !faqQuestionsSet.has(q);
+    })
   ];
 
-  const objTriggersSet = new Set((spec?.knowledgeBase?.objections || []).map(o => o.trigger.toLowerCase().trim()));
-  const draftObjsMapped = (draft?.objectionCards || []).map((o: any) => ({
-    trigger: o.trigger || o.objection || "",
-    response: o.response || o.handling || ""
+  const specObjs = Array.isArray(spec?.knowledgeBase?.objections) ? spec.knowledgeBase.objections : [];
+  const draftObjs = Array.isArray(draft?.objectionCards) ? draft.objectionCards : [];
+  const objTriggersSet = new Set(
+    specObjs.map(o => String((o as any)?.trigger || (o as any)?.objection || '').toLowerCase().trim()).filter(Boolean)
+  );
+  const draftObjsMapped = draftObjs.map((o: any) => ({
+    trigger: o?.trigger || o?.objection || "",
+    response: o?.response || o?.handling || ""
+  }));
+  const specObjsMapped = specObjs.map((o: any) => ({
+    trigger: o?.trigger || o?.objection || "",
+    response: o?.response || o?.handling || ""
   }));
   const objections = [
-    ...(spec?.knowledgeBase?.objections || []),
-    ...draftObjsMapped.filter((o: any) => o?.trigger && !objTriggersSet.has(o.trigger.toLowerCase().trim()))
+    ...specObjsMapped,
+    ...draftObjsMapped.filter((o: any) => {
+      const t = String(o?.trigger || '').toLowerCase().trim();
+      return t && !objTriggersSet.has(t);
+    })
   ];
-  const steps = (spec?.callFlowPlan?.steps && spec.callFlowPlan.steps.length > 0)
-    ? spec.callFlowPlan.steps
-    : (draft?.callFlowSteps || []).map((s: any, idx: number) => ({
-        sequenceOrder: s.sequenceOrder || idx + 1,
-        stateId: s.stateId || `step_${idx + 1}`,
-        stateName: s.stateName || s.label || `Step ${idx + 1}`,
-        scriptDirective: s.scriptDirective || s.explicitDialogueScript || (s.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
-        slotsToCollect: s.slotsToCollect || []
-      }));
+
+  const rawSteps = (Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.length > 0)
+    ? spec!.callFlowPlan!.steps
+    : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
+  const steps = rawSteps.map((s: any, idx: number) => ({
+    sequenceOrder: s?.sequenceOrder || idx + 1,
+    stateId: s?.stateId || `step_${idx + 1}`,
+    stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
+    scriptDirective: s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
+    slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])
+  }));
 
   // 1. EXACT STATIC SYSTEM PROMPT WRAPPER
-  const customProhibitions = draft?.guardrails?.prohibitions
-    ? '\n' + draft.guardrails.prohibitions.map((p: string) => `- ${p}`).join('\n')
+  const prohibitionsList = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
+  const customProhibitions = prohibitionsList.length > 0
+    ? '\n' + prohibitionsList.map((p: any) => `- ${String(p)}`).join('\n')
     : "";
 
   const staticSystemPrompt = `You are a voice AI agent for phone conversations. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
@@ -127,44 +148,50 @@ ENDING RULE
 - If the user refuses or goes off-topic more than twice, politely end the call.`.trim();
 
   // 2. DYNAMIC SYSTEM PROMPT DETAILS (ADDED WITHOUT REMOVAL OF DETAILS)
-  const identity = `### AGENT IDENTITY & PRIMARY GOAL\n- Name: ${spec?.meta?.agentName || "Agent"}\n- Company: ${spec?.meta?.companyName || "Company"}\n- Primary Goal: ${primaryGoal}\n- Tone Profile: ${(spec?.meta?.toneProfile || []).join(', ')}\n- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`;
+  const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
+  const identity = `### AGENT IDENTITY & PRIMARY GOAL\n- Name: ${spec?.meta?.agentName || "Agent"}\n- Company: ${spec?.meta?.companyName || "Company"}\n- Primary Goal: ${primaryGoal}\n- Tone Profile: ${toneList.join(', ')}\n- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`;
   
-  const context = `### BUSINESS CONTEXT & VARIABLES\n${(spec?.businessSnapshot?.servicesOffered || []).map(s => `- Offered Service: ${s}`).join('\n')}\n- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}\n- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}\n- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}\n- Escalation Numbers: ${(spec?.businessSnapshot?.policies?.escalationNumbers || []).join(', ') || "None on file."}`;
+  const servicesList = Array.isArray(spec?.businessSnapshot?.servicesOffered) ? spec.businessSnapshot.servicesOffered : [];
+  const escalationList = Array.isArray(spec?.businessSnapshot?.policies?.escalationNumbers) ? spec.businessSnapshot.policies.escalationNumbers : [];
+  const context = `### BUSINESS CONTEXT & VARIABLES\n${servicesList.map(s => `- Offered Service: ${String(s)}`).join('\n')}\n- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}\n- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}\n- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}\n- Escalation Numbers: ${escalationList.join(', ') || "None on file."}`;
   
   const entities = spec?.extractedEntities;
+  const contactsList = Array.isArray(entities?.namedContacts) ? entities.namedContacts : [];
+  const deptsList = Array.isArray(entities?.departments) ? entities.departments : [];
   const transferLines = [
-    ...(entities?.namedContacts || []).map((c: any) => `- ${c.label}: ${c.value}`),
-    ...(entities?.departments || []).map((d: string) => `- Department: ${d}`)
+    ...contactsList.map((c: any) => `- ${c?.label || 'Contact'}: ${c?.value || ''}`),
+    ...deptsList.map((d: any) => `- Department: ${String(d)}`)
   ];
   const transferSection = transferLines.length > 0
     ? `### HUMAN TRANSFER & DEPARTMENT ROUTING\n${transferLines.join('\n')}`
     : "";
 
-  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => s.slotsToCollect || [])));
+  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
   const variablesSection = allSlots.length > 0
-    ? `### DYNAMIC VARIABLES\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
+    ? `### VARIABLES\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
     : "";
 
-  const capturedTopics = spec?.capturedTopics || [];
+  const capturedTopics = Array.isArray(spec?.capturedTopics) ? spec.capturedTopics : [];
   const operationalSection = capturedTopics.length > 0
-    ? `### OPERATIONAL PROTOCOLS & CAPTURED TOPICS\n${capturedTopics.map((c: any) => `Topic: ${c.topic}\nProtocol: ${c.summary}`).join('\n\n')}`
+    ? `### OPERATIONAL PROTOCOLS & CAPTURED TOPICS\n${capturedTopics.map((c: any) => `Topic: ${c?.topic || ''}\nProtocol: ${c?.summary || ''}`).join('\n\n')}`
     : "";
 
-  const emergencyTriggers = draft?.guardrails?.emergencyTriggers || [];
+  const emergencyTriggers = Array.isArray(draft?.guardrails?.emergencyTriggers) ? draft.guardrails.emergencyTriggers : [];
   const emergencyAction = draft?.guardrails?.emergencyAction || "";
   const emergencyHandling = emergencyTriggers.length > 0
     ? `### EMERGENCY HANDLING\nIf the caller mentions any of the following: ${emergencyTriggers.join(', ')} — stop the current flow immediately.\n${emergencyAction}`
     : "";
 
-  const flow = `### CALL FLOW\n${steps.map((step: any) => `STATE: [${step.stateId}] (${step.stateName})\nDirective: ${step.scriptDirective}\nRequired Extractions: ${(step.slotsToCollect || []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')}`;
+  const flow = `### CALL FLOW\n${steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')}`;
   
-  const faqSection = faqs.map((faq: any) => `Q: ${faq.question}\nA: ${faq.answer}`).join('\n\n') || "No specific FAQs defined.";
+  const faqSection = faqs.map((faq: any) => `Q: ${faq?.question || faq?.q || ''}\nA: ${faq?.answer || faq?.a || ''}`).join('\n\n') || "No specific FAQs defined.";
   const knowledge = `### FREQUENTLY ASKED QUESTIONS\n${faqSection}`;
   
-  const objSection = objections.map((obj: any) => `Trigger: ${obj.trigger}\nHandling: ${obj.response}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
+  const objSection = objections.map((obj: any) => `Trigger: ${obj?.trigger || obj?.objection || ''}\nHandling: ${obj?.response || obj?.handling || ''}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
   const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
   
-  const tools = `### TOOL & FUNCTION EXECUTION\n${JSON.stringify(spec?.tools || [], null, 2)}`;
+  const toolsList = Array.isArray(spec?.tools) ? spec.tools : [];
+  const tools = `### TOOL & FUNCTION EXECUTION\n${JSON.stringify(toolsList, null, 2)}`;
 
   // 3. FINAL UNIFIED ASSEMBLY
   const sections = [
@@ -220,19 +247,19 @@ export class PromptAssembler {
         }
       },
       callFlowPlan: {
-        steps: (draft?.callFlowSteps || specOrIr?.states || []).map((s: any, idx: number) => ({
-          sequenceOrder: s.sequenceOrder || idx + 1,
-          stateId: s.stateId || `step_${idx + 1}`,
-          stateName: s.stateName || s.label || `Step ${idx + 1}`,
-          scriptDirective: s.scriptDirective || s.explicitDialogueScript || (s.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
-          slotsToCollect: s.slotsToCollect || []
+        steps: (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : (Array.isArray(specOrIr?.states) ? specOrIr.states : [])).map((s: any, idx: number) => ({
+          sequenceOrder: s?.sequenceOrder || idx + 1,
+          stateId: s?.stateId || `step_${idx + 1}`,
+          stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
+          scriptDirective: s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
+          slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []
         }))
       },
       knowledgeBase: {
-        faqs: draft?.faqCards || [],
-        objections: (draft?.objectionCards || []).map((o: any) => ({ trigger: o.trigger || o.objection || "", response: o.response || o.handling || "" }))
+        faqs: Array.isArray(draft?.faqCards) ? draft.faqCards : [],
+        objections: (Array.isArray(draft?.objectionCards) ? draft.objectionCards : []).map((o: any) => ({ trigger: o?.trigger || o?.objection || "", response: o?.response || o?.handling || "" }))
       },
-      tools: specOrIr?.tools || [],
+      tools: Array.isArray(specOrIr?.tools) ? specOrIr.tools : [],
       extractedEntities: specOrIr?.extractedEntities || draft?.extractedEntities,
       resolvedTopics: specOrIr?.resolvedTopics || draft?.resolvedTopics,
       capturedTopics: specOrIr?.capturedTopics || draft?.capturedTopics

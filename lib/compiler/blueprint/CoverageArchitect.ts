@@ -47,15 +47,28 @@ export class CoverageArchitect {
     const hasCancellation = cancelStr === "None — confirmed by business" || (cancelStr && cancelStr !== "Standard cancellation policy applies." && cancelStr.trim().length > 5);
     const hasRefunds = refundStr === "None — confirmed by business" || (refundStr && refundStr !== "Standard refund policy applies." && refundStr.trim().length > 5);
     const resolved = spec?.resolvedTopics || [];
+    const captured = spec?.capturedTopics || [];
     const hasResolvedPolicy = resolved.some(t => t.toLowerCase().includes("cancellation") || t.toLowerCase().includes("refund") || t.toLowerCase().includes("policy") || t.toLowerCase().includes("fee"));
     if (!hasCancellation && !hasRefunds && !hasResolvedPolicy) {
-      missingFields.push("Key Business Policies / Rules (cancellation or refund details)");
+      missingFields.push("Key Business Policies / Rules (cancellation, fee, or refund details)");
     }
 
-    const MIN_USER_TURNS = 4;
+    const hasRouting = resolved.some(t => t.toLowerCase().includes("routing") || t.toLowerCase().includes("transfer") || t.toLowerCase().includes("escalat")) ||
+      captured.some(c => c.topic.toLowerCase().includes("routing") || c.topic.toLowerCase().includes("transfer") || c.topic.toLowerCase().includes("escalat") || c.topic.toLowerCase().includes("after_hours"));
+    if (!hasRouting) {
+      missingFields.push("Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)");
+    }
+
+    const hasEdgeCases = resolved.some(t => t.toLowerCase().includes("objection") || t.toLowerCase().includes("edge_case") || t.toLowerCase().includes("pushback") || t.toLowerCase().includes("emergency")) ||
+      captured.some(c => c.topic.toLowerCase().includes("objection") || c.topic.toLowerCase().includes("edge_case") || c.topic.toLowerCase().includes("pushback") || c.topic.toLowerCase().includes("emergency"));
+    if (!hasEdgeCases) {
+      missingFields.push("Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)");
+    }
+
+    const MIN_USER_TURNS = 5;
     const userTurnCount = chatHistory.filter(m => m.role.toLowerCase() === "user").length;
     if (userTurnCount < MIN_USER_TURNS) {
-      missingFields.push("Additional Business Detail (interview in progress)");
+      missingFields.push("Additional In-Depth Operational Detail (interview in progress)");
     }
 
     const isReadyForCompilation = missingFields.length === 0;
@@ -72,20 +85,22 @@ export class CoverageArchitect {
     spec?: Partial<BusinessSpecification>
   ): Promise<string> {
     if (missingFields.length === 0) {
-      return "I have all the core business specifications needed! Shall I compile your structured Voice AI agent prompt now?";
+      return "I have all the core and in-depth operational specifications needed! Shall I compile your structured Voice AI agent prompt now?";
     }
 
     const vertical = spec?.meta?.industry || "General";
     const verticalProbes: Record<string, string> = {
-      "Healthcare": "insurance handling, appointment types (new vs. follow-up), emergency protocol, referral handling",
-      "Dental": "insurance handling, routine checkup vs acute emergency slots, cancellation notice, intake forms",
-      "Gym/Fitness": "class scheduling vs. personal training vs. day passes, membership tiers, staff-led booking vs. self-service, trial policy",
-      "Fitness": "class scheduling vs. personal training vs. day passes, membership tiers, staff-led booking vs. self-service, trial policy",
-      "Logistics": "GPS consent language, dispatch escalation, driver verification steps, delivery windows",
-      "Real Estate": "property viewing scheduling, qualification questions (budget, timeline, pre-approval), agent transfer rules",
-      "Hospitality": "check-in/check-out times, room types, amenity bookings, dining reservations, deposit policy"
+      "Healthcare": "insurance verification scripts, appointment qualification criteria (new vs. follow-up), emergency triage protocol, HIPAA referral handling",
+      "Dental": "insurance handling, acute emergency vs routine checkup slots, cancellation notice phrasing, intake form procedures, pediatric/sedation thresholds",
+      "Gym/Fitness": "class scheduling restrictions, membership tier qualification, staff-led vs self-service trial bookings, guest pass verification procedures",
+      "Fitness": "class scheduling restrictions, membership tier qualification, staff-led vs self-service trial bookings, guest pass verification procedures",
+      "Logistics": "exact GPS tracking consent language, driver identity verification rules, dispatch escalation numbers, hazmat or over-dimension protocols",
+      "Real Estate": "property viewing qualification criteria (budget, timeline, pre-approval status), agent transfer routing rules, lockbox/access scripts",
+      "Hospitality": "check-in/check-out modification rules, room deposit requirements, dining/amenity reservation scripts, cancellation window exceptions",
+      "Financial Services": "caller authentication steps, fraud escalation procedures, transfer criteria for loan officers or support specialists, fee structures",
+      "Legal": "case intake screening questions, statute of limitations disclaimers, consultation fee collection phrasing, attorney escalation criteria"
     };
-    const activeProbes = verticalProbes[vertical] || "specific operational guidelines, common caller inquiries, transfer escalation numbers";
+    const activeProbes = verticalProbes[vertical] || "specific operational edge cases, exact qualification questions, transfer escalation criteria, fallback procedures";
 
     const entities = spec?.extractedEntities;
     const namedItems = [
@@ -105,8 +120,8 @@ export class CoverageArchitect {
       : "";
 
     const historyText = chatHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
-    const prompt = `You are a Question Planner AI for a Voice AI Auto-Builder.
-We are currently missing the following core business specification fields:
+    const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder.
+We are currently missing the following core or operational specification fields:
 ${missingFields.join(", ")}
 
 Recent conversation history:
@@ -114,16 +129,21 @@ ${historyText}
 
 Given this business is in the following vertical: ${vertical}. Prioritize asking about: ${activeProbes}, unless already covered.${entityInstruction}${resolvedInstruction}
 
-CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or vertical probe that the user has already answered or explained in the chat history. Formulate exactly ONE natural, conversational, and professional question to ask the user next to collect 1 or 2 of these missing fields. Do not stack multiple complex questions. Keep it concise.`;
+CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or vertical probe that the user has already answered or explained in the chat history. Formulate exactly ONE natural, conversational, and highly specific probing question to ask the user next.
+Instead of asking surface-level generic questions (like "What are your hours?" or "What are your policies?"), ask an in-depth, scenario-driven operational question that uncovers concrete details such as:
+1. Exact caller scenarios or edge cases (e.g., "What exact script should the AI follow if a caller asks to reschedule inside the cancellation window?").
+2. Specific qualification questions required before booking or dispatching.
+3. Live agent transfer routing conditions, phone numbers, or emergency escalation steps.
+Formulate one insightful, professional, probing question that invites deep operational clarity. Keep it clear, engaging, and conversational.`;
 
     try {
       const response = await geminiClient.generate({
-        systemInstruction: "You are an expert conversational AI interview specialist.",
+        systemInstruction: "You are an expert conversational AI interview specialist who probes for deep operational nuances.",
         prompt
       });
-      return response.text?.trim() || `Could you please tell me more about your ${missingFields[0]}?`;
+      return response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${missingFields[0]}?`;
     } catch {
-      return `To tailor the agent properly, could you please provide details regarding: ${missingFields.join(", ")}?`;
+      return `To ensure the AI handles complex real-world interactions smoothly, could you share specific operational details or edge-case rules regarding: ${missingFields[0]}?`;
     }
   }
 }

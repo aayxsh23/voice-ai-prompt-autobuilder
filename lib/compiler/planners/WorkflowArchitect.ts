@@ -53,10 +53,12 @@ Return a JSON array of objects with:
     try {
       const response = await geminiClient.generate({
         systemInstruction: "You are a structured JSON workflow planning specialist. Return ONLY a valid JSON array of steps.",
-        prompt
+        prompt,
+        responseMimeType: "application/json"
       });
-      const steps = safeParseJson(response.text, fallbackSteps);
-      return Array.isArray(steps) && steps.length > 0 ? steps : fallbackSteps;
+      const parsed = safeParseJson(response.text, fallbackSteps);
+      const steps = Array.isArray(parsed) ? parsed : fallbackSteps;
+      return steps.length > 0 ? steps : fallbackSteps;
     } catch (err) {
       console.warn("WorkflowArchitect fallback triggered:", err);
       return fallbackSteps;

@@ -32,16 +32,17 @@ export async function executePromptCompilationPipeline(extractedIR: any, draft?:
 
 function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrides): PromptPackageDraft {
   if (!overrides) return draft;
-  const userQuestions = new Set((overrides.faqPairs ?? []).map(f => f.question.toLowerCase().trim()));
-  const dedupedFaqs = (draft.faqCards ?? []).filter(f => !userQuestions.has(f.question.toLowerCase().trim()));
-  const userTriggers = new Set((overrides.objectionPairs ?? []).map(o => (o.trigger || o.objection || '').toLowerCase().trim()));
-  const dedupedObjs = (draft.objectionCards ?? []).filter(o => !userTriggers.has((o.trigger || o.objection || '').toLowerCase().trim()));
+  const userQuestions = new Set((Array.isArray(overrides.faqPairs) ? overrides.faqPairs : []).map(f => String(f?.question || '').toLowerCase().trim()).filter(Boolean));
+  const dedupedFaqs = (Array.isArray(draft.faqCards) ? draft.faqCards : []).filter(f => f && !userQuestions.has(String(f?.question || '').toLowerCase().trim()));
+  
+  const userTriggers = new Set((Array.isArray(overrides.objectionPairs) ? overrides.objectionPairs : []).map(o => String(o?.trigger || o?.objection || '').toLowerCase().trim()).filter(Boolean));
+  const dedupedObjs = (Array.isArray(draft.objectionCards) ? draft.objectionCards : []).filter(o => o && !userTriggers.has(String(o?.trigger || o?.objection || '').toLowerCase().trim()));
   return {
     ...draft,
-    faqCards: [...(overrides.faqPairs ?? []), ...dedupedFaqs],
-    objectionCards: [...(overrides.objectionPairs ?? []), ...dedupedObjs],
-    verbatimLines: [...(overrides.verbatimLines ?? []), ...(draft.verbatimLines ?? [])],
-    transferConditions: [...(overrides.transferRules ?? []), ...(draft.transferConditions ?? [])]
+    faqCards: [...(Array.isArray(overrides.faqPairs) ? overrides.faqPairs : []), ...dedupedFaqs],
+    objectionCards: [...(Array.isArray(overrides.objectionPairs) ? overrides.objectionPairs : []), ...dedupedObjs],
+    verbatimLines: [...(Array.isArray(overrides.verbatimLines) ? overrides.verbatimLines : []), ...(Array.isArray(draft.verbatimLines) ? draft.verbatimLines : [])],
+    transferConditions: [...(Array.isArray(overrides.transferRules) ? overrides.transferRules : []), ...(Array.isArray(draft.transferConditions) ? draft.transferConditions : [])]
   };
 }
 
@@ -101,12 +102,12 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
   draft.businessSpec = spec;
 
   // Synchronize dynamicVariables with any slots required by call flow steps
-  const steps = (spec.callFlowPlan?.steps && spec.callFlowPlan.steps.length > 0)
+  const steps = (Array.isArray(spec.callFlowPlan?.steps) && spec.callFlowPlan.steps.length > 0)
     ? spec.callFlowPlan.steps
-    : (draft?.callFlowSteps || []);
-  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => s.slotsToCollect || [])));
-  draft.dynamicVariables = draft?.dynamicVariables || [];
-  const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v.key));
+    : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
+  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
+  draft.dynamicVariables = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v?.key).filter(Boolean));
   for (const slot of allSlots) {
     if (!declaredVarKeys.has(slot)) {
       draft.dynamicVariables.push({
