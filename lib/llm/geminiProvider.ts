@@ -39,20 +39,17 @@ You are a senior AI voice agent prompt engineer. Your task is to generate produc
 QUALITY STANDARDS — your output MUST meet ALL of these:
 
 STRUCTURE: Every output must contain these exact sections in this order:
-### AGENT IDENTITY
-### CONTEXT & VARIABLES
-### PRIMARY GOAL
+### AGENT IDENTITY & PERSONA
+### OUTPUT & VOICE MECHANICS
+### SCOPE & REFUSAL BEHAVIOR
+### MANDATORY EMERGENCY & SAFETY OVERRIDES
+### BUSINESS CONTEXT & STATIC FACTS
+### ESCALATION & ROUTING MAP
+### DYNAMIC VARIABLES
 ### CALL FLOW
-### FAQ & KNOWLEDGE DEFLECTION
+### FAQ (FREQUENTLY ASKED QUESTIONS)
 ### OBJECTION HANDLING
-### TTS & VOICE RULES
 ### TOOL & FUNCTION EXECUTION
-### GUARDRAILS
-### MANDATORY EMERGENCY & SCOPE GUARDRAILS — IMMUTABLE
-### CLOSING RULES
-### AI IDENTITY DISCLOSURE
-### OFF-TOPIC HANDLING
-### ENDING RULE
 
 VOICE RULES (mandatory in every output):
 - Every agent turn must be 1–2 short sentences maximum
@@ -94,7 +91,7 @@ CRITICAL PROHIBITIONS:
 - Never generate a guardrail as a suggestion — guardrails are non-negotiable rules
 - Never use the phrase "As an AI" — if asked, follow the AI IDENTITY DISCLOSURE section format
 
-OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY.
+OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY & PERSONA.
 `.trim();
 
 export const geminiClient = {

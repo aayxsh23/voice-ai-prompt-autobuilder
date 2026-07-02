@@ -74,29 +74,27 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])
   }));
 
-  // 1. EXACT STATIC SYSTEM PROMPT WRAPPER
-  const prohibitionsList = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
-  const customProhibitions = prohibitionsList.length > 0
-    ? '\n' + prohibitionsList.map((p: any) => `- ${String(p)}`).join('\n')
-    : "";
+  // 1. IDENTITY & PERSONA
+  const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
+  const identity = `### AGENT IDENTITY & PERSONA
+You are a voice AI agent for phone conversations representing ${spec?.meta?.companyName || "the company"}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
+- Name: ${spec?.meta?.agentName || "Agent"}
+- Company: ${spec?.meta?.companyName || "Company"}
+- Primary Goal: ${primaryGoal}
+- Tone Profile: ${toneList.join(', ')}
+- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`.trim();
 
-  const staticSystemPrompt = `You are a voice AI agent for phone conversations. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
-
-CORE SCOPE (MANDATORY)
-- You have one task only, defined by the current agent objective.
-- You must never respond to requests outside that task.
-- If a request is unrelated, unsafe, or out of context, politely refuse and return to the task.
-- Do not provide advice, explanations, recipes, instructions, opinions, or help of any kind beyond your task.
-- Do not invent information, assume intent, or expand scope.
-
+  // 2. OUTPUT / VOICE MECHANICS
+  const outputMechanics = `### OUTPUT & VOICE MECHANICS
 VOICE RULES
 - Use phone-friendly language only.
 - Keep 1–2 short sentences per turn.
 - Ask one question at a time.
 - Avoid long explanations or verbal lists.
 - Use natural acknowledgements only, like "okay", "got it", "understood".
+- Never end mid-sentence.
 
-EMAIL SPEAKABILITY RULES (MANDATORY)
+EMAIL & NUMBER SPEAKABILITY RULES (MANDATORY)
 - Whenever you mention an email address, output it in speakable form for TTS.
 - Never output raw email symbols like "@" or "." in final spoken responses.
 - Replace "@" with " at ".
@@ -125,83 +123,99 @@ Handling "Hello":
 
 Key Rules
 - Never ask "Can you hear me clearly?" as your opening line or for first 2 turns.
-- When resuming after an audio check, briefly re-anchor the user: "Great, so as I was saying..." and resume from where you left off.
+- When resuming after an audio check, briefly re-anchor the user: "Great, so as I was saying..." and resume from where you left off.`.trim();
 
-OFF-TOPIC HANDLING (MANDATORY)
-- If the user asks anything unrelated (for example: food, cooking, recipes, weapons, bombs, hacking, personal advice, general knowledge): Say one of the two based on the context: “I might be missing something, how does this relate to what we’re discussing.” or "I might be missing something, can you please repeat yourself?"
-- If the user repeats or persists more than two times, gracefully end the call.
-
-SAFETY & HALLUCINATION GUARDRAILS
+  // 3. SCOPE & REFUSAL BEHAVIOR
+  const prohibitionsList = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
+  const customProhibitions = prohibitionsList.length > 0
+    ? '\n' + prohibitionsList.map((p: any) => `- ${String(p)}`).join('\n')
+    : "";
+  const scopeAndRefusals = `### SCOPE & REFUSAL BEHAVIOR
+CORE TASK & BOUNDARIES
+- You have one task only, defined by the current agent objective.
+- You must never respond to requests outside that task.
+- Do not provide advice, explanations, recipes, instructions, opinions, or help of any kind beyond your task.
+- Do not invent information, assume intent, or expand scope.
+- Stay on the current objective only. Do not jump ahead or revisit earlier points unnecessarily. Do not repeat questions unless clarification is required.
 - Use only information explicitly provided in the prompt or conversation.
 - If you don’t know something, say: “I don’t have that information.”
-- Never explain restricted or unsafe topics.
-- Never redirect to alternative topics or suggestions.${customProhibitions}
+- Never explain restricted or unsafe topics. Never redirect to alternative topics or suggestions.${customProhibitions}
 
-FLOW CONTROL
-- Stay on the current objective only.
-- Do not jump ahead or revisit earlier points unnecessarily.
-- Do not repeat questions unless clarification is required.
-- If required information is missing, ask one clear, specific question.
+OFF-TOPIC REFUSAL PROTOCOL
+- If the user asks anything unrelated (for example: food, cooking, recipes, weapons, bombs, hacking, personal advice, general knowledge), say one of the two based on the context: “I might be missing something, how does this relate to what we’re discussing.” or "I might be missing something, can you please repeat yourself?"
+- If the user repeats or persists with off-topic or refused requests more than two times, politely end the call.`.trim();
 
-ENDING RULE
-- Never end mid-sentence.
-- If the user refuses or goes off-topic more than twice, politely end the call.`.trim();
+  // 4. SAFETY-CRITICAL OVERRIDES
+  const emergencyTriggers = Array.isArray(draft?.guardrails?.emergencyTriggers) && draft.guardrails.emergencyTriggers.length > 0
+    ? draft.guardrails.emergencyTriggers
+    : ["medical emergency", "self-harm", "harm to others", "police/fire/ambulance request"];
+  const emergencyAction = draft?.guardrails?.emergencyAction || "Stop the current flow immediately. Advise the caller to contact 911 or local emergency services right away, and immediately terminate the call.";
+  const safetyOverrides = `### MANDATORY EMERGENCY & SAFETY OVERRIDES
+Check this on every turn regardless of state.
+If the caller mentions any safety-critical situations or emergencies (including: ${emergencyTriggers.join(', ')}):
+- ${emergencyAction}`.trim();
 
-  // 2. DYNAMIC SYSTEM PROMPT DETAILS (ADDED WITHOUT REMOVAL OF DETAILS)
-  const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
-  const identity = `### AGENT IDENTITY & PRIMARY GOAL\n- Name: ${spec?.meta?.agentName || "Agent"}\n- Company: ${spec?.meta?.companyName || "Company"}\n- Primary Goal: ${primaryGoal}\n- Tone Profile: ${toneList.join(', ')}\n- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`;
-  
+  // 5. BUSINESS CONTEXT & STATIC FACTS
   const servicesList = Array.isArray(spec?.businessSnapshot?.servicesOffered) ? spec.businessSnapshot.servicesOffered : [];
+  const capturedTopics = Array.isArray(spec?.capturedTopics) ? spec.capturedTopics : [];
+  const contextLines = [
+    ...servicesList.map(s => `- Offered Service: ${String(s)}`),
+    `- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}`,
+    `- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}`,
+    `- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}`
+  ];
+  if (capturedTopics.length > 0) {
+    contextLines.push('', 'Operational Protocols:', ...capturedTopics.map((c: any) => `- Topic: ${c?.topic || ''}\n  Protocol: ${c?.summary || ''}`));
+  }
+  const businessContext = `### BUSINESS CONTEXT & STATIC FACTS\n${contextLines.join('\n')}`;
+
+  // 6. ESCALATION & ROUTING MAP
   const escalationList = Array.isArray(spec?.businessSnapshot?.policies?.escalationNumbers) ? spec.businessSnapshot.policies.escalationNumbers : [];
-  const context = `### BUSINESS CONTEXT & VARIABLES\n${servicesList.map(s => `- Offered Service: ${String(s)}`).join('\n')}\n- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}\n- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}\n- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}\n- Escalation Numbers: ${escalationList.join(', ') || "None on file."}`;
-  
   const entities = spec?.extractedEntities;
   const contactsList = Array.isArray(entities?.namedContacts) ? entities.namedContacts : [];
   const deptsList = Array.isArray(entities?.departments) ? entities.departments : [];
-  const transferLines = [
-    ...contactsList.map((c: any) => `- ${c?.label || 'Contact'}: ${c?.value || ''}`),
+  const routingLines = [
+    ...escalationList.map((num: any) => `- Escalation Number: ${String(num)}`),
+    ...contactsList.map((c: any) => `- ${c?.label || 'Transfer Contact'}: ${c?.value || ''}`),
     ...deptsList.map((d: any) => `- Department: ${String(d)}`)
   ];
-  const transferSection = transferLines.length > 0
-    ? `### HUMAN TRANSFER & DEPARTMENT ROUTING\n${transferLines.join('\n')}`
-    : "";
+  const escalationAndRouting = routingLines.length > 0
+    ? `### ESCALATION & ROUTING MAP\n${routingLines.join('\n')}`
+    : `### ESCALATION & ROUTING MAP\nNo specific transfer numbers or departments configured. Address inquiries directly or offer a callback.`;
 
+  // 7. DYNAMIC VARIABLES
   const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
-  const variablesSection = allSlots.length > 0
-    ? `### VARIABLES\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
+  const dynamicVariables = allSlots.length > 0
+    ? `### DYNAMIC VARIABLES\nThe following variables must be collected and tracked during the call flow:\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
     : "";
 
-  const capturedTopics = Array.isArray(spec?.capturedTopics) ? spec.capturedTopics : [];
-  const operationalSection = capturedTopics.length > 0
-    ? `### OPERATIONAL PROTOCOLS & CAPTURED TOPICS\n${capturedTopics.map((c: any) => `Topic: ${c?.topic || ''}\nProtocol: ${c?.summary || ''}`).join('\n\n')}`
-    : "";
+  // 8. CALL FLOW / STATE MACHINE
+  const flowContent = steps.length > 0
+    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')
+    : "No structured call flow defined. Engage conversationally based on primary goal.";
+  const flow = `### CALL FLOW\n${flowContent}`;
 
-  const emergencyTriggers = Array.isArray(draft?.guardrails?.emergencyTriggers) ? draft.guardrails.emergencyTriggers : [];
-  const emergencyAction = draft?.guardrails?.emergencyAction || "";
-  const emergencyHandling = emergencyTriggers.length > 0
-    ? `### EMERGENCY HANDLING\nIf the caller mentions any of the following: ${emergencyTriggers.join(', ')} — stop the current flow immediately.\n${emergencyAction}`
-    : "";
-
-  const flow = `### CALL FLOW\n${steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')}`;
-  
+  // 9. FAQS
   const faqSection = faqs.map((faq: any) => `Q: ${faq?.question || faq?.q || ''}\nA: ${faq?.answer || faq?.a || ''}`).join('\n\n') || "No specific FAQs defined.";
-  const knowledge = `### FREQUENTLY ASKED QUESTIONS\n${faqSection}`;
-  
+  const knowledge = `### FAQ (FREQUENTLY ASKED QUESTIONS)\nUse the following reference material opportunistically when asked:\n\n${faqSection}`;
+
+  // 10. OBJECTION HANDLING
   const objSection = objections.map((obj: any) => `Trigger: ${obj?.trigger || obj?.objection || ''}\nHandling: ${obj?.response || obj?.handling || ''}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
   const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
-  
-  const toolsList = Array.isArray(spec?.tools) ? spec.tools : [];
-  const tools = `### TOOL & FUNCTION EXECUTION\n${JSON.stringify(toolsList, null, 2)}`;
 
-  // 3. FINAL UNIFIED ASSEMBLY
+  // 11. TOOL / FUNCTION SCHEMAS
+  const toolsList = Array.isArray(spec?.tools) ? spec.tools : [];
+  const tools = `### TOOL & FUNCTION EXECUTION\n${toolsList.length > 0 ? JSON.stringify(toolsList, null, 2) : "No tools defined."}`;
+
+  // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
   const sections = [
-    staticSystemPrompt,
     identity,
-    context,
-    transferSection,
-    variablesSection,
-    operationalSection,
-    emergencyHandling,
+    outputMechanics,
+    scopeAndRefusals,
+    safetyOverrides,
+    businessContext,
+    escalationAndRouting,
+    dynamicVariables,
     flow,
     knowledge,
     objectionHandling,
