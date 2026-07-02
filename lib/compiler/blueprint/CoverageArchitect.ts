@@ -50,6 +50,17 @@ export class CoverageArchitect {
     if ((!hoursStr || hoursStr === "Standard Business Hours" || hoursStr === "{}" || hoursStr === "[]" || hoursStr.trim() === "") && !hasHoursInHistory) {
       missingFields.push("Operating Hours");
     }
+
+    const hasLocation = /\b(located|street|address|maple|avenue|suite|city|zip|website)\b/i.test(fullUserText);
+    if (!hasLocation) {
+      missingFields.push("Physical Location & Contact Info (address, phone number, or website)");
+    }
+
+    const hasStaff = /\b(dr\.|doctor|dentist|hygienist|adams|lee|sarah|mark|practitioner|specialist|staff)\b/i.test(fullUserText) || (spec?.extractedEntities?.namedContacts && spec.extractedEntities.namedContacts.length > 0);
+    if (!hasStaff) {
+      missingFields.push("Staff & Practitioner Roster (names of doctors, specialists, or key departments)");
+    }
+
     const cancelStr = toStr(snap.policies?.cancellation);
     const refundStr = toStr(snap.policies?.refunds);
     const hasCancellation = cancelStr === "None — confirmed by business" || (cancelStr && cancelStr !== "Standard cancellation policy applies." && cancelStr.trim().length > 5);
@@ -59,6 +70,16 @@ export class CoverageArchitect {
     const hasResolvedPolicy = resolved.some(t => t.toLowerCase().includes("cancellation") || t.toLowerCase().includes("refund") || t.toLowerCase().includes("policy") || t.toLowerCase().includes("fee"));
     if (!hasCancellation && !hasRefunds && !hasResolvedPolicy) {
       missingFields.push("Key Business Policies / Rules (cancellation, fee, or refund details)");
+    }
+
+    const hasIntake = /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("intake") || t.toLowerCase().includes("insurance"));
+    if (!hasIntake) {
+      missingFields.push("Intake & Qualification Requirements (required caller info, insurance verification, or new patient prerequisites)");
+    }
+
+    const hasFaqDetail = (spec?.knowledgeBase?.faqs && spec.knowledgeBase.faqs.length >= 3) || /\b(faq|frequently asked|question|cost|price|parking|direction)\b/i.test(fullUserText);
+    if (!hasFaqDetail) {
+      missingFields.push("Common Caller FAQs (frequent questions about pricing, preparation, or services)");
     }
 
     const hasRouting = resolved.some(t => t.toLowerCase().includes("routing") || t.toLowerCase().includes("transfer") || t.toLowerCase().includes("escalat")) ||
@@ -73,7 +94,7 @@ export class CoverageArchitect {
       missingFields.push("Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)");
     }
 
-    const MIN_USER_TURNS = 5;
+    const MIN_USER_TURNS = 10;
     const userTurnCount = chatHistory.filter(m => m.role.toLowerCase() === "user").length;
     if (userTurnCount < MIN_USER_TURNS) {
       missingFields.push("Additional In-Depth Operational Detail (interview in progress)");
@@ -128,27 +149,41 @@ export class CoverageArchitect {
       : "";
 
     const phase1Fields = missingFields.filter(f =>
-      f.includes("Company Name") || f.includes("Operating Hours") || f.includes("Services Offered") || f.includes("Primary Agent Goal")
+      f.includes("Company Name") || f.includes("Physical Location")
     );
     const phase2Fields = missingFields.filter(f =>
-      f.includes("Key Business Policies")
+      f.includes("Operating Hours") || f.includes("Staff & Practitioner Roster")
     );
     const phase3Fields = missingFields.filter(f =>
+      f.includes("Services Offered") || f.includes("Primary Agent Goal") || f.includes("Intake & Qualification")
+    );
+    const phase4Fields = missingFields.filter(f =>
+      f.includes("Key Business Policies") || f.includes("Common Caller FAQs")
+    );
+    const phase5Fields = missingFields.filter(f =>
       f.includes("Call Transfer") || f.includes("Edge Case") || f.includes("Additional In-Depth")
     );
 
-    let activePhaseName = "Phase 3 (High-Pressure & Edge Cases)";
-    let targetFields = phase3Fields.length > 0 ? phase3Fields : missingFields;
-    let phaseInstruction = `Focus on probing for high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}).`;
+    let activePhaseName = "Phase 5 (Escalation & High-Pressure Edge Cases)";
+    let targetFields = phase5Fields.length > 0 ? phase5Fields : missingFields;
+    let phaseInstruction = `We are in Phase 5 of discovery. Focus on high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}). Formulate a crisp, practical question targeting: ${targetFields[0]}.`;
 
     if (phase1Fields.length > 0) {
-      activePhaseName = "Phase 1 (Basic Foundation)";
+      activePhaseName = "Phase 1 (Identity & Location)";
       targetFields = phase1Fields;
-      phaseInstruction = `We are in Phase 1 of discovery. Focus strictly on establishing foundational identity and facts: collecting the official clinic/business name, exact operating days/hours, core services offered, and staff/dentist schedules. Do NOT jump ahead into complex edge cases, emergency routing, or transfer policies until these basics are established. Formulate a friendly, engaging question to collect these foundational details.`;
+      phaseInstruction = `We are in Phase 1 of discovery. Focus strictly on establishing foundational identity and location: collecting the official clinic/business name or physical location/contact info (address, phone number, website). Do NOT ask about hours, services, policies, or emergencies yet. Formulate a friendly, conversational question targeting: ${phase1Fields[0]}.`;
     } else if (phase2Fields.length > 0) {
-      activePhaseName = "Phase 2 (Core Workflows & Policies)";
+      activePhaseName = "Phase 2 (Schedule & Team Roster)";
       targetFields = phase2Fields;
-      phaseInstruction = `We are in Phase 2 of discovery. Focus on core operational workflows: scheduling rules, rescheduling windows, cancellation policies, fee or deposit rules. Do NOT probe for emergency triage or live agent transfers yet. Formulate a practical, engaging question to understand how appointments, cancellations, and fees are managed.`;
+      phaseInstruction = `We are in Phase 2 of discovery. Focus strictly on establishing the schedule and team setup: exact operating days/hours or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about services, insurance, policies, or emergencies yet. Formulate an engaging question targeting: ${phase2Fields[0]}.`;
+    } else if (phase3Fields.length > 0) {
+      activePhaseName = "Phase 3 (Services & Caller Intake)";
+      targetFields = phase3Fields;
+      phaseInstruction = `We are in Phase 3 of discovery. Focus strictly on core offerings, service durations, or caller intake requirements (new vs existing patient screening, required ID/insurance verification). Do NOT jump into cancellation fees or emergency routing yet. Formulate a natural question targeting: ${phase3Fields[0]}.`;
+    } else if (phase4Fields.length > 0) {
+      activePhaseName = "Phase 4 (Policies & Common FAQs)";
+      targetFields = phase4Fields;
+      phaseInstruction = `We are in Phase 4 of discovery. Focus strictly on everyday rules and FAQs: cancellation windows, late fees, refund rules, or top frequent everyday questions callers ask (pricing, preparation, parking). Do NOT probe for emergency triage or live agent transfers yet. Formulate a clear, helpful question targeting: ${phase4Fields[0]}.`;
     }
 
     const historyText = chatHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");

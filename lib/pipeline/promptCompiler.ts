@@ -59,63 +59,75 @@ function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: a
     draftObjs: draft?.objectionCards,
     useCase: draft?.useCase || spec?.meta?.primaryGoal
   };
-  const fullText = JSON.stringify(contextObj).toLowerCase();
+  // Exclude structural keys like "faqCards" or "faq_topic" from raw text matching
+  const contentOnlyText = JSON.stringify(contextObj).replace(/"(?:faqCards|faq_topic|faqs)":/g, '').toLowerCase();
 
   return rules.filter(r => {
     const tag = (r.tag || '').toUpperCase();
     
-    // Universal core rules that apply to virtually all voice agents
-    if (['PHONE_NUMBER', 'NUMBER', 'HALLUCINATION', 'OUT_OF_SCOPE', 'ABUSIVE_USER', 'INTERRUPTION', 'SILENCE'].includes(tag)) {
+    // Core foundational rules for voice AI integrity
+    if (['NUMBER', 'HALLUCINATION', 'OUT_OF_SCOPE'].includes(tag)) {
       return true;
+    }
+
+    // Telephony mechanics (only if active phone conversation features exist)
+    if (tag === 'PHONE_NUMBER') {
+      return /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(contentOnlyText) || /\b(phone number|telephone|call back|mobile|dial|extension)\b/.test(contentOnlyText);
+    }
+    if (['ABUSIVE_USER', 'INTERRUPTION', 'SILENCE'].includes(tag)) {
+      return /\b(phone|call|caller|voice|agent|speak|transfer|hang up)\b/.test(contentOnlyText);
     }
 
     // Context-dependent Speakability rules
     if (tag === 'EMAIL') {
-      return /\b(email|e-mail|@|\.com|gmail|outlook|yahoo|mail)\b/.test(fullText);
+      return /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(contentOnlyText) || /\b(email|e-mail|gmail|outlook|yahoo|inbox)\b/.test(contentOnlyText);
     }
     if (tag === 'PINCODE') {
-      return /\b(pin|pincode|zip|postal|passcode|otp|verification code|security code)\b/.test(fullText);
+      return /\b(pin|pincode|passcode|otp|verification code|security code|zip code|postal code)\b/.test(contentOnlyText);
     }
     if (tag === 'DATE_TIME') {
-      return /\b(date|time|schedule|booking|reschedule|appointment|calendar|hour|day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(fullText);
+      return /\b(date|time|schedule|booking|reschedule|appointment|calendar|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\bam\b|\bpm\b|hours|mins|minutes)\b/.test(contentOnlyText);
     }
     if (tag === 'URL') {
-      return /\b(url|website|portal|http|www\.|\.org|\.net|online link|web page)\b/.test(fullText);
+      // Must contain actual web URLs or domain names, NOT merely the word "website"
+      return /\b(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|org|net|io|co|gov|edu|uk)\b)/i.test(contentOnlyText);
     }
     if (tag === 'ADDRESS') {
-      return /\b(address|street|avenue|boulevard|suite|location|drive|road|maple|city|state)\b/.test(fullText);
+      // Must contain an actual street address with number and street designator
+      return /\b\d{1,5}\s+[a-z0-9\s]+(street|st|avenue|ave|boulevard|blvd|road|rd|drive|dr|lane|ln|way|court|ct|suite|ste)\b/i.test(contentOnlyText);
     }
     if (tag === 'ACRONYM') {
-      return /\b(acronym|abbreviation|faq|ppo|hmo|fsa|hsa|id|vip|dtmf|ivr)\b/.test(fullText);
+      // Technical acronyms (excluding structural 'faq')
+      return /\b(ppo|hmo|fsa|hsa|hipaa|dtmf|ivr|vip|otp|ssn|dob|atm)\b/.test(contentOnlyText);
     }
     if (tag === 'NAME_PRONUNCIATION') {
-      return /\b(dr\.|doctor|dentist|hygienist|name|pronunciation|staff|provider|adams|lee|sarah)\b/.test(fullText);
+      return /\b(dr\.|doctor|dentist|hygienist|phonetic|pronounce|pronunciation|provider|adams|lee|sarah)\b/.test(contentOnlyText);
     }
 
     // Context-dependent Guardrails
     if (tag === 'SAFETY_CRITICAL') {
-      return /\b(emergency|pain|trauma|hospital|urgent|911|medical|health|clinic|dentist|safety|suicide|injury)\b/.test(fullText);
+      return /\b(emergency|pain|trauma|hospital|urgent|911|988|suicide|self-harm|medical|injury|bleeding)\b/.test(contentOnlyText);
     }
     if (tag === 'PII_PROTECTION') {
-      return /\b(credit card|debit card|payment|card ending|ssn|social security|bank account|pii|sensitive|billing|carecredit)\b/.test(fullText);
+      return /\b(credit card|debit card|payment|card ending|ssn|social security|bank account|pii|sensitive|carecredit)\b/.test(contentOnlyText);
     }
     if (tag === 'COMPETITOR_MENTION') {
-      return /\b(competitor|comparison|vs|versus|other provider|better than|alternative to)\b/.test(fullText);
+      return /\b(competitor|comparison|vs|versus|other provider|better than|alternative to)\b/.test(contentOnlyText);
     }
     if (tag === 'LEGAL_COMPLIANCE') {
-      return /\b(legal|compliance|medical advice|disclaimer|law|regulation|regulated|terms|policy|healthcare|dentist|financial advice)\b/.test(fullText);
+      return spec?.meta?.isRegulated === true || /\b(legal advice|disclaimer|statute|law|mandated disclosure|terms of service|warranty|liability)\b/.test(contentOnlyText);
     }
     if (tag === 'HUMAN_ESCALATION') {
-      return /\b(transfer|escalat|human|receptionist|front desk|manager|on-call|live agent|person)\b/.test(fullText);
+      return /\b(transfer|escalat|receptionist|front desk|manager|on-call|live agent)\b/.test(contentOnlyText);
     }
     if (tag === 'CONSENT_DISCLOSURE') {
-      return /\b(record|recording|consent|disclos|ai assistant|virtual assistant)\b/.test(fullText);
+      return /\b(record|recording|consent to record|ai disclosure)\b/.test(contentOnlyText);
     }
     if (tag === 'IDENTITY_VERIFICATION') {
-      return /\b(verify identity|verification|account detail|existing patient|date of birth|dob|security question)\b/.test(fullText);
+      return /\b(verify identity|verification|account lookup|existing patient verification|date of birth verification|security question)\b/.test(contentOnlyText);
     }
 
-    return true;
+    return false;
   });
 }
 
