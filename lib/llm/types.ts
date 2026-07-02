@@ -177,6 +177,7 @@ export interface PromptPackageDraft {
   };
   systemPromptCompiled?: boolean;
   operationalContext?: Record<string, string>;
+  appliedRules?: any[];
   validationStatus?: 'success' | 'warning' | 'failed_review_required';
   validationErrors?: string[];
   validationWarnings?: string[];

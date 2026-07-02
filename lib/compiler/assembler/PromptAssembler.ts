@@ -30,6 +30,19 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     draftFaqsFull: draftFaqs
   });
 
+  const appliedRules = Array.isArray(draft?.appliedRules) ? draft.appliedRules : [];
+  const speakabilityRules = appliedRules
+    .filter((r: any) => r?.category === 'SPEAKABILITY' && r?.content)
+    .map((r: any) => r.content.trim())
+    .join('\n\n');
+  const speakabilityContent = speakabilityRules || "No special speakability rules defined.";
+
+  const guardrailRules = appliedRules
+    .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
+    .map((r: any) => r.content.trim())
+    .join('\n\n');
+  const guardrailsContent = guardrailRules || "No special guardrail rules defined.";
+
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
   const faqQuestionsSet = new Set(
     specFaqs.map(f => String((f as any)?.question || (f as any)?.q || '').toLowerCase().trim()).filter(Boolean)
@@ -94,24 +107,7 @@ VOICE RULES
 - Use natural acknowledgements only, like "okay", "got it", "understood".
 - Never end mid-sentence.
 
-EMAIL & NUMBER SPEAKABILITY RULES (MANDATORY)
-- Whenever you mention an email address, output it in speakable form for TTS.
-- Never output raw email symbols like "@" or "." in final spoken responses.
-- Replace "@" with " at ".
-- Replace "." with " dot ".
-- In the local part (before @):
-  - Speak digits individually (example: 1512 -> one five one two).
-  - "." -> dot, "_" -> underscore, "-" -> dash, "+" -> plus.
-- For letters:
-  - Speak normal words as words.
-  - Speak isolated letters one by one.
-  - Use "zed" for letter "z" when spelling letters individually.
-- In the domain:
-  - Common words like gmail, yahoo, outlook stay as words.
-  - Very short labels like "inc" should be spelled letter by letter (i n c).
-- TLD rule (last part after final dot):
-  - If it is "com", speak "com".
-  - Otherwise spell letter-by-letter (ai -> a i, in -> i n, net -> n e t, org -> o r g).
+${speakabilityContent}
 
 AUDIO & HELLO HANDLING
 Conversation State Awareness: Track whether the conversation has been initiated. The conversation is considered "started" only after a substantive exchange has occurred beyond the initial greeting.
@@ -146,14 +142,7 @@ OFF-TOPIC REFUSAL PROTOCOL
 - If the user repeats or persists with off-topic or refused requests more than two times, politely end the call.`.trim();
 
   // 4. SAFETY-CRITICAL OVERRIDES
-  const emergencyTriggers = Array.isArray(draft?.guardrails?.emergencyTriggers) && draft.guardrails.emergencyTriggers.length > 0
-    ? draft.guardrails.emergencyTriggers
-    : ["medical emergency", "self-harm", "harm to others", "police/fire/ambulance request"];
-  const emergencyAction = draft?.guardrails?.emergencyAction || "Stop the current flow immediately. Advise the caller to contact 911 or local emergency services right away, and immediately terminate the call.";
-  const safetyOverrides = `### MANDATORY EMERGENCY & SAFETY OVERRIDES
-Check this on every turn regardless of state.
-If the caller mentions any safety-critical situations or emergencies (including: ${emergencyTriggers.join(', ')}):
-- ${emergencyAction}`.trim();
+  const safetyOverrides = `### MANDATORY EMERGENCY & SAFETY OVERRIDES\n${guardrailsContent}`.trim();
 
   // 5. BUSINESS CONTEXT & STATIC FACTS
   const servicesList = Array.isArray(spec?.businessSnapshot?.servicesOffered) ? spec.businessSnapshot.servicesOffered : [];

@@ -1,6 +1,7 @@
 import { PromptAssembler, assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
 import { getLlmClient } from "../llm/llmClient";
 import { BlueprintJson, PromptPackageDraft, SchemaOverrides, BusinessSpecification } from "../llm/types";
+import { prisma } from "@/lib/db";
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
 import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
@@ -44,6 +45,78 @@ function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrid
     verbatimLines: [...(Array.isArray(overrides.verbatimLines) ? overrides.verbatimLines : []), ...(Array.isArray(draft.verbatimLines) ? draft.verbatimLines : [])],
     transferConditions: [...(Array.isArray(overrides.transferRules) ? overrides.transferRules : []), ...(Array.isArray(draft.transferConditions) ? draft.transferConditions : [])]
   };
+}
+
+function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: any): any[] {
+  const contextObj = {
+    meta: spec?.meta,
+    snapshot: spec?.businessSnapshot,
+    flow: spec?.callFlowPlan,
+    kb: spec?.knowledgeBase,
+    tools: spec?.tools,
+    draftFlow: draft?.callFlowSteps,
+    draftFaqs: draft?.faqCards,
+    draftObjs: draft?.objectionCards,
+    useCase: draft?.useCase || spec?.meta?.primaryGoal
+  };
+  const fullText = JSON.stringify(contextObj).toLowerCase();
+
+  return rules.filter(r => {
+    const tag = (r.tag || '').toUpperCase();
+    
+    // Universal core rules that apply to virtually all voice agents
+    if (['PHONE_NUMBER', 'NUMBER', 'HALLUCINATION', 'OUT_OF_SCOPE', 'ABUSIVE_USER', 'INTERRUPTION', 'SILENCE'].includes(tag)) {
+      return true;
+    }
+
+    // Context-dependent Speakability rules
+    if (tag === 'EMAIL') {
+      return /\b(email|e-mail|@|\.com|gmail|outlook|yahoo|mail)\b/.test(fullText);
+    }
+    if (tag === 'PINCODE') {
+      return /\b(pin|pincode|zip|postal|passcode|otp|verification code|security code)\b/.test(fullText);
+    }
+    if (tag === 'DATE_TIME') {
+      return /\b(date|time|schedule|booking|reschedule|appointment|calendar|hour|day|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/.test(fullText);
+    }
+    if (tag === 'URL') {
+      return /\b(url|website|portal|http|www\.|\.org|\.net|online link|web page)\b/.test(fullText);
+    }
+    if (tag === 'ADDRESS') {
+      return /\b(address|street|avenue|boulevard|suite|location|drive|road|maple|city|state)\b/.test(fullText);
+    }
+    if (tag === 'ACRONYM') {
+      return /\b(acronym|abbreviation|faq|ppo|hmo|fsa|hsa|id|vip|dtmf|ivr)\b/.test(fullText);
+    }
+    if (tag === 'NAME_PRONUNCIATION') {
+      return /\b(dr\.|doctor|dentist|hygienist|name|pronunciation|staff|provider|adams|lee|sarah)\b/.test(fullText);
+    }
+
+    // Context-dependent Guardrails
+    if (tag === 'SAFETY_CRITICAL') {
+      return /\b(emergency|pain|trauma|hospital|urgent|911|medical|health|clinic|dentist|safety|suicide|injury)\b/.test(fullText);
+    }
+    if (tag === 'PII_PROTECTION') {
+      return /\b(credit card|debit card|payment|card ending|ssn|social security|bank account|pii|sensitive|billing|carecredit)\b/.test(fullText);
+    }
+    if (tag === 'COMPETITOR_MENTION') {
+      return /\b(competitor|comparison|vs|versus|other provider|better than|alternative to)\b/.test(fullText);
+    }
+    if (tag === 'LEGAL_COMPLIANCE') {
+      return /\b(legal|compliance|medical advice|disclaimer|law|regulation|regulated|terms|policy|healthcare|dentist|financial advice)\b/.test(fullText);
+    }
+    if (tag === 'HUMAN_ESCALATION') {
+      return /\b(transfer|escalat|human|receptionist|front desk|manager|on-call|live agent|person)\b/.test(fullText);
+    }
+    if (tag === 'CONSENT_DISCLOSURE') {
+      return /\b(record|recording|consent|disclos|ai assistant|virtual assistant)\b/.test(fullText);
+    }
+    if (tag === 'IDENTITY_VERIFICATION') {
+      return /\b(verify identity|verification|account detail|existing patient|date of birth|dob|security question)\b/.test(fullText);
+    }
+
+    return true;
+  });
 }
 
 export async function compilePromptPackage(input: BlueprintJson | any): Promise<PromptPackageDraft | any> {
@@ -121,6 +194,14 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
       });
       declaredVarKeys.add(slot);
     }
+  }
+
+  try {
+    const dbRules = await prisma.promptRule.findMany({ where: { isDefault: true } });
+    draft.appliedRules = filterRelevantRules(dbRules, spec, draft);
+  } catch (err) {
+    console.warn("[compilePromptPackage] Could not fetch default PromptRules:", err);
+    draft.appliedRules = draft.appliedRules || [];
   }
 
   const finalPrompt = assembleUnifiedPrompt(spec, draft);

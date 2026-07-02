@@ -3,12 +3,12 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id              String           @id @default(uuid())
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
   name            String
   email           String           @unique
   createdAt       DateTime         @default(now())
@@ -18,8 +18,8 @@ model User {
 }
 
 model PromptProject {
-  id                           String               @id @default(uuid())
-  userId                       String
+  id                           String               @id @default(auto()) @map("_id") @db.ObjectId
+  userId                       String               @db.ObjectId
   user                         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   name                         String
   agentName                    String
@@ -48,11 +48,12 @@ model PromptProject {
   versions                     PromptVersion[]
   testScenarios                TestScenario[]
   qualityIssues                PromptQualityIssue[]
+  rules                        ProjectRule[]
 }
 
 model BuilderSession {
-  id                     String   @id @default(uuid())
-  userId                 String
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                 String   @db.ObjectId
   user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   currentStep            Int      @default(1)
   selectedTemplate       String   @default("")
@@ -66,14 +67,14 @@ model BuilderSession {
   followupAnswersJson    String   @default("{}")
   refinedBlueprintJson   String   @default("{}")
   businessSpec           String   @default("{}")
-  generatedProjectId     String?
+  generatedProjectId     String?  @db.ObjectId
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 }
 
 model DynamicVariable {
-  id             String        @id @default(uuid())
-  projectId      String
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId      String        @db.ObjectId
   project        PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   key            String
   label          String
@@ -86,8 +87,8 @@ model DynamicVariable {
 }
 
 model SuggestedFunction {
-  id                  String        @id @default(uuid())
-  projectId           String
+  id                  String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId           String        @db.ObjectId
   project             PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name                String
   category            String        @default("Tool") // Navigation | CRM | Database | Communication | Scheduling | Tool
@@ -100,8 +101,8 @@ model SuggestedFunction {
 }
 
 model KnowledgeBaseNote {
-  id        String        @id @default(uuid())
-  projectId String
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId String        @db.ObjectId
   project   PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title     String
   content   String
@@ -111,8 +112,8 @@ model KnowledgeBaseNote {
 }
 
 model PromptVersion {
-  id            String        @id @default(uuid())
-  projectId     String
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId     String        @db.ObjectId
   project       PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   version       Int
   finalPrompt   String        @default("")
@@ -123,8 +124,8 @@ model PromptVersion {
 }
 
 model TestScenario {
-  id                    String        @id @default(uuid())
-  projectId             String
+  id                    String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId             String        @db.ObjectId
   project               PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title                 String
   persona               String
@@ -136,8 +137,8 @@ model TestScenario {
 }
 
 model PromptQualityIssue {
-  id             String        @id @default(uuid())
-  projectId      String
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId      String        @db.ObjectId
   project        PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   severity       String        // low | medium | high | critical
   category       String
@@ -146,4 +147,25 @@ model PromptQualityIssue {
   resolved       Boolean       @default(false)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+}
+
+model PromptRule {
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  category  String
+  tag       String
+  content   String
+  isDefault Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  projects  ProjectRule[]
+}
+
+model ProjectRule {
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  projectId String        @db.ObjectId
+  project   PromptProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  ruleId    String        @db.ObjectId
+  rule      PromptRule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, ruleId])
 }

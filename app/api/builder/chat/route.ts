@@ -96,16 +96,32 @@ Ensure you return valid JSON with no markdown fences.`;
         const existingCaptured = existingSpec.capturedTopics || [];
         const patchCaptured = (patch.capturedTopics as unknown as Array<{ topic: string; summary: string }>) || [];
 
-        updatedSpec = {
-          meta: { ...(existingSpec.meta || {}), ...(patch.meta || {}) } as BusinessSpecification['meta'],
-          businessSnapshot: {
-            ...existingSnap,
-            ...patchSnap,
-            policies: {
-              ...(existingSnap.policies || {}),
-              ...(patchSnap.policies || {})
+        const isValEmpty = (v: unknown): boolean => {
+          if (v === null || v === undefined) return true;
+          if (typeof v === 'string' && v.trim() === '') return true;
+          if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v as object).length === 0) return true;
+          if (Array.isArray(v) && v.length === 0) return true;
+          return false;
+        };
+
+        const safePatch = <T extends Record<string, any>>(oldObj: T = {} as T, newObj: Record<string, any> = {}): T => {
+          const res: Record<string, any> = { ...oldObj };
+          for (const key of Object.keys(newObj)) {
+            const newVal = newObj[key];
+            if (!isValEmpty(newVal)) {
+              if (typeof newVal === 'object' && !Array.isArray(newVal) && res[key] && typeof res[key] === 'object' && !Array.isArray(res[key])) {
+                res[key] = safePatch(res[key], newVal);
+              } else {
+                res[key] = newVal;
+              }
             }
-          } as BusinessSpecification['businessSnapshot'],
+          }
+          return res as T;
+        };
+
+        updatedSpec = {
+          meta: safePatch(existingSpec.meta || {}, patch.meta || {}) as BusinessSpecification['meta'],
+          businessSnapshot: safePatch(existingSnap, patchSnap) as BusinessSpecification['businessSnapshot'],
           callFlowPlan: {
             steps: dedupeBy(
               [...(existingFlow?.steps || []), ...(patchFlow?.steps || [])],

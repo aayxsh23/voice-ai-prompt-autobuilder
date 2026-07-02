@@ -27,19 +27,27 @@ export class CoverageArchitect {
       return String(val);
     };
 
+    const fullUserText = chatHistory
+      .filter(m => m.role.toLowerCase() === "user")
+      .map(m => m.content)
+      .join(" ");
+
     const companyStr = toStr(meta.companyName);
-    if (!companyStr || companyStr === "Enterprise Client" || companyStr.trim() === "") {
+    const hasCompanyInHistory = /\b(called|named|clinic is|dentistry|company|business is)\s+([A-Z][a-zA-Z\s]+)/i.test(fullUserText);
+    if ((!companyStr || companyStr === "Enterprise Client" || companyStr.trim() === "") && !hasCompanyInHistory) {
       missingFields.push("Company Name");
     }
     const goalStr = toStr(meta.primaryGoal);
     if (!goalStr || goalStr === "Assist callers effectively" || goalStr.trim().length < 15) {
       missingFields.push("Primary Agent Goal / Use Case");
     }
-    if (!snap.servicesOffered || !Array.isArray(snap.servicesOffered) || snap.servicesOffered.length === 0) {
+    const hasServicesInHistory = /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures)\b/i.test(fullUserText);
+    if ((!snap.servicesOffered || !Array.isArray(snap.servicesOffered) || snap.servicesOffered.length === 0) && !hasServicesInHistory) {
       missingFields.push("Services Offered");
     }
     const hoursStr = toStr(snap.operatingHours);
-    if (!hoursStr || hoursStr === "Standard Business Hours" || hoursStr === "{}" || hoursStr === "[]" || hoursStr.trim() === "") {
+    const hasHoursInHistory = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|am|pm|hours of operation)\b/i.test(fullUserText);
+    if ((!hoursStr || hoursStr === "Standard Business Hours" || hoursStr === "{}" || hoursStr === "[]" || hoursStr.trim() === "") && !hasHoursInHistory) {
       missingFields.push("Operating Hours");
     }
     const cancelStr = toStr(snap.policies?.cancellation);
@@ -119,31 +127,53 @@ export class CoverageArchitect {
       ? `\nThese topics have already been covered in this conversation: ${coveredTags.join(", ")}. Do not ask about any of them again unless the user's most recent message suggests a correction or contradiction.`
       : "";
 
+    const phase1Fields = missingFields.filter(f =>
+      f.includes("Company Name") || f.includes("Operating Hours") || f.includes("Services Offered") || f.includes("Primary Agent Goal")
+    );
+    const phase2Fields = missingFields.filter(f =>
+      f.includes("Key Business Policies")
+    );
+    const phase3Fields = missingFields.filter(f =>
+      f.includes("Call Transfer") || f.includes("Edge Case") || f.includes("Additional In-Depth")
+    );
+
+    let activePhaseName = "Phase 3 (High-Pressure & Edge Cases)";
+    let targetFields = phase3Fields.length > 0 ? phase3Fields : missingFields;
+    let phaseInstruction = `Focus on probing for high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}).`;
+
+    if (phase1Fields.length > 0) {
+      activePhaseName = "Phase 1 (Basic Foundation)";
+      targetFields = phase1Fields;
+      phaseInstruction = `We are in Phase 1 of discovery. Focus strictly on establishing foundational identity and facts: collecting the official clinic/business name, exact operating days/hours, core services offered, and staff/dentist schedules. Do NOT jump ahead into complex edge cases, emergency routing, or transfer policies until these basics are established. Formulate a friendly, engaging question to collect these foundational details.`;
+    } else if (phase2Fields.length > 0) {
+      activePhaseName = "Phase 2 (Core Workflows & Policies)";
+      targetFields = phase2Fields;
+      phaseInstruction = `We are in Phase 2 of discovery. Focus on core operational workflows: scheduling rules, rescheduling windows, cancellation policies, fee or deposit rules. Do NOT probe for emergency triage or live agent transfers yet. Formulate a practical, engaging question to understand how appointments, cancellations, and fees are managed.`;
+    }
+
     const historyText = chatHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
-    const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder.
-We are currently missing the following core or operational specification fields:
-${missingFields.join(", ")}
+    const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder following a Phased Discovery Approach.
+Current Discovery Stage: ${activePhaseName}
+Target missing fields for this turn: ${targetFields.join(", ")}
 
 Recent conversation history:
 ${historyText}
 
-Given this business is in the following vertical: ${vertical}. Prioritize asking about: ${activeProbes}, unless already covered.${entityInstruction}${resolvedInstruction}
+Vertical Context: ${vertical}. ${entityInstruction}${resolvedInstruction}
 
-CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or vertical probe that the user has already answered or explained in the chat history. Formulate exactly ONE natural, conversational, and highly specific probing question to ask the user next.
-Instead of asking surface-level generic questions (like "What are your hours?" or "What are your policies?"), ask an in-depth, scenario-driven operational question that uncovers concrete details such as:
-1. Exact caller scenarios or edge cases (e.g., "What exact script should the AI follow if a caller asks to reschedule inside the cancellation window?").
-2. Specific qualification questions required before booking or dispatching.
-3. Live agent transfer routing conditions, phone numbers, or emergency escalation steps.
-Formulate one insightful, professional, probing question that invites deep operational clarity. Keep it clear, engaging, and conversational.`;
+DISCOVERY PHASE INSTRUCTION:
+${phaseInstruction}
+
+CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained. Formulate exactly ONE natural, conversational, and specific question to ask the user next targeting the current phase (${activePhaseName}). Keep your response warm, professional, and clear.`;
 
     try {
       const response = await geminiClient.generate({
-        systemInstruction: "You are an expert conversational AI interview specialist who probes for deep operational nuances.",
+        systemInstruction: "You are an expert conversational AI interview specialist following a strict Phased Discovery Approach.",
         prompt
       });
-      return response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${missingFields[0]}?`;
+      return response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${targetFields[0] || missingFields[0]}?`;
     } catch {
-      return `To ensure the AI handles complex real-world interactions smoothly, could you share specific operational details or edge-case rules regarding: ${missingFields[0]}?`;
+      return `To ensure the AI handles interactions smoothly, could you share specific details regarding: ${targetFields[0] || missingFields[0]}?`;
     }
   }
 }
