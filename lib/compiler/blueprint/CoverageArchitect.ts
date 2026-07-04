@@ -186,7 +186,7 @@ export class CoverageArchitect {
       phaseInstruction = `We are in Phase 4 of discovery. Focus strictly on everyday rules and FAQs: cancellation windows, late fees, refund rules, or top frequent everyday questions callers ask (pricing, preparation, parking). Do NOT probe for emergency triage or live agent transfers yet. Formulate a clear, helpful question targeting: ${phase4Fields[0]}.`;
     }
 
-    const historyText = chatHistory.slice(-20).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
+    const historyText = chatHistory.slice(-50).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
     const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder following a Phased Discovery Approach.
 Current Discovery Stage: ${activePhaseName}
 Target missing fields for this turn: ${targetFields.join(", ")}
