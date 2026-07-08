@@ -55,17 +55,17 @@ Conversation History:
 ${historyText}
 
 Output ONLY a JSON object with these top-level keys:
-- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal)
+- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal, languageMode: string - e.g. 'english', 'hindi', or 'multilingual')
 - businessSnapshot (operatingHours, servicesOffered, policies)
 - extractedEntities (departments: string[], namedContacts: Array<{ label: string, value: string }>, servicesOrOfferings: string[])
-- resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy')
+- resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy', 'language_preference')
 - capturedTopics (Array<{ topic: string, summary: string }>: detailed operational answers that do not fit standard fields)
 
 Do NOT include callFlowPlan, knowledgeBase, or tools in your output under any circumstances — those are generated later by a separate specialist process, not by you.
 Only include a field if the user has explicitly and specifically stated it. Do not infer, invent, guess, or generalize values the user did not say.
 For extractedEntities, only list entities the user explicitly named. Copy names and numbers verbatim as stated — do not paraphrase, generalize, or invent additional departments, contacts, or services beyond what was said.
 If the user explicitly states that a policy does not exist (e.g. 'no policy', 'we don't have one', 'N/A'), write the literal string 'None — confirmed by business' for that field rather than omitting it or leaving it empty.
-Whenever the user gives a substantive answer to a specific sub-topic, append a short snake_case tag for it to resolvedTopics (e.g. 'cancellation_policy', 'refund_policy'). Do not repeat tags already present in the existing spec's resolvedTopics.
+Whenever the user gives a substantive answer to a specific sub-topic (including when they confirm that no specific managers/departments are needed or refer to the team as a whole), append a short snake_case tag for it to resolvedTopics (e.g. 'cancellation_policy', 'refund_policy', 'language_preference', 'staff_roster', 'team_structure', 'routing_protocol', 'qualification_criteria', 'objection_handling'). Do not repeat tags already present in the existing spec's resolvedTopics.
 If the user gives a substantive, detailed operational answer that doesn't map cleanly to meta or businessSnapshot (e.g. after-hours routing, emergency triage protocol, referral handling, records handling), append it to capturedTopics as { topic: short_snake_case_tag, summary: 2-4 sentence summary preserving key specifics like exact scripts, extensions, and thresholds }. Check existing capturedTopics first — do not add a duplicate topic tag.
 Ensure you return valid JSON with no markdown fences.`;
 
@@ -122,7 +122,7 @@ Ensure you return valid JSON with no markdown fences.`;
         updatedSpec = {
           meta: {
             ...(safePatch(existingSpec.meta || {}, patch.meta || {}) as BusinessSpecification['meta']),
-            languageMode: languageMode || existingSpec.meta?.languageMode || currentBlueprint?.languageMode || 'english'
+            languageMode: (patch.meta?.languageMode as any) || languageMode || existingSpec.meta?.languageMode || currentBlueprint?.languageMode || 'english'
           },
           businessSnapshot: safePatch(existingSnap, patchSnap) as BusinessSpecification['businessSnapshot'],
           callFlowPlan: {

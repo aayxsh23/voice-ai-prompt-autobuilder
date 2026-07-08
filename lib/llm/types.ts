@@ -3,7 +3,7 @@ import { z } from 'zod';
 export interface BusinessSnapshot {
   businessName?: string;
   companyName?: string;
-  languageMode?: 'english' | 'hindi' | 'multilingual';
+  languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
   valueProposition?: string;
   industry?: string;
   location?: string;
@@ -299,7 +299,7 @@ export interface BusinessSpecification {
     isRegulated: boolean;
     toneProfile: string[];
     primaryGoal: string;
-    languageMode?: 'english' | 'hindi' | 'multilingual';
+    languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
   };
   businessSnapshot: {
     operatingHours: string;
@@ -347,7 +347,7 @@ export const businessSpecificationSchema = z.object({
     isRegulated: z.boolean().default(false),
     toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
     primaryGoal: z.string().default("Assist callers effectively"),
-    languageMode: z.enum(["english", "hindi", "multilingual"]).default("english").optional()
+    languageMode: z.enum(["english", "hindi", "hinglish", "multilingual"]).default("english").optional()
   }),
   businessSnapshot: z.object({
     operatingHours: z.string().default("Standard Business Hours"),

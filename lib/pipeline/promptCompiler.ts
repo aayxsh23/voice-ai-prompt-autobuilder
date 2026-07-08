@@ -165,11 +165,12 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
     };
   }
 
-  // Hydrate via specialist planners if missing steps/KB
-  if (spec.callFlowPlan.steps.length === 0) {
+  // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and missing Devanagari)
+  const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish' || /hindi|hinglish/i.test(JSON.stringify(spec.capturedTopics || []));
+  if (spec.callFlowPlan.steps.length === 0 || (isHindiMode && !spec.callFlowPlan.steps.some((s: any) => /[\u0900-\u097F]/.test(s.scriptDirective || '')))) {
     spec.callFlowPlan.steps = await WorkflowArchitect.planWorkflow(spec);
   }
-  if (spec.knowledgeBase.faqs.length === 0) {
+  if (spec.knowledgeBase.faqs.length === 0 || (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)))) {
     spec.knowledgeBase = await KnowledgeArchitect.planKnowledge(spec);
   }
   if (spec.tools.length === 0) {
@@ -192,6 +193,20 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
     ? spec.callFlowPlan.steps
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
   const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
+  const allSlotsSet = new Set(allSlots);
+
+  // Collect explicitly user-specified infields from input/spec/overrides
+  const userSpecifiedInfields = new Set<string>(
+    [
+      ...(Array.isArray(input.dynamicVariables) ? input.dynamicVariables : []),
+      ...(Array.isArray((spec as any).dynamicVariables) ? (spec as any).dynamicVariables : []),
+      ...(Array.isArray(input.overrides?.dynamicVariables) ? input.overrides.dynamicVariables : [])
+    ]
+      .filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'))
+      .map((v: any) => v.key)
+      .filter(Boolean)
+  );
+
   draft.dynamicVariables = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
   const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v?.key).filter(Boolean));
   for (const slot of allSlots) {
@@ -211,8 +226,14 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
   }
 
   draft.dynamicVariables.forEach((v: any) => {
-    if (!v.fieldDirection) {
-      if (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static') {
+    // 1) An infield can NEVER be an extraction! If a slot is collected during a call flow step, force outfield.
+    if (allSlotsSet.has(v.key) || v.source === 'extraction') {
+      v.fieldDirection = 'outfield';
+    } else if (v.fieldDirection === 'infield' && !userSpecifiedInfields.has(v.key)) {
+      // 2) LLM cannot create infields on its own — must be explicitly user-specified only.
+      v.fieldDirection = 'outfield';
+    } else if (!v.fieldDirection) {
+      if (userSpecifiedInfields.has(v.key)) {
         v.fieldDirection = 'infield';
       } else {
         v.fieldDirection = 'outfield';

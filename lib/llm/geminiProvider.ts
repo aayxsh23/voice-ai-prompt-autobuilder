@@ -50,7 +50,6 @@ STRUCTURE: Every output must contain these exact sections in this order:
 ### CALL FLOW
 ### FAQ (FREQUENTLY ASKED QUESTIONS)
 ### OBJECTION HANDLING
-### TOOL & FUNCTION EXECUTION
 
 VOICE RULES (mandatory in every output):
 - Every agent turn must be 1–2 short sentences maximum
@@ -165,11 +164,13 @@ export class GeminiProvider implements LlmService {
 
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
     const { overrides, ...llmInput } = input;
-    const languageMode = input.languageMode || input.business?.languageMode || 'english';
-    const langNote = languageMode === 'hindi'
-      ? "\nLANGUAGE DIRECTIVE: All generatedLine and fallbackBehavior dialogue MUST be in conversational Hindi (Devanagari/Romanized)."
+    const languageMode = input.languageMode || input.business?.languageMode || (input as any).businessSpec?.meta?.languageMode || 'english';
+    const capturedText = JSON.stringify((input as any).businessSpec?.capturedTopics || (input as any).capturedTopics || []) + JSON.stringify((input as any).businessSpec?.resolvedTopics || (input as any).resolvedTopics || []);
+    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+    const langNote = isHindiOrHinglish
+      ? "\nCRITICAL LANGUAGE MANDATE (DEVANAGARI STRICT RULE):\n1. All dialogue lines ('generatedLine', 'fallbackBehavior', 'scriptDirective'), FAQ questions/answers ('question', 'answer'), and objection handling triggers/responses ('trigger', 'response') MUST be written entirely in Devanagari script (देवनागरी), NOT Romanized/English letters.\n2. NEVER write common Hindi words ('kya', 'ho', 'hai', 'baat', 'kar', `rahi`, 'hoon', 'sir', 'maam', 'namaste', 'haan', 'nahi') or Indian names ('Deepika', 'Ananya') in English letters! Write them strictly in Devanagari ('क्या', 'हो', 'है', 'बात', 'कर', 'रही', 'हूँ', 'सर/मैम', 'नमस्ते', 'हाँ', `नहीं`, 'दीपिका', 'अनन्या').\n3. ONLY specific technical/domain software keywords (like 'Marg ERP', 'business owner', 'online demo', 'software', 'accounting', 'inventory', 'billing', 'pincode', 'team', 'office', 'schedule') can remain in English characters inside the Devanagari sentence.\n4. Do NOT output duplicate questions/objections — never output both a Romanized and a Devanagari version of the same FAQ or objection. Output ONLY the Devanagari version."
       : languageMode === 'multilingual'
-      ? "\nLANGUAGE DIRECTIVE: Support English, Hindi, and Hinglish. Provide dual-language or mixed conversational variants in dialogue where appropriate."
+      ? "\nCRITICAL LANGUAGE MANDATE: Support English, Hindi, and Hinglish. When generating Hindi sentences in dialogue, FAQ answers, or objection responses, they MUST be written in Devanagari script (देवनागरी), not Roman script."
       : "";
     const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
     const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
@@ -198,8 +199,9 @@ Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     }
     const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","fieldDirection":"'infield'|'outfield'","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
+${langNote}
 
-FAQ GENERATION RULE: Generate 8-12 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.
+FAQ GENERATION RULE: Generate 8-12 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.${langNote}
 
 GUARDRAIL GENERATION RULES:
 1. Generate 5-8 guardrails specific to THIS exact business.
@@ -208,7 +210,8 @@ GUARDRAIL GENERATION RULES:
 4. Include an INVENTION prohibition specific to this business.
 
 VARIABLE CLASSIFICATION RULE:
-For each dynamicVariable, set fieldDirection to "infield" if it represents pre-call context (e.g. caller_phone, company_name, crm data) or "outfield" if it represents details extracted from the conversation transcript after the call (e.g. caller_name, appointment_date, reason_for_call).${langNote}
+1. INFIELDS (Pre-Call Context): An infield can NEVER be an extraction (i.e., inside 'collectsVariable' or collected during call flow). Furthermore, you CANNOT create or invent any infields on your own — infields MUST be explicitly specified by the user as pre-call context. If the user did not explicitly specify any pre-call variables, set ZERO infields.
+2. OUTFIELDS (Post-Call Extraction): All details collected or extracted from the conversation transcript ('collectsVariable', 'interest_status', 'demo_type', 'pincode') MUST be marked as 'fieldDirection: "outfield"' and referenced with '[variable_name]' syntax in extractions.
 
 SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Raw = await this.generateRaw(pass2Prompt);

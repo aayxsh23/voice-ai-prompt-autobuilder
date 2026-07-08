@@ -11,7 +11,6 @@ const FROZEN_SECTION_PATTERNS = [
   /^### FAQ[\s\S]*?(?=\n^### |$)/m,
   /^### OBJECTION[\s\S]*?(?=\n^### |$)/m,
   /^### MANDATORY EMERGENCY[\s\S]*?(?=\n^### |$)/m,
-  /^### TOOL & FUNCTION EXECUTION[\s\S]*?$/m,
 ];
 
 function freezeSections(prompt: string): { sanitized: string; frozen: Map<string, string> } {

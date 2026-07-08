@@ -41,22 +41,33 @@ export class CoverageArchitect {
     if (!goalStr || goalStr === "Assist callers effectively" || goalStr.trim().length < 15) {
       missingFields.push("Primary Agent Goal / Use Case");
     }
-    const hasServicesInHistory = /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures)\b/i.test(fullUserText);
+    const hasLanguageInHistory = /\b(english|hindi|hinglish|bilingual|multilingual|devanagari|language|dialect|speak in|talk in|voice language|kannada|tamil|telugu|marathi|gujarati|bengali|punjabi|malayalam|urdu)\b/i.test(fullUserText) || (spec?.resolvedTopics || []).some(t => t.toLowerCase().includes("language") || t.toLowerCase().includes("dialect"));
+    if (!hasLanguageInHistory) {
+      missingFields.push("Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)");
+    }
+    const resolved = spec?.resolvedTopics || [];
+    const captured = spec?.capturedTopics || [];
+
+    const hasServicesInHistory = /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation)\b/i.test(fullUserText) || (spec?.extractedEntities?.servicesOrOfferings && spec.extractedEntities.servicesOrOfferings.length > 0) || resolved.some(t => t.toLowerCase().includes("service") || t.toLowerCase().includes("offering") || t.toLowerCase().includes("course") || t.toLowerCase().includes("product") || t.toLowerCase().includes("module"));
     if ((!snap.servicesOffered || !Array.isArray(snap.servicesOffered) || snap.servicesOffered.length === 0) && !hasServicesInHistory) {
       missingFields.push("Services Offered");
     }
     const hoursStr = toStr(snap.operatingHours);
-    const hasHoursInHistory = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|am|pm|hours of operation)\b/i.test(fullUserText);
+    const hasHoursInHistory = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|10:00|am|pm|hours|timings|timing|window|available all days|available from)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("hour") || t.toLowerCase().includes("timing") || t.toLowerCase().includes("schedule") || t.toLowerCase().includes("availability"));
     if ((!hoursStr || hoursStr === "Standard Business Hours" || hoursStr === "{}" || hoursStr === "[]" || hoursStr.trim() === "") && !hasHoursInHistory) {
       missingFields.push("Operating Hours");
     }
 
-    const hasLocation = /\b(located|street|address|maple|avenue|suite|city|zip|website)\b/i.test(fullUserText);
+    const hasLocation = /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("location") || t.toLowerCase().includes("address") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("website"));
     if (!hasLocation) {
       missingFields.push("Physical Location & Contact Info (address, phone number, or website)");
     }
 
-    const hasStaff = /\b(dr\.|doctor|dentist|hygienist|adams|lee|sarah|mark|practitioner|specialist|staff)\b/i.test(fullUserText) || (spec?.extractedEntities?.namedContacts && spec.extractedEntities.namedContacts.length > 0);
+    const hasStaff = /\b(dr\.|doctor|dentist|hygienist|practitioner|specialist|staff|team|counselor|counselors|manager|managers|supervisor|supervisors|representative|agent|advisor|deepika|ananya|department|departments|desk|desks|roster|refer to the team|centralized|no individual|no specific|no name|no names|does not need to mention|refer only to)\b/i.test(fullUserText) ||
+      (spec?.extractedEntities?.namedContacts && spec.extractedEntities.namedContacts.length > 0) ||
+      (spec?.extractedEntities?.departments && spec.extractedEntities.departments.length > 0) ||
+      resolved.some(t => t.toLowerCase().includes("staff") || t.toLowerCase().includes("team") || t.toLowerCase().includes("roster") || t.toLowerCase().includes("department") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("counselor")) ||
+      captured.some(c => c.topic.toLowerCase().includes("staff") || c.topic.toLowerCase().includes("team") || c.topic.toLowerCase().includes("roster") || c.topic.toLowerCase().includes("department"));
     if (!hasStaff) {
       missingFields.push("Staff & Practitioner Roster (names of doctors, specialists, or key departments)");
     }
@@ -65,39 +76,55 @@ export class CoverageArchitect {
     const refundStr = toStr(snap.policies?.refunds);
     const hasCancellation = cancelStr === "None — confirmed by business" || (cancelStr && cancelStr !== "Standard cancellation policy applies." && cancelStr.trim().length > 5);
     const hasRefunds = refundStr === "None — confirmed by business" || (refundStr && refundStr !== "Standard refund policy applies." && refundStr.trim().length > 5);
-    const resolved = spec?.resolvedTopics || [];
-    const captured = spec?.capturedTopics || [];
-    const hasResolvedPolicy = resolved.some(t => t.toLowerCase().includes("cancellation") || t.toLowerCase().includes("refund") || t.toLowerCase().includes("policy") || t.toLowerCase().includes("fee"));
+    const hasResolvedPolicy = resolved.some(t => t.toLowerCase().includes("cancellation") || t.toLowerCase().includes("refund") || t.toLowerCase().includes("policy") || t.toLowerCase().includes("fee")) ||
+      captured.some(c => c.topic.toLowerCase().includes("cancellation") || c.topic.toLowerCase().includes("refund") || c.topic.toLowerCase().includes("policy") || c.topic.toLowerCase().includes("fee")) ||
+      /\b(policy|policies|cancellation|refund|fee|fees|discount|scholarship|terms|rules|no policy|does not need to mention|not required|none)\b/i.test(fullUserText);
     if (!hasCancellation && !hasRefunds && !hasResolvedPolicy) {
       missingFields.push("Key Business Policies / Rules (cancellation, fee, or refund details)");
     }
 
-    const hasIntake = /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("intake") || t.toLowerCase().includes("insurance"));
+    const hasIntake = /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify|qualification|qualify|qualifying|class|exam|goal|preparation|pincode|pin code|preference|requirements|screening|question|questions)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("intake") || t.toLowerCase().includes("insurance") || t.toLowerCase().includes("qualification") || t.toLowerCase().includes("screening")) ||
+      captured.some(c => c.topic.toLowerCase().includes("intake") || c.topic.toLowerCase().includes("qualification"));
     if (!hasIntake) {
       missingFields.push("Intake & Qualification Requirements (required caller info, insurance verification, or new patient prerequisites)");
     }
 
-    const hasFaqDetail = (spec?.knowledgeBase?.faqs && spec.knowledgeBase.faqs.length >= 3) || /\b(faq|frequently asked|question|cost|price|parking|direction)\b/i.test(fullUserText);
+    const hasInfields = /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("infield") || t.toLowerCase().includes("pre-call") || t.toLowerCase().includes("crm")) ||
+      captured.some(c => c.topic.toLowerCase().includes("infield") || c.topic.toLowerCase().includes("pre-call") || c.topic.toLowerCase().includes("crm"));
+    if (!hasInfields) {
+      missingFields.push("Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)");
+    }
+
+    const hasFaqDetail = (spec?.knowledgeBase?.faqs && spec.knowledgeBase.faqs.length >= 2) ||
+      /\b(faq|frequently asked|question|cost|price|pricing|parking|direction|query|queries|answer|answers)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("faq") || t.toLowerCase().includes("question")) ||
+      captured.some(c => c.topic.toLowerCase().includes("faq"));
     if (!hasFaqDetail) {
       missingFields.push("Common Caller FAQs (frequent questions about pricing, preparation, or services)");
     }
 
-    const hasRouting = resolved.some(t => t.toLowerCase().includes("routing") || t.toLowerCase().includes("transfer") || t.toLowerCase().includes("escalat")) ||
-      captured.some(c => c.topic.toLowerCase().includes("routing") || c.topic.toLowerCase().includes("transfer") || c.topic.toLowerCase().includes("escalat") || c.topic.toLowerCase().includes("after_hours"));
+    const hasRouting = resolved.some(t => t.toLowerCase().includes("routing") || t.toLowerCase().includes("transfer") || t.toLowerCase().includes("escalat") || t.toLowerCase().includes("after_hours")) ||
+      captured.some(c => c.topic.toLowerCase().includes("routing") || c.topic.toLowerCase().includes("transfer") || c.topic.toLowerCase().includes("escalat") || c.topic.toLowerCase().includes("after_hours")) ||
+      /\b(route|routing|transfer|transferred|escalate|escalated|escalation|connect with|route to|senior counselor|support team|follow-up|callback|call back|schedule callback)\b/i.test(fullUserText);
     if (!hasRouting) {
       missingFields.push("Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)");
     }
 
     const hasEdgeCases = resolved.some(t => t.toLowerCase().includes("objection") || t.toLowerCase().includes("edge_case") || t.toLowerCase().includes("pushback") || t.toLowerCase().includes("emergency")) ||
-      captured.some(c => c.topic.toLowerCase().includes("objection") || c.topic.toLowerCase().includes("edge_case") || c.topic.toLowerCase().includes("pushback") || c.topic.toLowerCase().includes("emergency"));
+      captured.some(c => c.topic.toLowerCase().includes("objection") || c.topic.toLowerCase().includes("edge_case") || c.topic.toLowerCase().includes("pushback") || c.topic.toLowerCase().includes("emergency")) ||
+      (spec?.knowledgeBase?.objections && spec.knowledgeBase.objections.length >= 1) ||
+      /\b(objection|objections|busy|not interested|fees|already enrolled|pushback|concern|concerns|reject|rejection|upset|confused|edge case)\b/i.test(fullUserText);
     if (!hasEdgeCases) {
       missingFields.push("Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)");
     }
 
-    const MIN_USER_TURNS = 10;
     const userTurnCount = chatHistory.filter(m => m.role.toLowerCase() === "user").length;
-    if (userTurnCount < MIN_USER_TURNS) {
-      missingFields.push("Additional In-Depth Operational Detail (interview in progress)");
+    if (missingFields.length > 0 && userTurnCount < 5) {
+      if (!missingFields.includes("Additional In-Depth Operational Detail (interview in progress)")) {
+        missingFields.push("Additional In-Depth Operational Detail (interview in progress)");
+      }
     }
 
     const isReadyForCompilation = missingFields.length === 0;
@@ -149,42 +176,42 @@ export class CoverageArchitect {
       ? `\nThese topics have already been covered in this conversation: ${coveredTags.join(", ")}. Do not ask about any of them again unless the user's most recent message suggests a correction or contradiction.`
       : "";
 
-    const phase1Fields = missingFields.filter(f =>
-      f.includes("Company Name") || f.includes("Physical Location")
+    const topic1Fields = missingFields.filter(f =>
+      f.includes("Company Name") || f.includes("Physical Location") || f.includes("Primary Agent Language")
     );
-    const phase2Fields = missingFields.filter(f =>
+    const topic2Fields = missingFields.filter(f =>
       f.includes("Operating Hours") || f.includes("Staff & Practitioner Roster")
     );
-    const phase3Fields = missingFields.filter(f =>
-      f.includes("Services Offered") || f.includes("Primary Agent Goal") || f.includes("Intake & Qualification")
+    const topic3Fields = missingFields.filter(f =>
+      f.includes("Services Offered") || f.includes("Primary Agent Goal") || f.includes("Intake & Qualification") || f.includes("Infields & Pre-Call")
     );
-    const phase4Fields = missingFields.filter(f =>
+    const topic4Fields = missingFields.filter(f =>
       f.includes("Key Business Policies") || f.includes("Common Caller FAQs")
     );
-    const phase5Fields = missingFields.filter(f =>
+    const topic5Fields = missingFields.filter(f =>
       f.includes("Call Transfer") || f.includes("Edge Case") || f.includes("Additional In-Depth")
     );
 
-    let activePhaseName = "Phase 5 (Escalation & High-Pressure Edge Cases)";
-    let targetFields = phase5Fields.length > 0 ? phase5Fields : missingFields;
-    let phaseInstruction = `We are in Phase 5 of discovery. Focus on high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}). Formulate a crisp, practical question targeting: ${targetFields[0]}.`;
+    let activeTopicGroup = "Escalation & High-Pressure Edge Cases";
+    let targetFields = topic5Fields.length > 0 ? topic5Fields : missingFields;
+    let topicInstruction = `We are exploring high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}). Formulate a crisp, practical question targeting: ${targetFields[0]}.`;
 
-    if (phase1Fields.length > 0) {
-      activePhaseName = "Phase 1 (Identity & Location)";
-      targetFields = phase1Fields;
-      phaseInstruction = `We are in Phase 1 of discovery. Focus strictly on establishing foundational identity and location: collecting the official clinic/business name or physical location/contact info (address, phone number, website). Do NOT ask about hours, services, policies, or emergencies yet. Formulate a friendly, conversational question targeting: ${phase1Fields[0]}.`;
-    } else if (phase2Fields.length > 0) {
-      activePhaseName = "Phase 2 (Schedule & Team Roster)";
-      targetFields = phase2Fields;
-      phaseInstruction = `We are in Phase 2 of discovery. Focus strictly on establishing the schedule and team setup: exact operating days/hours or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about services, insurance, policies, or emergencies yet. Formulate an engaging question targeting: ${phase2Fields[0]}.`;
-    } else if (phase3Fields.length > 0) {
-      activePhaseName = "Phase 3 (Services & Caller Intake)";
-      targetFields = phase3Fields;
-      phaseInstruction = `We are in Phase 3 of discovery. Focus strictly on core offerings, service durations, or caller intake requirements (new vs existing patient screening, required ID/insurance verification). Do NOT jump into cancellation fees or emergency routing yet. Formulate a natural question targeting: ${phase3Fields[0]}.`;
-    } else if (phase4Fields.length > 0) {
-      activePhaseName = "Phase 4 (Policies & Common FAQs)";
-      targetFields = phase4Fields;
-      phaseInstruction = `We are in Phase 4 of discovery. Focus strictly on everyday rules and FAQs: cancellation windows, late fees, refund rules, or top frequent everyday questions callers ask (pricing, preparation, parking). Do NOT probe for emergency triage or live agent transfers yet. Formulate a clear, helpful question targeting: ${phase4Fields[0]}.`;
+    if (topic1Fields.length > 0) {
+      activeTopicGroup = "Identity, Language & Location";
+      targetFields = topic1Fields;
+      topicInstruction = `We are exploring foundational identity, language, and location details: collecting the official clinic/business name, physical location/contact info (address, phone number, website), or the primary language/dialect the agent should speak (e.g., English, Hindi, Hinglish, or multilingual). Do NOT ask about hours, services, policies, or emergencies yet. Formulate a friendly, conversational question targeting: ${topic1Fields[0]}.`;
+    } else if (topic2Fields.length > 0) {
+      activeTopicGroup = "Schedule & Team Setup";
+      targetFields = topic2Fields;
+      topicInstruction = `We are exploring the schedule and team setup: exact operating days/hours or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about services, insurance, policies, or emergencies yet. Formulate an engaging question targeting: ${topic2Fields[0]}.`;
+    } else if (topic3Fields.length > 0) {
+      activeTopicGroup = "Services, Caller Intake & Pre-Call Infields";
+      targetFields = topic3Fields;
+      topicInstruction = `We are exploring core offerings, caller intake requirements, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically what CRM variables/infields will be passed to the agent before the call begins (or if none will be passed). Do NOT jump into cancellation fees or emergency routing yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
+    } else if (topic4Fields.length > 0) {
+      activeTopicGroup = "Policies & Common FAQs";
+      targetFields = topic4Fields;
+      topicInstruction = `We are exploring everyday rules and FAQs: cancellation windows, late fees, refund rules, or top frequent everyday questions callers ask (pricing, preparation, parking). Do NOT probe for emergency triage or live agent transfers yet. Formulate a clear, helpful question targeting: ${topic4Fields[0]}.`;
     }
 
     const historyText = chatHistory.slice(-50).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
@@ -193,26 +220,33 @@ export class CoverageArchitect {
       : languageMode === 'multilingual'
       ? "\nLANGUAGE DIRECTIVE: Ask your question in English, noting that we are building a multilingual voice agent (English, Hindi, Hinglish)."
       : "";
-    const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder following a Phased Discovery Approach.
-Current Discovery Stage: ${activePhaseName}
-Target missing fields for this turn: ${targetFields.join(", ")}
+    const prompt = `You are a Conversational AI Architect interviewing a user to build a Voice AI agent.
+Current Topic Focus: ${activeTopicGroup}
+Target missing detail for this question: ${targetFields[0]}
 
 Recent conversation history:
 ${historyText}
 
 Vertical Context: ${vertical}. ${entityInstruction}${resolvedInstruction}
 
-DISCOVERY PHASE INSTRUCTION:
-${phaseInstruction}
+TOPIC FOCUS INSTRUCTION:
+${topicInstruction}
 
-CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained. Formulate exactly ONE natural, conversational, and specific question to ask the user next targeting the current phase (${activePhaseName}). Keep your response warm, professional, and clear.${langInstruction}`;
+CRITICAL RULES FOR YOUR RESPONSE:
+1. NO STAGE OR PHASE MENTIONS: Absolutely NEVER mention words like 'Phase 1', 'Phase 2', 'Phase 3', 'Phase 4', 'Phase 5', 'Topic Group', or any stage/phase numbers or names in your response to the user.
+2. NO TRANSITION ANNOUNCEMENTS OR SUMMARIES: Do NOT announce that a stage is completed, and do NOT recite or summarize what has already been completed or locked in (e.g. NEVER say "Since we have already confirmed X, we have completed Stage Y and are ready for Z...").
+3. DIRECT, NATURAL CONVERSATIONAL QUESTION: Directly and warmly ask exactly ONE natural, conversational question to gather the target missing detail (${targetFields[0]}). Keep the flow smooth and human-like without any robotic boilerplate or meta-commentary.
+4. AVOID REPETITION: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained.${langInstruction}`;
 
     try {
       const response = await geminiClient.generate({
-        systemInstruction: "You are an expert conversational AI interview specialist following a strict Phased Discovery Approach.",
+        systemInstruction: "You are an expert conversational AI architect building a Voice AI agent through an interactive interview. CRITICAL BEHAVIORAL RULE: NEVER mention 'Phase 1', 'Phase 2', 'Discovery Stage', 'transition', or any internal phase/stage numbers or names to the user. Never recite summaries of completed steps just to announce moving forward. Simply ask the next logical question in a warm, direct, conversational manner.",
         prompt
       });
-      return response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${targetFields[0] || missingFields[0]}?`;
+      let text = response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${targetFields[0] || missingFields[0]}?`;
+      text = text.replace(/^(?:Since we have (?:already )?(?:confirmed|established|covered|completed|finalized).*?we are ready to (?:officially )?(?:transition|move)(?: on)? (?:in)?to .*?[\.\?\!]\s*)/i, "");
+      text = text.replace(/\b(?:Phase|Stage)\s*\d+(?:\s*\([^)]+\))?:?\s*/gi, "");
+      return text.trim();
     } catch {
       return `To ensure the AI handles interactions smoothly, could you share specific details regarding: ${targetFields[0] || missingFields[0]}?`;
     }

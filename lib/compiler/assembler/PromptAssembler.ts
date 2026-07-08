@@ -44,22 +44,31 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const guardrailsContent = guardrailRules || "No special guardrail rules defined.";
 
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
-  const faqQuestionsSet = new Set(
-    specFaqs.map(f => String((f as any)?.question || (f as any)?.q || '').toLowerCase().trim()).filter(Boolean)
-  );
-  const faqs = [
-    ...specFaqs,
-    ...draftFaqs.filter((f: any) => {
-      const q = String(f?.question || f?.q || '').toLowerCase().trim();
-      return q && !faqQuestionsSet.has(q);
-    })
-  ];
+  const languageMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
+  const capturedText = JSON.stringify(spec?.capturedTopics || []) + JSON.stringify(spec?.resolvedTopics || []);
+  const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+
+  let allFaqCandidates = [
+    ...specFaqs.map((f: any) => ({ question: f?.question || f?.q || '', answer: f?.answer || f?.a || '' })),
+    ...draftFaqs.map((f: any) => ({ question: f?.question || f?.q || '', answer: f?.answer || f?.a || '' }))
+  ].filter(f => f.question && f.answer);
+
+  if (isHindiOrHinglish && allFaqCandidates.some(f => /[\u0900-\u097F]/.test(f.question + f.answer))) {
+    allFaqCandidates = allFaqCandidates.filter(f => /[\u0900-\u097F]/.test(f.question + f.answer));
+  }
+
+  const seenFaqQs = new Set<string>();
+  const faqs: any[] = [];
+  allFaqCandidates.forEach(f => {
+    const normQ = f.question.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '').trim();
+    if (normQ && !seenFaqQs.has(normQ)) {
+      seenFaqQs.add(normQ);
+      faqs.push(f);
+    }
+  });
 
   const specObjs = Array.isArray(spec?.knowledgeBase?.objections) ? spec.knowledgeBase.objections : [];
   const draftObjs = Array.isArray(draft?.objectionCards) ? draft.objectionCards : [];
-  const objTriggersSet = new Set(
-    specObjs.map(o => String((o as any)?.trigger || (o as any)?.objection || '').toLowerCase().trim()).filter(Boolean)
-  );
   const draftObjsMapped = draftObjs.map((o: any) => ({
     trigger: o?.trigger || o?.objection || "",
     response: o?.response || o?.handling || ""
@@ -68,24 +77,45 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     trigger: o?.trigger || o?.objection || "",
     response: o?.response || o?.handling || ""
   }));
-  const objections = [
-    ...specObjsMapped,
-    ...draftObjsMapped.filter((o: any) => {
-      const t = String(o?.trigger || '').toLowerCase().trim();
-      return t && !objTriggersSet.has(t);
-    })
-  ];
 
-  const rawSteps = (Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.length > 0)
+  let allObjCandidates = [
+    ...specObjsMapped,
+    ...draftObjsMapped
+  ].filter(o => o.trigger && o.response);
+
+  if (isHindiOrHinglish && allObjCandidates.some(o => /[\u0900-\u097F]/.test(o.trigger + o.response))) {
+    allObjCandidates = allObjCandidates.filter(o => /[\u0900-\u097F]/.test(o.trigger + o.response));
+  }
+
+  const seenObjTs = new Set<string>();
+  const objections: any[] = [];
+  allObjCandidates.forEach(o => {
+    const normT = o.trigger.toLowerCase().replace(/[^a-z0-9\u0900-\u097F]/g, '').trim();
+    if (normT && !seenObjTs.has(normT)) {
+      seenObjTs.add(normT);
+      objections.push(o);
+    }
+  });
+
+  const specStepsHaveDevanagari = Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.some((s: any) => /[\u0900-\u097F]/.test(s?.scriptDirective || s?.generatedLine || ''));
+  const draftStepsHaveDevanagari = Array.isArray(draft?.callFlowSteps) && draft!.callFlowSteps.some((s: any) => /[\u0900-\u097F]/.test(s?.scriptDirective || s?.generatedLine || ''));
+
+  const rawSteps = (Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.length > 0 && (!isHindiOrHinglish || specStepsHaveDevanagari || !draftStepsHaveDevanagari))
     ? spec!.callFlowPlan!.steps
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
-  const steps = rawSteps.map((s: any, idx: number) => ({
-    sequenceOrder: s?.sequenceOrder || idx + 1,
-    stateId: s?.stateId || `step_${idx + 1}`,
-    stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
-    scriptDirective: s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
-    slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])
-  }));
+  const steps = rawSteps.map((s: any, idx: number) => {
+    let directive = s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`);
+    if (isHindiOrHinglish) {
+      directive = directive.replace(/\bho\b/g, 'हो').replace(/\bbaat\b/gi, 'बात').replace(/\bkar\b/gi, 'कर').replace(/\brahi\b/gi, 'रही').replace(/\bhoon\b/gi, 'हूँ').replace(/\bhain\b/gi, 'हैं');
+    }
+    return {
+      sequenceOrder: s?.sequenceOrder || idx + 1,
+      stateId: s?.stateId || `step_${idx + 1}`,
+      stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
+      scriptDirective: directive,
+      slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])
+    };
+  });
 
   // 1. IDENTITY & PERSONA
   const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
@@ -97,18 +127,21 @@ You are a voice AI agent for phone conversations representing ${spec?.meta?.comp
 - Tone Profile: ${toneList.join(', ')}
 - AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`.trim();
 
-  const languageMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
   let languageHandling = "";
-  if (languageMode === 'hindi') {
+  if (isHindiOrHinglish) {
     languageHandling = `### LANGUAGE HANDLING
-All spoken dialogue MUST be in conversational Hindi (Devanagari transliteration not required, natural Romanized Hindi or Devanagari is fine). Use natural Hindi phrasing. Greetings: 'Namaste', acknowledgments: 'ji', 'theek hai', 'zaroor'.`.trim();
+All Hindi sentences across spoken dialogue, call flow lines, FAQ answers, and objection responses MUST be written in Devanagari script (देवनागरी), NOT English/Roman script.
+- ONLY specific English domain/business terms (such as 'online demo', 'software', 'pincode', 'team', 'business owner', 'Marg ERP') can be written in English characters inside the Devanagari sentence.
+- Use natural, polite Hindi phrasing suitable for Indian business calls.
+- Greetings: 'नमस्ते', acknowledgments: 'जी', 'ठीक है', 'बिल्कुल', 'ज़रूर'.
+- Never write Hindi sentences using Romanized English letters. Keep all grammatical structure and sentence text strictly in Devanagari.`.trim();
   } else if (languageMode === 'multilingual') {
     languageHandling = `### LANGUAGE HANDLING
 LANGUAGE DETECTION & RESPONSE PROTOCOL:
 - Detect the caller's language from their first 1-2 utterances.
 - If caller speaks English → respond in English.
-- If caller speaks Hindi → respond in conversational Hindi.
-- If caller speaks Hinglish (mixed) → respond in Hinglish (Hindi sentence structure with common English terms).
+- If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
+- If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
 - NEVER switch languages mid-sentence unless the caller does.
 - If uncertain, default to the language of the caller's last message.
 - All variable collection (names, dates, numbers) should be confirmed back in the caller's detected language.`.trim();
@@ -123,6 +156,7 @@ VOICE RULES
 - Avoid long explanations or verbal lists.
 - Use natural acknowledgements only, like "okay", "got it", "understood".
 - Never end mid-sentence.
+- If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate.
 
 ${speakabilityContent}
 
@@ -194,12 +228,18 @@ OFF-TOPIC REFUSAL PROTOCOL
   const draftVarsMap = new Map<string, any>();
   draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
 
+  const stepCollectedSlots = new Set<string>(
+    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
+  );
+
   const allSlots = Array.from(new Set<string>([
-    ...steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []),
+    ...Array.from(stepCollectedSlots),
     ...draftVars.map(v => v.key)
   ])).filter(Boolean);
 
   const isOutfield = (slot: string): boolean => {
+    // 1) An infield can NEVER be an extraction! If a slot is collected during a call flow step, force outfield.
+    if (stepCollectedSlots.has(slot)) return true;
     const v = draftVarsMap.get(slot);
     if (v?.fieldDirection === 'outfield') return true;
     if (v?.fieldDirection === 'infield') return false;
@@ -233,7 +273,7 @@ OFF-TOPIC REFUSAL PROTOCOL
 
   // 8. CALL FLOW / STATE MACHINE
   const flowContent = steps.length > 0
-    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => isOutfield(slot) ? `[${slot}]` : `{{${slot}}}`).join(', ')}`).join('\n\n')
+    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `[${slot}]`).join(', ')}`).join('\n\n')
     : "No structured call flow defined. Engage conversationally based on primary goal.";
   const flow = `### CALL FLOW\n${flowContent}`;
 
@@ -245,11 +285,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   const objSection = objections.map((obj: any) => `Trigger: ${obj?.trigger || obj?.objection || ''}\nHandling: ${obj?.response || obj?.handling || ''}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
   const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
 
-  // 11. TOOL / FUNCTION SCHEMAS
-  const toolsList = Array.isArray(spec?.tools) ? spec.tools : [];
-  const tools = `### TOOL & FUNCTION EXECUTION\n${toolsList.length > 0 ? JSON.stringify(toolsList, null, 2) : "No tools defined."}`;
-
-  // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
+  // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 10)
   const sections = [
     identity,
     languageHandling,
@@ -261,8 +297,7 @@ OFF-TOPIC REFUSAL PROTOCOL
     dynamicVariables,
     flow,
     knowledge,
-    objectionHandling,
-    tools
+    objectionHandling
   ].filter(s => Boolean(s && s.trim().length > 0));
 
   return sections.join('\n\n---\n\n');
