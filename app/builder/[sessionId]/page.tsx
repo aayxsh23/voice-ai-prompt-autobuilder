@@ -14,6 +14,32 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [languageMode, setLanguageMode] = useState<'english' | 'hindi' | 'multilingual' | null>(null);
+
+  const handleSelectLanguageMode = (mode: 'english' | 'hindi' | 'multilingual') => {
+    setLanguageMode(mode);
+    setBlueprint((prev: any) => ({
+      ...prev,
+      languageMode: mode,
+      business: { ...(prev.business || {}), languageMode: mode },
+      businessSpec: {
+        ...(prev.businessSpec || {}),
+        meta: {
+          ...(prev.businessSpec?.meta || {}),
+          languageMode: mode
+        }
+      }
+    }));
+    let initialMsg = "Hello! I'm your VoiceAgent Architect. What kind of AI voice agent would you like to build today? Tell me about your domain and what workflows you want it to handle.";
+    if (mode === 'hindi') {
+      initialMsg = "Namaste! Main aapka VoiceAgent Architect hoon. Aap kaunsa AI voice agent banana chahte hain? Apne business aur workflows ke baare mein batayein.";
+    } else if (mode === 'multilingual') {
+      initialMsg = "Hello! / Namaste! I'm your VoiceAgent Architect. I'll build a prompt that works seamlessly for English, Hindi, and Hinglish speakers. Tell me about your domain and what workflows you want it to handle.";
+    }
+    setMessages([
+      { role: 'assistant', content: initialMsg }
+    ]);
+  };
   
   // Chat state
   const [messages, setMessages] = useState<Message[]>([
@@ -85,6 +111,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         const initPrompt = urlParams.get('initialPrompt');
         if (initPrompt) {
           initialPromptHandledRef.current = true;
+          setLanguageMode('english');
           window.history.replaceState({}, '', `/builder/${p.sessionId}`);
           setTimeout(() => {
             handleSendMessage(undefined, initPrompt);
@@ -115,7 +142,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       const res = await fetch('/api/builder/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint })
+        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, languageMode })
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -166,6 +193,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     try {
       const payload = {
         ...(customBlueprint || blueprint),
+        languageMode: customBlueprint?.languageMode || blueprint?.languageMode || languageMode || 'english',
         overrides: customOverrides || overrides
       };
       const res = await fetch('/api/builder/generate-review', {
@@ -193,7 +221,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         body: JSON.stringify({
           sessionId,
           draft,
-          blueprint
+          blueprint: { ...blueprint, languageMode: blueprint?.languageMode || languageMode || 'english' }
         })
       });
       const project = await res.json();
@@ -217,7 +245,80 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         
         {/* Chat Conversation Column */}
-        {messages.length === 1 && !chatLoading ? (
+        {!languageMode ? (
+          /* Language Mode Selection Screen */
+          <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
+            <div className="space-y-6 w-full max-w-4xl text-center">
+              <h1 className="text-[32px] sm:text-[42px] font-semibold text-[#f3f3f3] tracking-tight leading-[1.15]">
+                Select Prompt Language & Mode
+              </h1>
+              <p className="text-[15px] text-[#909090] max-w-xl mx-auto leading-relaxed">
+                Choose the primary language capabilities for your voice agent. Our architect will tailor the dialogue lines, instructions, and detection protocols accordingly.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 text-left">
+                <button
+                  onClick={() => handleSelectLanguageMode('english')}
+                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left"
+                >
+                  <div>
+                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
+                      EN
+                    </div>
+                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">English Only</h3>
+                    <p className="text-[13px] text-[#909090] leading-relaxed">
+                      Optimized for English-speaking callers. Standard phonetics, date rules, and number formatting.
+                    </p>
+                  </div>
+                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
+                    <span>Select English</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleSelectLanguageMode('hindi')}
+                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left"
+                >
+                  <div>
+                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
+                      HI
+                    </div>
+                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">Hindi Only</h3>
+                    <p className="text-[13px] text-[#909090] leading-relaxed">
+                      Optimized for Hindi-speaking callers. Spoken dialogue in natural Hindi phrasing (Devanagari/Romanized).
+                    </p>
+                  </div>
+                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
+                    <span>Select Hindi</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => handleSelectLanguageMode('multilingual')}
+                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left relative overflow-hidden"
+                >
+                  <div className="absolute top-0 right-0 bg-[#ff6c02] text-[#040404] text-[10px] font-bold px-2.5 py-1 rounded-bl-[10px]">
+                    POPULAR
+                  </div>
+                  <div>
+                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
+                      ML
+                    </div>
+                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">Multilingual</h3>
+                    <p className="text-[13px] text-[#909090] leading-relaxed">
+                      Dynamic detection for English, Hindi, and Hinglish. Seamlessly switches and adapts to caller speech.
+                    </p>
+                  </div>
+                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
+                    <span>Select Multilingual</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : messages.length === 1 && !chatLoading ? (
           /* Centered Starting Screen */
           <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
             <div className="space-y-6 w-full max-w-3xl text-center">

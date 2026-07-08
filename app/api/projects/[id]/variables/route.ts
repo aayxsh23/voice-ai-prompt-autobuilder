@@ -21,6 +21,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         key: body.key,
         label: body.label || body.key,
         type: body.type || "business",
+        fieldDirection: body.fieldDirection || "infield",
         required: body.required !== false,
         defaultValue: body.defaultValue || "",
         source: body.source || "static",

@@ -111,7 +111,8 @@ export class CoverageArchitect {
   public static async generateNextQuestion(
     missingFields: string[],
     chatHistory: Array<{ role: string; content: string }>,
-    spec?: Partial<BusinessSpecification>
+    spec?: Partial<BusinessSpecification>,
+    languageMode?: 'english' | 'hindi' | 'multilingual'
   ): Promise<string> {
     if (missingFields.length === 0) {
       return "I have all the core and in-depth operational specifications needed! Shall I compile your structured Voice AI agent prompt now?";
@@ -187,6 +188,11 @@ export class CoverageArchitect {
     }
 
     const historyText = chatHistory.slice(-50).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
+    const langInstruction = languageMode === 'hindi'
+      ? "\nLANGUAGE DIRECTIVE: Ask your question in natural conversational Hindi (Devanagari or Romanized/Hinglish)."
+      : languageMode === 'multilingual'
+      ? "\nLANGUAGE DIRECTIVE: Ask your question in English, noting that we are building a multilingual voice agent (English, Hindi, Hinglish)."
+      : "";
     const prompt = `You are an In-Depth Question Planner AI for an advanced Voice AI Auto-Builder following a Phased Discovery Approach.
 Current Discovery Stage: ${activePhaseName}
 Target missing fields for this turn: ${targetFields.join(", ")}
@@ -199,7 +205,7 @@ Vertical Context: ${vertical}. ${entityInstruction}${resolvedInstruction}
 DISCOVERY PHASE INSTRUCTION:
 ${phaseInstruction}
 
-CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained. Formulate exactly ONE natural, conversational, and specific question to ask the user next targeting the current phase (${activePhaseName}). Keep your response warm, professional, and clear.`;
+CRITICAL RULE: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained. Formulate exactly ONE natural, conversational, and specific question to ask the user next targeting the current phase (${activePhaseName}). Keep your response warm, professional, and clear.${langInstruction}`;
 
     try {
       const response = await geminiClient.generate({

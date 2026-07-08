@@ -3,6 +3,7 @@ import { z } from 'zod';
 export interface BusinessSnapshot {
   businessName?: string;
   companyName?: string;
+  languageMode?: 'english' | 'hindi' | 'multilingual';
   valueProposition?: string;
   industry?: string;
   location?: string;
@@ -107,6 +108,7 @@ export interface DynamicVariableSpec {
   key: string;
   label: string;
   type: 'business' | 'caller' | 'task' | 'tool_output' | 'runtime' | 'static';
+  fieldDirection?: 'infield' | 'outfield';
   required: boolean;
   defaultValue: string;
   source: string;
@@ -204,6 +206,7 @@ export interface SimulationTurnOutput {
 export interface BlueprintJson {
   useCase: string;
   selectedTemplate: string;
+  languageMode?: 'english' | 'hindi' | 'multilingual';
   business: BusinessSnapshot;
   mission: CallMission;
   conversation: ConversationDesign;
@@ -296,6 +299,7 @@ export interface BusinessSpecification {
     isRegulated: boolean;
     toneProfile: string[];
     primaryGoal: string;
+    languageMode?: 'english' | 'hindi' | 'multilingual';
   };
   businessSnapshot: {
     operatingHours: string;
@@ -342,7 +346,8 @@ export const businessSpecificationSchema = z.object({
     industry: z.string().default("General"),
     isRegulated: z.boolean().default(false),
     toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
-    primaryGoal: z.string().default("Assist callers effectively")
+    primaryGoal: z.string().default("Assist callers effectively"),
+    languageMode: z.enum(["english", "hindi", "multilingual"]).default("english").optional()
   }),
   businessSnapshot: z.object({
     operatingHours: z.string().default("Standard Business Hours"),

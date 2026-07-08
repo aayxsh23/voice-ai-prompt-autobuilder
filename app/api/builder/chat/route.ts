@@ -23,7 +23,7 @@ function dedupeBy<T>(arr: T[], keyFn: (item: T) => string): T[] {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, currentBlueprint, sessionId } = body;
+    const { messages, currentBlueprint, sessionId, languageMode } = body;
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
@@ -120,7 +120,10 @@ Ensure you return valid JSON with no markdown fences.`;
         };
 
         updatedSpec = {
-          meta: safePatch(existingSpec.meta || {}, patch.meta || {}) as BusinessSpecification['meta'],
+          meta: {
+            ...(safePatch(existingSpec.meta || {}, patch.meta || {}) as BusinessSpecification['meta']),
+            languageMode: languageMode || existingSpec.meta?.languageMode || currentBlueprint?.languageMode || 'english'
+          },
           businessSnapshot: safePatch(existingSnap, patchSnap) as BusinessSpecification['businessSnapshot'],
           callFlowPlan: {
             steps: dedupeBy(
@@ -181,8 +184,11 @@ Ensure you return valid JSON with no markdown fences.`;
       }
     }
 
+    if (!updatedSpec.meta) updatedSpec.meta = {} as any;
+    if (languageMode) updatedSpec.meta!.languageMode = languageMode;
+
     const coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
-    const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec);
+    const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, languageMode);
 
     const lastUserMsg = messages[messages.length - 1]?.content || "";
     const userAgreed = /\b(yes|yeah|yep|generate|go ahead|ready|ok|okay|sure|let'?s do it|build|looks good|agree|proceed|create|split|finalize|done)\b/i.test(lastUserMsg.trim());
@@ -195,6 +201,7 @@ Ensure you return valid JSON with no markdown fences.`;
       missingDetails: coverageReport.missingFields,
       extractedBlueprint: {
         ...(currentBlueprint || {}),
+        languageMode: languageMode || updatedSpec.meta?.languageMode || currentBlueprint?.languageMode || 'english',
         businessSpec: updatedSpec,
         business: {
           ...(currentBlueprint?.business || {}),

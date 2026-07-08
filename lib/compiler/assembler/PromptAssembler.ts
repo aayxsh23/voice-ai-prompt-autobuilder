@@ -97,6 +97,23 @@ You are a voice AI agent for phone conversations representing ${spec?.meta?.comp
 - Tone Profile: ${toneList.join(', ')}
 - AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`.trim();
 
+  const languageMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
+  let languageHandling = "";
+  if (languageMode === 'hindi') {
+    languageHandling = `### LANGUAGE HANDLING
+All spoken dialogue MUST be in conversational Hindi (Devanagari transliteration not required, natural Romanized Hindi or Devanagari is fine). Use natural Hindi phrasing. Greetings: 'Namaste', acknowledgments: 'ji', 'theek hai', 'zaroor'.`.trim();
+  } else if (languageMode === 'multilingual') {
+    languageHandling = `### LANGUAGE HANDLING
+LANGUAGE DETECTION & RESPONSE PROTOCOL:
+- Detect the caller's language from their first 1-2 utterances.
+- If caller speaks English → respond in English.
+- If caller speaks Hindi → respond in conversational Hindi.
+- If caller speaks Hinglish (mixed) → respond in Hinglish (Hindi sentence structure with common English terms).
+- NEVER switch languages mid-sentence unless the caller does.
+- If uncertain, default to the language of the caller's last message.
+- All variable collection (names, dates, numbers) should be confirmed back in the caller's detected language.`.trim();
+  }
+
   // 2. OUTPUT / VOICE MECHANICS
   const outputMechanics = `### OUTPUT & VOICE MECHANICS
 VOICE RULES
@@ -173,14 +190,50 @@ OFF-TOPIC REFUSAL PROTOCOL
     : `### ESCALATION & ROUTING MAP\nNo specific transfer numbers or departments configured. Address inquiries directly or offer a callback.`;
 
   // 7. DYNAMIC VARIABLES
-  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
-  const dynamicVariables = allSlots.length > 0
-    ? `### DYNAMIC VARIABLES\nThe following variables must be collected and tracked during the call flow:\n${allSlots.map((slot: string) => `${slot}: {{${slot}}}`).join('\n')}`
-    : "";
+  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const draftVarsMap = new Map<string, any>();
+  draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
+
+  const allSlots = Array.from(new Set<string>([
+    ...steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []),
+    ...draftVars.map(v => v.key)
+  ])).filter(Boolean);
+
+  const isOutfield = (slot: string): boolean => {
+    const v = draftVarsMap.get(slot);
+    if (v?.fieldDirection === 'outfield') return true;
+    if (v?.fieldDirection === 'infield') return false;
+    if (v && (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static')) return false;
+    return true;
+  };
+
+  const infields: string[] = [];
+  const outfields: string[] = [];
+
+  allSlots.forEach(slot => {
+    const v = draftVarsMap.get(slot);
+    if (!isOutfield(slot)) {
+      infields.push(`{{${slot}}}${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
+    } else {
+      outfields.push(`[${slot}]${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
+    }
+  });
+
+  let dynamicVariables = "";
+  if (infields.length > 0 || outfields.length > 0) {
+    const sectionsList: string[] = [];
+    if (infields.length > 0) {
+      sectionsList.push(`#### INFIELDS (Pre-Call Context)\nThe following variables are provided before the call begins. Reference them using {{variable_name}} syntax:\n${infields.join('\n')}`);
+    }
+    if (outfields.length > 0) {
+      sectionsList.push(`#### OUTFIELDS (Post-Call Extraction)\nThe following details must be extracted from the conversation transcript. Mark them using [variable_name] syntax:\n${outfields.join('\n')}`);
+    }
+    dynamicVariables = `### DYNAMIC VARIABLES\n\n${sectionsList.join('\n\n')}`;
+  }
 
   // 8. CALL FLOW / STATE MACHINE
   const flowContent = steps.length > 0
-    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `{{${slot}}}`).join(', ')}`).join('\n\n')
+    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => isOutfield(slot) ? `[${slot}]` : `{{${slot}}}`).join(', ')}`).join('\n\n')
     : "No structured call flow defined. Engage conversationally based on primary goal.";
   const flow = `### CALL FLOW\n${flowContent}`;
 
@@ -199,6 +252,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
   const sections = [
     identity,
+    languageHandling,
     outputMechanics,
     scopeAndRefusals,
     safetyOverrides,
@@ -238,7 +292,8 @@ export class PromptAssembler {
         industry: meta.industry || "General",
         isRegulated: false,
         toneProfile: meta.toneProfile || ["Professional"],
-        primaryGoal: meta.role || meta.description || draft?.primaryGoal || "Assist callers"
+        primaryGoal: meta.role || meta.description || draft?.primaryGoal || "Assist callers",
+        languageMode: meta.languageMode || draft?.languageMode || "english"
       },
       businessSnapshot: {
         operatingHours: existingSnap?.operatingHours || "Standard Business Hours",

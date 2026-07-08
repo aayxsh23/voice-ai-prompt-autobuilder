@@ -147,7 +147,8 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
         industry: biz.industry || "General",
         isRegulated: false,
         toneProfile: tone,
-        primaryGoal: mission.primaryGoal || biz.description || "Assist callers"
+        primaryGoal: mission.primaryGoal || biz.description || "Assist callers",
+        languageMode: input.languageMode || input.business?.languageMode || "english"
       },
       businessSnapshot: {
         operatingHours: "Standard Business Hours",
@@ -199,6 +200,7 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
         key: slot,
         label: slot,
         type: 'caller',
+        fieldDirection: 'outfield',
         required: true,
         defaultValue: '',
         source: 'extraction',
@@ -207,6 +209,16 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
       declaredVarKeys.add(slot);
     }
   }
+
+  draft.dynamicVariables.forEach((v: any) => {
+    if (!v.fieldDirection) {
+      if (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static') {
+        v.fieldDirection = 'infield';
+      } else {
+        v.fieldDirection = 'outfield';
+      }
+    }
+  });
 
   try {
     const dbRules = await prisma.promptRule.findMany({ where: { isDefault: true } });
@@ -236,6 +248,14 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
     const varName = match[1];
     if (!declaredKeys.has(varName)) {
       validationErrors.push(`Undeclared dynamic placeholder {{${varName}}} found in prompt text.`);
+    }
+  }
+
+  // Check outfield integrity (ensure declared outfields appear in prompt)
+  const outfields = (draft?.dynamicVariables || []).filter((v: any) => v.fieldDirection === 'outfield');
+  for (const ov of outfields) {
+    if (!finalPrompt.includes(`[${ov.key}]`)) {
+      validationErrors.push(`Declared outfield [${ov.key}] is not referenced in prompt text.`);
     }
   }
 

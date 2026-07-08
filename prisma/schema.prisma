@@ -30,6 +30,7 @@ model PromptProject {
   finalPrompt                  String               @default("")
   businessSpec                 String               @default("{}")
   blueprintJson                String
+  languageMode                 String               @default("english") // english | hindi | multilingual
   qualityScore                 Int                  @default(0)
   completionScore              Int                  @default(0)
   safetyScore                  Int                  @default(0)
@@ -67,6 +68,7 @@ model BuilderSession {
   followupAnswersJson    String   @default("{}")
   refinedBlueprintJson   String   @default("{}")
   businessSpec           String   @default("{}")
+  languageMode           String   @default("english") // english | hindi | multilingual
   generatedProjectId     String?  @db.ObjectId
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -79,6 +81,7 @@ model DynamicVariable {
   key            String
   label          String
   type           String        @default("business") // business | caller | task | tool_output | runtime | static
+  fieldDirection String        @default("infield") // infield | outfield
   required       Boolean       @default(true)
   defaultValue   String
   source         String        @default("static") // static | api | crm

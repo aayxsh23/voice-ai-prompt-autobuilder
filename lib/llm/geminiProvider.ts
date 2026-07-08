@@ -40,6 +40,7 @@ QUALITY STANDARDS — your output MUST meet ALL of these:
 
 STRUCTURE: Every output must contain these exact sections in this order:
 ### AGENT IDENTITY & PERSONA
+### LANGUAGE HANDLING
 ### OUTPUT & VOICE MECHANICS
 ### SCOPE & REFUSAL BEHAVIOR
 ### MANDATORY EMERGENCY & SAFETY OVERRIDES
@@ -61,6 +62,7 @@ VOICE RULES (mandatory in every output):
 - Email addresses: replace @ with "at", replace . with "dot"
 - Never use bullet points, numbered lists, or markdown in spoken dialogue sections
 - Natural acknowledgements only: "okay", "got it", "understood", "of course"
+- For Hindi or Multilingual prompts, follow language detection protocol and generate dialogue lines in the appropriate language (Hindi/Hinglish or dual EN/HI).
 
 CALL FLOW FORMAT: Each step must follow this exact template:
 STEP [N]: [STEP LABEL IN CAPS]
@@ -163,6 +165,12 @@ export class GeminiProvider implements LlmService {
 
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
     const { overrides, ...llmInput } = input;
+    const languageMode = input.languageMode || input.business?.languageMode || 'english';
+    const langNote = languageMode === 'hindi'
+      ? "\nLANGUAGE DIRECTIVE: All generatedLine and fallbackBehavior dialogue MUST be in conversational Hindi (Devanagari/Romanized)."
+      : languageMode === 'multilingual'
+      ? "\nLANGUAGE DIRECTIVE: Support English, Hindi, and Hinglish. Provide dual-language or mixed conversational variants in dialogue where appropriate."
+      : "";
     const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
     const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
 Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
@@ -172,7 +180,7 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 2. CONFIRMATION READ-BACK: The second-to-last step MUST be a CONFIRM ALL DETAILS step that reads back every collected variable using {{variable_name}} syntax.
 3. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
 4. RETRY LIMITS: Each step that collects information must include maxRetries: 3.
-5. EDGE-CASE BRANCHES: Generate branches for: silence timeout, past dates, caller upset/frustrated, mid-flow transfer request, audio dropout.
+5. EDGE-CASE BRANCHES: Generate branches for: silence timeout, past dates, caller upset/frustrated, mid-flow transfer request, audio dropout.${langNote}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt);
@@ -188,7 +196,7 @@ Business input:\n${JSON.stringify(llmInput, null, 2)}`;
         throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
       }
     }
-    const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
+    const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","fieldDirection":"'infield'|'outfield'","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
 
 FAQ GENERATION RULE: Generate 8-12 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.
@@ -198,6 +206,9 @@ GUARDRAIL GENERATION RULES:
 2. Each guardrail must be ENFORCEABLE with specific sub-cases.
 3. Include at least 2 BEHAVIORAL guardrails (what to DO, not just prohibitions).
 4. Include an INVENTION prohibition specific to this business.
+
+VARIABLE CLASSIFICATION RULE:
+For each dynamicVariable, set fieldDirection to "infield" if it represents pre-call context (e.g. caller_phone, company_name, crm data) or "outfield" if it represents details extracted from the conversation transcript after the call (e.g. caller_name, appointment_date, reason_for_call).${langNote}
 
 SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Raw = await this.generateRaw(pass2Prompt);
@@ -294,7 +305,13 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
   }
 
   async generateBuilderChatReply(messages: ChatMessage[], currentBlueprint: Partial<BlueprintJson>): Promise<BuilderChatTurnResponse> {
-    const prompt = `You are an expert AI voice agent architect conducting an in-depth discovery interview with a user to build a highly detailed, production-grade prompt package.
+    const languageMode = currentBlueprint?.languageMode || currentBlueprint?.business?.languageMode || 'english';
+    const langInstruction = languageMode === 'hindi'
+      ? "\nLANGUAGE DIRECTIVE: Conduct this discovery interview in warm, conversational Hindi (Devanagari or Romanized/Hinglish)."
+      : languageMode === 'multilingual'
+      ? "\nLANGUAGE DIRECTIVE: Conduct this interview in English, but acknowledge and keep in mind that the voice agent will be multilingual (English, Hindi, Hinglish)."
+      : "";
+    const prompt = `You are an expert AI voice agent architect conducting an in-depth discovery interview with a user to build a highly detailed, production-grade prompt package.${langInstruction}
 
 CONVERSATION HISTORY:
 ${JSON.stringify(messages, null, 2)}
