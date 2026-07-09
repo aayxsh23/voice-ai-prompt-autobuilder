@@ -120,6 +120,108 @@ export class CoverageArchitect {
       missingFields.push("Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)");
     }
 
+    // --- Checkpoints 14 to 27 ---
+    const callFlowSteps = spec?.callFlowPlan?.userDefinedSteps || spec?.callFlowPlan?.steps || [];
+    const hasCallFlowSkeleton = callFlowSteps.length > 0 ||
+      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("flow") || t.toLowerCase().includes("skeleton") || t.toLowerCase().includes("template"));
+    if (!hasCallFlowSkeleton) {
+      missingFields.push("Call Flow Skeleton (greeting, step sequence, branches, or template selection)");
+    }
+
+    const hasOpeningPhrase = !!meta.openingPhrase ||
+      /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("opening") || t.toLowerCase().includes("greeting"));
+    if (!hasOpeningPhrase) {
+      missingFields.push("Opening Line / Greeting Script (exact opening phrasing)");
+    }
+
+    const hasClosingScript = !!spec?.callFlowPlan?.closingScript ||
+      /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("closing") || t.toLowerCase().includes("wrap"));
+    if (!hasClosingScript) {
+      missingFields.push("Closing Line / Call Wrap-up Script (exact closing phrasing or N/A)");
+    }
+
+    const hasSilenceHandling = !!spec?.callFlowPlan?.silenceHandling ||
+      /\b(silence|no input|doesn't answer|quiet|timeout|reprompt|re-prompt|no-input|if caller says nothing|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("silence") || t.toLowerCase().includes("timeout"));
+    if (!hasSilenceHandling) {
+      missingFields.push("No-Input / Silence Handling (timeout seconds, reprompt action, or N/A)");
+    }
+
+    const hasInterruptionPolicy = !!spec?.callFlowPlan?.interruptionPolicy ||
+      /\b(barge in|barge-in|interrupt|interruption|talk over|cut off|allow interruption|do not interrupt|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("interrupt") || t.toLowerCase().includes("barge"));
+    if (!hasInterruptionPolicy) {
+      missingFields.push("Interruption / Barge-in Behavior (allow interruption vs disallow, or N/A)");
+    }
+
+    const hasDigressionPolicy = !!spec?.callFlowPlan?.digressionPolicy ||
+      /\b(digress|off topic|off-topic|mid flow|mid-flow|tangent|answer and return|return to script|resume where left off|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("digress") || t.toLowerCase().includes("tangent"));
+    if (!hasDigressionPolicy) {
+      missingFields.push("Mid-Flow Digression Handling (answer off-script question then resume vs refuse, or N/A)");
+    }
+
+    const hasRetryExhaustion = callFlowSteps.some((s: any) => s?.onFailure?.action || s?.onFailure?.target) ||
+      /\b(after 3 retries|max retries|retry limit|three failures|failed attempts|if caller can't provide|give up and transfer|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("retry") || t.toLowerCase().includes("exhaustion"));
+    if (!hasRetryExhaustion) {
+      missingFields.push("Retry Exhaustion Fallback (action after max retries per slot e.g. transfer/hangup)");
+    }
+
+    const hasConfirmationStyle = !!spec?.callFlowPlan?.confirmationStyle ||
+      /\b(read back|confirm back|character by character|digit by digit|repeat back|confirm phone number|confirmation style|no readback|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("confirmation") || t.toLowerCase().includes("readback"));
+    if (!hasConfirmationStyle) {
+      missingFields.push("Confirmation & Read-back Style (character-by-character vs summary, or N/A)");
+    }
+
+    const hasVoicePersona = !!meta.voiceCharacteristics ||
+      /\b(pacing|fast|slow|formality|formal|casual|filler words|um|uh|accent|british|american|indian accent|voice style|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("voice") || t.toLowerCase().includes("persona") || t.toLowerCase().includes("pacing"));
+    if (!hasVoicePersona) {
+      missingFields.push("Voice & Persona Characteristics (pacing, formality, accent, or N/A)");
+    }
+
+    const hasDisclosures = (snap.policies?.disclosures && snap.policies.disclosures.length > 0) ||
+      (spec?.guardrails?.disclosures && spec.guardrails.disclosures.length > 0) ||
+      /\b(disclosure|disclose|recorded call|recording consent|ai disclosure|state that you are ai|compliance notice|no disclosure|not regulated|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("disclosure") || t.toLowerCase().includes("consent") || t.toLowerCase().includes("compliance"));
+    if (!hasDisclosures) {
+      missingFields.push("Consent & Compliance Disclosures (recording consent, AI identity disclosure, or N/A)");
+    }
+
+    const hasDtmfFallback = !!spec?.callFlowPlan?.dtmfFallback ||
+      /\b(dtmf|keypad|press 1|type digits|keypad entry|touch tone|if speech fails use keypad|no dtmf|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("dtmf") || t.toLowerCase().includes("keypad"));
+    if (!hasDtmfFallback) {
+      missingFields.push("DTMF / Keypad Input Fallback (keypad entry fallback after speech recognition failure, or N/A)");
+    }
+
+    const hasHolidayHours = (typeof snap.operatingHours === 'object' && snap.operatingHours?.exceptions && snap.operatingHours.exceptions.length > 0) ||
+      (snap.exceptions && snap.exceptions.length > 0) ||
+      /\b(holiday|holidays|exceptions|closed on|christmas|new year|national holiday|no special holiday hours|standard only|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("holiday") || t.toLowerCase().includes("exception"));
+    if (!hasHolidayHours) {
+      missingFields.push("Holiday / Exception Hours (special closures, holiday schedules, or N/A)");
+    }
+
+    const hasEntryRouting = (spec?.callFlowPlan?.entryRouting && spec.callFlowPlan.entryRouting.length > 0) ||
+      /\b(entry routing|multiple request types|if caller says cancel|if caller says book|branching from start|single request type only|one flow only|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("entry") || t.toLowerCase().includes("routing") || t.toLowerCase().includes("multi-request"));
+    if (!hasEntryRouting) {
+      missingFields.push("Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)");
+    }
+
+    const hasInjectionResistance = !!spec?.guardrails?.injectionResistance ||
+      /\b(injection|jailbreak|override|ignore instructions|reveal prompt|bypass rules|security prompt|default guardrails|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("injection") || t.toLowerCase().includes("jailbreak") || t.toLowerCase().includes("resistance"));
+    if (!hasInjectionResistance) {
+      missingFields.push("Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)");
+    }
+
     const userTurnCount = chatHistory.filter(m => m.role.toLowerCase() === "user").length;
     if (missingFields.length > 0 && userTurnCount < 5) {
       if (!missingFields.includes("Additional In-Depth Operational Detail (interview in progress)")) {
@@ -180,38 +282,38 @@ export class CoverageArchitect {
       f.includes("Company Name") || f.includes("Physical Location") || f.includes("Primary Agent Language")
     );
     const topic2Fields = missingFields.filter(f =>
-      f.includes("Operating Hours") || f.includes("Staff & Practitioner Roster")
+      f.includes("Operating Hours") || f.includes("Staff & Practitioner Roster") || f.includes("Holiday / Exception Hours")
     );
     const topic3Fields = missingFields.filter(f =>
-      f.includes("Services Offered") || f.includes("Primary Agent Goal") || f.includes("Intake & Qualification") || f.includes("Infields & Pre-Call")
+      f.includes("Services Offered") || f.includes("Primary Agent Goal") || f.includes("Intake & Qualification") || f.includes("Infields & Pre-Call") || f.includes("Common Caller FAQs")
     );
     const topic4Fields = missingFields.filter(f =>
-      f.includes("Key Business Policies") || f.includes("Common Caller FAQs")
+      f.includes("Key Business Policies") || f.includes("Call Transfer") || f.includes("Edge Case") || f.includes("Consent & Compliance") || f.includes("Voice & Persona") || f.includes("Prompt Injection")
     );
-    const topic5Fields = missingFields.filter(f =>
-      f.includes("Call Transfer") || f.includes("Edge Case") || f.includes("Additional In-Depth")
+    const topicCallFlowFields = missingFields.filter(f =>
+      f.includes("Call Flow Skeleton") || f.includes("Opening Line") || f.includes("Closing Line") || f.includes("No-Input / Silence") || f.includes("Interruption / Barge-in") || f.includes("Mid-Flow Digression") || f.includes("Retry Exhaustion") || f.includes("Confirmation & Read-back") || f.includes("DTMF / Keypad") || f.includes("Entry Routing")
     );
 
-    let activeTopicGroup = "Escalation & High-Pressure Edge Cases";
-    let targetFields = topic5Fields.length > 0 ? topic5Fields : missingFields;
-    let topicInstruction = `We are exploring high-pressure scenarios, emergency triage protocols, after-hours transfers, live agent routing conditions, or complex objection handling relevant to ${vertical} (${activeProbes}). Formulate a crisp, practical question targeting: ${targetFields[0]}.`;
+    let activeTopicGroup = "Call Flow Design & Conversational Mechanics";
+    let targetFields = topicCallFlowFields.length > 0 ? topicCallFlowFields : missingFields;
+    let topicInstruction = `We are designing the conversational call flow and dialogue mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow Skeleton, offer them a standard industry 5-step template vs building from scratch. If asking about Interruption/Digression or Silence Handling, ask directly what the agent should do when interrupted, off-script, or met with silence.`;
 
     if (topic1Fields.length > 0) {
       activeTopicGroup = "Identity, Language & Location";
       targetFields = topic1Fields;
-      topicInstruction = `We are exploring foundational identity, language, and location details: collecting the official clinic/business name, physical location/contact info (address, phone number, website), or the primary language/dialect the agent should speak (e.g., English, Hindi, Hinglish, or multilingual). Do NOT ask about hours, services, policies, or emergencies yet. Formulate a friendly, conversational question targeting: ${topic1Fields[0]}.`;
+      topicInstruction = `We are exploring foundational identity, language, and location details: collecting the official clinic/business name, physical location/contact info (address, phone number, website), or the primary language/dialect the agent should speak (e.g., English, Hindi, Hinglish, or multilingual). Do NOT ask about hours, services, policies, or call flow yet. Formulate a friendly, conversational question targeting: ${topic1Fields[0]}.`;
     } else if (topic2Fields.length > 0) {
       activeTopicGroup = "Schedule & Team Setup";
       targetFields = topic2Fields;
-      topicInstruction = `We are exploring the schedule and team setup: exact operating days/hours or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about services, insurance, policies, or emergencies yet. Formulate an engaging question targeting: ${topic2Fields[0]}.`;
+      topicInstruction = `We are exploring the schedule and team setup: exact operating days/hours, holiday/exception hours, or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about call flow or policies yet. Formulate an engaging question targeting: ${topic2Fields[0]}.`;
     } else if (topic3Fields.length > 0) {
       activeTopicGroup = "Services, Caller Intake & Pre-Call Infields";
       targetFields = topic3Fields;
-      topicInstruction = `We are exploring core offerings, caller intake requirements, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically what CRM variables/infields will be passed to the agent before the call begins (or if none will be passed). Do NOT jump into cancellation fees or emergency routing yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
+      topicInstruction = `We are exploring core offerings, caller intake requirements, FAQs, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically what CRM variables/infields will be passed to the agent before the call begins (or if none will be passed). Do NOT jump into cancellation fees or call flow yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
     } else if (topic4Fields.length > 0) {
-      activeTopicGroup = "Policies & Common FAQs";
+      activeTopicGroup = "Policies, Edge Cases & Guardrails";
       targetFields = topic4Fields;
-      topicInstruction = `We are exploring everyday rules and FAQs: cancellation windows, late fees, refund rules, or top frequent everyday questions callers ask (pricing, preparation, parking). Do NOT probe for emergency triage or live agent transfers yet. Formulate a clear, helpful question targeting: ${topic4Fields[0]}.`;
+      topicInstruction = `We are exploring everyday rules, transfer routing, edge case/objection handling, consent disclosures, voice pacing/persona, or prompt injection guardrails. Formulate a clear, helpful question targeting: ${topic4Fields[0]}.`;
     }
 
     const historyText = chatHistory.slice(-50).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");

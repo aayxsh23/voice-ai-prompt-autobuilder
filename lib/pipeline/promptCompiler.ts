@@ -6,6 +6,7 @@ import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
 import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
 import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
+import { validateFlowCompleteness } from "@/lib/pipeline/validators/FlowCompletenessValidator";
 import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
 import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
 import { ToolPlanner } from "../compiler/planners/ToolPlanner";
@@ -17,11 +18,13 @@ export async function executePromptCompilationPipeline(extractedIR: any, draft?:
   const varValidation = validateVariableConsistency(completedPromptString, draft?.dynamicVariables || []);
   const fallbackValidation = validateFallbackDialogue(completedPromptString);
   const coherenceValidation = validateCoherence(completedPromptString, draft, extractedIR);
+  const flowValidation = validateFlowCompleteness(extractedIR?.businessSpec || extractedIR || {}, draft?.callFlowSteps || extractedIR?.callFlowPlan?.steps || []);
 
   const allErrors = [
     ...varValidation.errors,
     ...fallbackValidation.errors,
-    ...coherenceValidation.errors
+    ...coherenceValidation.errors,
+    ...flowValidation.errors
   ];
 
   if (allErrors.length > 0) {
@@ -246,11 +249,13 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
   const varValidation = validateVariableConsistency(finalPrompt, draft?.dynamicVariables || []);
   const fallbackValidation = validateFallbackDialogue(finalPrompt);
   const coherenceValidation = validateCoherence(finalPrompt, draft, spec);
+  const flowValidation = validateFlowCompleteness(spec, steps);
 
   const validationErrors: string[] = [
     ...varValidation.errors,
     ...fallbackValidation.errors,
-    ...coherenceValidation.errors
+    ...coherenceValidation.errors,
+    ...flowValidation.errors
   ];
 
   // Check placeholder integrity

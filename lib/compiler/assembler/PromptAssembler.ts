@@ -355,7 +355,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
       slotsToCollect,
       branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
       fallbackBehavior: s?.fallbackBehavior || "",
-      maxRetries: s?.maxRetries || 3
+      maxRetries: s?.maxRetries || 3,
+      onFailure: s?.onFailure,
+      confirmationRequired: s?.confirmationRequired,
+      digressionAllowed: s?.digressionAllowed
     };
   });
 
@@ -531,6 +534,30 @@ OFF-TOPIC REFUSAL PROTOCOL
   }
 
   // 8. CALL FLOW / STATE MACHINE
+  const callFlowPolicies: string[] = [];
+  if (spec?.callFlowPlan?.interruptionPolicy) {
+    callFlowPolicies.push(`* **Interruption / Barge-in Behavior:** ${spec.callFlowPlan.interruptionPolicy}`);
+  }
+  if (spec?.callFlowPlan?.digressionPolicy) {
+    callFlowPolicies.push(`* **Mid-Flow Digression Handling:** ${spec.callFlowPlan.digressionPolicy}`);
+  }
+  if (spec?.callFlowPlan?.silenceHandling) {
+    const sh = spec.callFlowPlan.silenceHandling;
+    callFlowPolicies.push(`* **No-Input / Silence Handling:** Timeout after ${sh.timeoutSeconds || 5} seconds. Action: ${sh.action || 'Reprompt caller'} (Max reprompts: ${sh.maxReprompts || 2}).`);
+  }
+  if (spec?.callFlowPlan?.confirmationStyle) {
+    callFlowPolicies.push(`* **Confirmation Read-back Style:** ${spec.callFlowPlan.confirmationStyle}`);
+  }
+  if (spec?.callFlowPlan?.dtmfFallback?.enabled) {
+    callFlowPolicies.push(`* **DTMF / Keypad Fallback:** Enabled after ${spec.callFlowPlan.dtmfFallback.triggerAfterFailures || 2} speech recognition failures.`);
+  }
+  if (spec?.callFlowPlan?.closingScript) {
+    callFlowPolicies.push(`* **Global Closing Script Directive:** "${spec.callFlowPlan.closingScript}"`);
+  }
+  const callFlowPolicyHeader = callFlowPolicies.length > 0
+    ? `#### CONVERSATIONAL & CALL FLOW POLICIES\n${callFlowPolicies.join('\n')}\n\n#### STATE MACHINE STEPS\n`
+    : "";
+
   const flowContent = steps.length > 0
     ? steps.map((step: any) => {
         const slots = Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : [];
@@ -550,10 +577,19 @@ OFF-TOPIC REFUSAL PROTOCOL
         if (step?.fallbackBehavior) {
           lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior} (Max retries: ${step?.maxRetries || 3})`);
         }
+        if (step?.onFailure) {
+          lines.push(`* **Exhaustion / Failure Behavior:** On failure after ${step.onFailure?.afterRetries || step.maxRetries || 3} retries -> Action: ${step.onFailure?.action || 'Transfer/Hangup'}${step.onFailure?.target ? ` to ${step.onFailure.target}` : ''}${step.onFailure?.fallbackLine ? ` (Say: "${step.onFailure.fallbackLine}")` : ''}`);
+        }
+        if (step?.confirmationRequired) {
+          lines.push(`* **Confirmation Rule:** MUST read back collected slot explicitly and obtain verbal confirmation before advancing.`);
+        }
+        if (step?.digressionAllowed !== undefined) {
+          lines.push(`* **Mid-Flow Digression:** ${step.digressionAllowed ? "Allowed. Answer off-topic question briefly using FAQ/Knowledge Base and return to this step immediately." : "Strictly disallowed. Politely decline off-topic questions and re-prompt for required extractions."}`);
+        }
         return lines.join('\n');
       }).join('\n\n---\n\n')
     : "No structured call flow defined. Engage conversationally based on primary goal.";
-  const flow = `### CALL FLOW\n${flowContent}`;
+  const flow = `### CALL FLOW\n${callFlowPolicyHeader}${flowContent}`;
 
   // 9. FAQS
   const faqSection = faqs.map((faq: any) => `Q: ${faq?.question || faq?.q || ''}\nA: ${faq?.answer || faq?.a || ''}`).join('\n\n') || "No specific FAQs defined.";
@@ -626,7 +662,13 @@ export class PromptAssembler {
           stateId: s?.stateId || `step_${idx + 1}`,
           stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
           scriptDirective: s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
-          slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []
+          slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [],
+          branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
+          fallbackBehavior: s?.fallbackBehavior || "",
+          maxRetries: s?.maxRetries || 3,
+          onFailure: s?.onFailure,
+          confirmationRequired: s?.confirmationRequired,
+          digressionAllowed: s?.digressionAllowed
         }))
       },
       knowledgeBase: {

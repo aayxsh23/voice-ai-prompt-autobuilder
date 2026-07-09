@@ -2,6 +2,7 @@ import { compilePromptPackage } from "@/lib/pipeline/promptCompiler";
 import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
 import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
 import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
+import { validateFlowCompleteness } from "@/lib/pipeline/validators/FlowCompletenessValidator";
 import { BlueprintJson } from "@/lib/llm/types";
 
 export interface DomainTestScenario {
@@ -131,6 +132,9 @@ export class MultiDomainTestHarness {
 
         const cohCheck = validateCoherence(fullPrompt, draft);
         if (!cohCheck.isValid) errors.push(...cohCheck.errors);
+
+        const flowCheck = validateFlowCompleteness(draft.businessSpec || (sc.blueprint as any).businessSpec || {}, draft.callFlowSteps || draft.businessSpec?.callFlowPlan?.steps || []);
+        if (!flowCheck.isValid) errors.push(...flowCheck.errors);
 
       } catch (err: any) {
         errors.push(`Compilation threw error: ${err.message || err}`);

@@ -202,6 +202,10 @@ export interface SimulationTurnOutput {
   guardrailTriggered: boolean;
   issueNotes: string;
   toolCalls?: Array<{ name: string; arguments: Record<string, any> }>;
+  estimatedLatencyMs?: number;
+  interruptionDetected?: boolean;
+  interruptionHandled?: string;
+  ttsPhonetics?: string[];
 }
 
 export interface BlueprintJson {
@@ -303,24 +307,60 @@ export interface BusinessSpecification {
     primaryGoal: string;
     languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
     callDirection?: 'inbound' | 'outbound' | 'both';
+    openingPhrase?: string;
+    voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
   };
   businessSnapshot: {
-    operatingHours: string;
+    operatingHours: string | { standard?: string; exceptions?: string[] };
+    exceptions?: string[];
     servicesOffered: string[];
     policies: {
       cancellation: string;
       refunds: string;
       escalationNumbers: string[];
+      disclosures?: string[];
     };
   };
   callFlowPlan: {
+    userDefinedSteps?: Array<{
+      sequenceOrder?: number;
+      stateId: string;
+      stateName?: string;
+      label?: string;
+      objective?: string;
+      scriptDirective?: string;
+      slotsToCollect?: string[];
+      branchingConditions?: Array<{ condition: string; goToStep: string | number | 'end_call' | 'transfer'; reason?: string }>;
+      fallbackBehavior?: string;
+      maxRetries?: number;
+      onFailure?: { afterRetries?: number; action?: string; target?: string; fallbackLine?: string };
+      confirmationRequired?: boolean;
+      digressionAllowed?: boolean;
+      isTerminal?: boolean;
+    }>;
+    entryRouting?: Array<{ trigger: string; goToStep: string | number }>;
+    silenceHandling?: { timeoutSeconds?: number; action?: string; maxReprompts?: number };
+    interruptionPolicy?: string;
+    digressionPolicy?: string;
+    confirmationStyle?: string;
+    dtmfFallback?: { enabled?: boolean; triggerAfterFailures?: number };
+    closingScript?: string;
     steps: Array<{
       sequenceOrder: number;
       stateId: string;
       stateName: string;
+      objective?: string;
       scriptDirective: string;
       slotsToCollect: string[];
+      branchingConditions?: Array<{ condition: string; goToStep: string | number | 'end_call' | 'transfer'; reason?: string }>;
+      fallbackBehavior?: string;
+      maxRetries?: number;
+      onFailure?: { afterRetries?: number; action?: string; target?: string; fallbackLine?: string };
+      confirmationRequired?: boolean;
+      digressionAllowed?: boolean;
+      invokesTools?: string[];
       isFallback?: boolean;
+      isTerminal?: boolean;
     }>;
   };
   knowledgeBase: {
@@ -341,6 +381,13 @@ export interface BusinessSpecification {
   resolvedTopics?: string[];
   capturedTopics?: Array<{ topic: string; summary: string }>;
   dynamicVariables?: DynamicVariableSpec[];
+  guardrails?: {
+    injectionResistance?: string;
+    disclosures?: string[];
+    emergencyTriggers?: string[];
+    emergencyAction?: string;
+    prohibitions?: string[];
+  };
 }
 
 export const businessSpecificationSchema = z.object({
@@ -352,25 +399,54 @@ export const businessSpecificationSchema = z.object({
     toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
     primaryGoal: z.string().default("Assist callers effectively"),
     languageMode: z.enum(["english", "hindi", "hinglish", "multilingual"]).default("english").optional(),
-    callDirection: z.enum(["inbound", "outbound", "both"]).optional()
+    callDirection: z.enum(["inbound", "outbound", "both"]).optional(),
+    openingPhrase: z.string().optional(),
+    voiceCharacteristics: z.object({
+      pacing: z.string().optional(),
+      formality: z.string().optional(),
+      fillerWords: z.boolean().optional(),
+      accent: z.string().optional()
+    }).optional()
   }),
   businessSnapshot: z.object({
-    operatingHours: z.string().default("Standard Business Hours"),
+    operatingHours: z.union([
+      z.string(),
+      z.object({ standard: z.string().optional(), exceptions: z.array(z.string()).optional() })
+    ]).default("Standard Business Hours"),
+    exceptions: z.array(z.string()).optional(),
     servicesOffered: z.array(z.string()).default([]),
     policies: z.object({
       cancellation: z.string().default("Standard policy apply"),
       refunds: z.string().default("Case-by-case evaluation"),
-      escalationNumbers: z.array(z.string()).default([])
+      escalationNumbers: z.array(z.string()).default([]),
+      disclosures: z.array(z.string()).optional()
     })
   }),
   callFlowPlan: z.object({
+    userDefinedSteps: z.array(z.any()).optional(),
+    entryRouting: z.array(z.object({ trigger: z.string(), goToStep: z.union([z.string(), z.number()]) })).optional(),
+    silenceHandling: z.object({ timeoutSeconds: z.number().optional(), action: z.string().optional(), maxReprompts: z.number().optional() }).optional(),
+    interruptionPolicy: z.string().optional(),
+    digressionPolicy: z.string().optional(),
+    confirmationStyle: z.string().optional(),
+    dtmfFallback: z.object({ enabled: z.boolean().optional(), triggerAfterFailures: z.number().optional() }).optional(),
+    closingScript: z.string().optional(),
     steps: z.array(z.object({
       sequenceOrder: z.number(),
       stateId: z.string(),
       stateName: z.string(),
+      objective: z.string().optional(),
       scriptDirective: z.string(),
       slotsToCollect: z.array(z.string()).default([]),
-      isFallback: z.boolean().optional()
+      branchingConditions: z.array(z.any()).optional(),
+      fallbackBehavior: z.string().optional(),
+      maxRetries: z.number().optional(),
+      onFailure: z.object({ afterRetries: z.number().optional(), action: z.string().optional(), target: z.string().optional(), fallbackLine: z.string().optional() }).optional(),
+      confirmationRequired: z.boolean().optional(),
+      digressionAllowed: z.boolean().optional(),
+      invokesTools: z.array(z.string()).optional(),
+      isFallback: z.boolean().optional(),
+      isTerminal: z.boolean().optional()
     })).default([])
   }),
   knowledgeBase: z.object({
@@ -407,5 +483,12 @@ export const businessSpecificationSchema = z.object({
     required: z.boolean().optional().default(false),
     defaultValue: z.string().optional().default(''),
     source: z.string().optional().default('extraction')
-  })).default([]).optional()
+  })).default([]).optional(),
+  guardrails: z.object({
+    injectionResistance: z.string().optional(),
+    disclosures: z.array(z.string()).optional(),
+    emergencyTriggers: z.array(z.string()).optional(),
+    emergencyAction: z.string().optional(),
+    prohibitions: z.array(z.string()).optional()
+  }).optional()
 });

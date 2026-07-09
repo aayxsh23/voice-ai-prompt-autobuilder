@@ -216,6 +216,15 @@ MANDATORY STATE MACHINE DESIGN RULES:
 Return a JSON array of step objects with sequenceOrder, stateId, stateName, objective, scriptDirective, slotsToCollect, branchingConditions, fallbackBehavior, maxRetries, and invokesTools.`;
 
     try {
+      const userDefinedSteps = spec.callFlowPlan?.userDefinedSteps || [];
+      const existingCustomSteps = (spec.callFlowPlan?.steps || []).filter((s: any) => !s.isFallback);
+      if (userDefinedSteps.length > 0) {
+        return WorkflowArchitect.postProcessSteps(userDefinedSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
+      }
+      if (existingCustomSteps.length >= 2) {
+        return WorkflowArchitect.postProcessSteps(existingCustomSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
+      }
+
       const response = await geminiClient.generate({
         systemInstruction: `You are a structured JSON workflow planning specialist. Return ONLY a valid JSON array of step objects.${isHindiOrHinglish ? " All Say: dialogue inside scriptDirective MUST be written in Devanagari script (देवनागरी)." : ""}`,
         prompt,
@@ -227,7 +236,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       return steps.length > 0 ? steps : fallbackSteps;
     } catch (err) {
       console.warn("WorkflowArchitect fallback triggered:", err);
-      return fallbackSteps;
+      return WorkflowArchitect.postProcessSteps(fallbackSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
     }
   }
 
@@ -243,6 +252,16 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     const collectedCores = new Set<string>();
 
     steps.forEach((s: any, idx: number) => {
+      // Preserve user-elicited flags and branch policies
+      const preservedProps = {
+        onFailure: s.onFailure,
+        confirmationRequired: s.confirmationRequired,
+        digressionAllowed: s.digressionAllowed,
+        invokesTools: s.invokesTools || [],
+        isFallback: s.isFallback,
+        isTerminal: s.isTerminal
+      };
+
       // Ensure proactive AI disclosure on step 1 (`Issue #8`)
       if (idx === 0 || s.stateId === 'identity_gate') {
         let directive = s.scriptDirective || "";
@@ -259,7 +278,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
           }
         }
         s.scriptDirective = directive;
-        refined.push(s);
+        refined.push({ ...s, ...preservedProps, sequenceOrder: 1 });
         return;
       }
 
@@ -276,7 +295,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       });
 
       // If after semantic deduplication, a capture step has no slots left because they were captured earlier, skip it completely
-      if (rawSlots.length > 0 && slots.length === 0 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution') {
+      if (rawSlots.length > 0 && slots.length === 0 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
         return;
       }
 
@@ -286,6 +305,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
           const fName = singleSlot.replace(/_/g, ' ');
           refined.push({
             ...s,
+            ...preservedProps,
             sequenceOrder: refined.length + 1,
             stateId: sIdx === 0 ? s.stateId : `capture_${singleSlot.toLowerCase()}`,
             stateName: sIdx === 0 ? s.stateName : `Capture ${fName}`,
@@ -299,7 +319,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       } else {
         if (slots.length > 0) s.slotsToCollect = slots;
         s.sequenceOrder = refined.length + 1;
-        refined.push(s);
+        refined.push({ ...s, ...preservedProps });
       }
     });
 
