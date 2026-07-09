@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import {
   BlueprintJson,
   BusinessSnapshot,
@@ -21,12 +21,6 @@ import {
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("FATAL: GEMINI_API_KEY is missing. The compiler cannot run.");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 export const COMPILER_GENERATION_CONFIG = {
   temperature: 0.1,
   topP: 0.4,
@@ -42,6 +36,7 @@ STRUCTURE: Every output must contain these exact sections in this order:
 ### AGENT IDENTITY & PERSONA
 ### LANGUAGE HANDLING
 ### OUTPUT & VOICE MECHANICS
+### TELEPHONY RUNTIME TOOLS & EXECUTION PROTOCOL
 ### SCOPE & REFUSAL BEHAVIOR
 ### MANDATORY EMERGENCY & SAFETY OVERRIDES
 ### BUSINESS CONTEXT & STATIC FACTS
@@ -95,71 +90,129 @@ CRITICAL PROHIBITIONS:
 OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY & PERSONA.
 `.trim();
 
-export const geminiClient = {
+function stripThinkTags(text: string): string {
+  if (!text) return "";
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+}
+
+function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string {
+  const choice = response.choices?.[0];
+  const message = choice?.message || {};
+  
+  // 1. Check for native reasoning field (`reasoning_content` in vLLM/DeepSeek/Qwen APIs)
+  const nativeThinking = message.reasoning_content || message.reasoning || "";
+  
+  // 2. Check for <think> tags inside `content`
+  const rawContent = message.content || "";
+  const tagMatch = rawContent.match(/<think>([\s\S]*?)<\/think>/i);
+  const tagThinking = tagMatch ? tagMatch[1].trim() : "";
+  
+  const extractedThinking = nativeThinking || tagThinking;
+  if (extractedThinking) {
+    console.log(`\n================= 🧠 QWEN THINKING TOKENS (${contextLabel}) =================`);
+    console.log(extractedThinking);
+    console.log(`=================================================================================\n`);
+  }
+  return rawContent;
+}
+
+function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
+  const finalBaseUrl = baseUrl || process.env.QWEN_BASE_URL_FOR_LLM || process.env.QWEN_BASE_URL || "http://localhost:8000/v1";
+  const finalApiKey = apiKey || process.env.QWEN_API_KEY || "EMPTY";
+  return new OpenAI({
+    apiKey: finalApiKey,
+    baseURL: finalBaseUrl,
+  });
+}
+
+export const llmClient = {
   async generate({ systemInstruction, prompt, responseMimeType }: { systemInstruction: string, prompt: string, responseMimeType?: string }) {
     const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: isJson ? "application/json" : undefined,
-        ...COMPILER_GENERATION_CONFIG
-      }
-    });
-    if (!response.text) {
+    const client = getOpenAIClient();
+    const model = process.env.QWEN_MODEL || "Qwen/Qwen3.6-35B-A3B-FP8";
+
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (systemInstruction && systemInstruction.trim() !== "") {
+      messages.push({ role: "system", content: systemInstruction });
+    }
+    messages.push({ role: "user", content: prompt });
+
+    const response = await client.chat.completions.create({
+      model,
+      messages,
+      temperature: 0.1,
+      ...(isJson ? { response_format: { type: "json_object" as const } } : {}),
+      chat_template_kwargs: { enable_thinking: true },
+    } as any);
+
+    const rawContent = extractAndLogThinking(response, "llmClient.generate");
+    const cleanContent = stripThinkTags(rawContent);
+
+    if (!cleanContent) {
       throw new Error("Compiler Node Failure: LLM returned empty response.");
     }
-    return { text: response.text };
+    return { text: cleanContent };
   }
 };
 
-export class GeminiProvider implements LlmService {
-  private aiInstance: GoogleGenAI;
+// Backward-compatibility alias so any existing code importing geminiClient still works seamlessly
+export const geminiClient = llmClient;
+
+export class QwenProvider implements LlmService {
+  private client: OpenAI;
   private modelName: string;
 
-  constructor(apiKey?: string, modelName = 'gemini-3.1-flash-lite') {
-    this.modelName = process.env.GEMINI_MODEL || modelName;
-    const key = apiKey || process.env.GEMINI_API_KEY;
-    if (!key) {
-      throw new Error("FATAL: GEMINI_API_KEY is missing in GeminiProvider.");
-    }
-    this.aiInstance = new GoogleGenAI({ apiKey: key });
+  constructor(apiKey?: string, modelName = "Qwen/Qwen3.6-35B-A3B-FP8", baseUrl?: string) {
+    this.modelName = process.env.QWEN_MODEL || modelName;
+    this.client = getOpenAIClient(apiKey, baseUrl);
   }
 
   private async generateJson<T>(prompt: string): Promise<T> {
     const jsonInstruction = `\n\nCRITICAL INSTRUCTION:\nReturn valid JSON only.\nDo not include markdown.\nDo not include code fences.\nDo not include explanations outside the JSON object.`;
-    const response = await this.aiInstance.models.generateContent({
+    const response = await this.client.chat.completions.create({
       model: this.modelName,
-      contents: prompt + jsonInstruction,
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.2
-      }
-    });
-    if (!response.text) {
-      throw new Error("Gemini API returned empty response.");
+      messages: [
+        { role: "user", content: prompt + jsonInstruction }
+      ],
+      temperature: 0.1,
+      response_format: { type: "json_object" as const },
+      chat_template_kwargs: { enable_thinking: true },
+    } as any);
+
+    const rawContent = extractAndLogThinking(response, "generateJson");
+    const cleanContent = stripThinkTags(rawContent);
+
+    if (!cleanContent) {
+      throw new Error("Qwen API returned empty response.");
     }
-    return safeParseJson<T>(response.text, {} as T);
+    return safeParseJson<T>(cleanContent, {} as T);
   }
 
   public async generateRaw(prompt: string): Promise<string> {
     const isJsonRequest = prompt.includes("ONLY valid JSON") || prompt.includes("JSON matching");
-    const response = await this.aiInstance.models.generateContent({
+    const response = await this.client.chat.completions.create({
       model: this.modelName,
-      contents: prompt,
-      config: {
-        systemInstruction: isJsonRequest
-          ? "You are an expert AI voice agent architect. Output strictly valid JSON matching the schema requested without markdown formatting or code fences."
-          : GLOBAL_COMPILER_INSTRUCTION,
-        responseMimeType: isJsonRequest ? "application/json" : undefined,
-        ...COMPILER_GENERATION_CONFIG
-      }
-    });
-    if (!response.text || response.text.trim() === "") {
+      messages: [
+        {
+          role: "system",
+          content: isJsonRequest
+            ? "You are an expert AI voice agent architect. Output strictly valid JSON matching the schema requested without markdown formatting or code fences."
+            : GLOBAL_COMPILER_INSTRUCTION,
+        },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.1,
+      ...(isJsonRequest ? { response_format: { type: "json_object" as const } } : {}),
+      chat_template_kwargs: { enable_thinking: true },
+    } as any);
+
+    const rawContent = extractAndLogThinking(response, "generateRaw");
+    const cleanContent = stripThinkTags(rawContent);
+
+    if (!cleanContent || cleanContent.trim() === "") {
       throw new PromptCompilationError("LLM returned empty or missing response text in generateRaw");
     }
-    return response.text;
+    return cleanContent;
   }
 
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
@@ -407,3 +460,6 @@ Return ONLY valid JSON matching the exact schema:
     return res;
   }
 }
+
+// Backward-compatibility alias
+export class GeminiProvider extends QwenProvider {}

@@ -1,4 +1,4 @@
-import { geminiClient as baseGeminiClient } from "@/lib/llm/geminiProvider";
+import { llmClient as baseGeminiClient } from "@/lib/llm/qwenProvider";
 
 export const geminiClient = {
   async generate({ systemInstruction, prompt }: { systemInstruction: string; prompt: string }): Promise<{ text: string }> {

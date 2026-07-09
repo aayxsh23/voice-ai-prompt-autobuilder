@@ -1,6 +1,6 @@
 // lib/compiler/blueprint/IntentExtractor.ts
 
-import { geminiClient } from "@/lib/llm/geminiProvider";
+import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 import { safeParseJson } from "@/lib/llm/types";
 
 export class IntentExtractor {

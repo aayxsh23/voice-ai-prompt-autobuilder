@@ -1,5 +1,5 @@
 import { BusinessSpecification } from "@/lib/llm/types";
-import { geminiClient } from "@/lib/llm/geminiProvider";
+import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 
 export interface CoverageReport {
   missingFields: string[];

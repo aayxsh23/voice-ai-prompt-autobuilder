@@ -1,5 +1,5 @@
 // lib/llm/llmClient.ts
-import { GeminiProvider } from './geminiProvider';
+import { QwenProvider } from './qwenProvider';
 import { LlmService } from './types';
 
 let cachedClient: LlmService | null = null;
@@ -7,12 +7,9 @@ let cachedClient: LlmService | null = null;
 export function getLlmClient(): LlmService {
   if (cachedClient) return cachedClient;
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.QWEN_API_KEY || "EMPTY";
+  const baseUrl = process.env.QWEN_BASE_URL_FOR_LLM || process.env.QWEN_BASE_URL || "http://localhost:8000/v1";
 
-  if (!apiKey || apiKey.trim() === '') {
-    throw new Error("FATAL: GEMINI_API_KEY is missing. The compiler cannot run.");
-  }
-
-  cachedClient = new GeminiProvider(apiKey);
+  cachedClient = new QwenProvider(apiKey, undefined, baseUrl);
   return cachedClient;
 }

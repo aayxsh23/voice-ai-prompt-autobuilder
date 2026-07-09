@@ -2,7 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { geminiClient } from '@/lib/llm/geminiProvider';
+import { llmClient as geminiClient } from '@/lib/llm/qwenProvider';
 import { safeParseJson, BusinessSpecification } from '@/lib/llm/types';
 import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
 

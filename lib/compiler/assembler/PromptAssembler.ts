@@ -19,6 +19,58 @@ function formatPolicyString(val: any, defaultVal: string): string {
   return String(val);
 }
 
+function buildRuntimeToolsSection(tools?: any[]): string {
+  const effectiveTools = (tools && tools.length > 0) ? tools : [
+    { name: "validate_digit_input" },
+    { name: "set_capture_mode" },
+    { name: "end_call" },
+    { name: "format_email_for_voice" }
+  ];
+
+  const hasValidateDigits = effectiveTools.some(t => t?.name === "validate_digit_input");
+  const hasSetCaptureMode = effectiveTools.some(t => t?.name === "set_capture_mode");
+  const hasEndCall = effectiveTools.some(t => t?.name === "end_call");
+  const emailTool = effectiveTools.find(t => t?.name?.startsWith("format_email_")) || { name: "format_email_for_voice" };
+
+  const lines: string[] = [];
+  lines.push("### TELEPHONY RUNTIME TOOLS & EXECUTION PROTOCOL");
+  lines.push("The audio runner environment exposes deterministic global runtime tools for STT buffering, numeric/email verification, and call termination. You MUST invoke these tools whenever their trigger conditions are met:");
+
+  if (hasSetCaptureMode) {
+    lines.push(`\n1. BUFFER MANAGEMENT (\`set_capture_mode\`):
+- Before prompting the caller for a multi-digit number (PIN, phone number, OTP) or an email address, invoke \`set_capture_mode(keep_buffer: true, mode: "digits"|"email", field: "field_name", expected_digits: N)\` in the SAME turn as your asking question.
+- This ensures that if the caller starts speaking or entering digits while you are talking, the audio buffer is preserved.
+- Once the field is collected and confirmed accurately, invoke \`set_capture_mode(keep_buffer: false)\` to return to normal conversation buffering.`);
+  }
+
+  if (hasValidateDigits) {
+    lines.push(`\n2. NUMERIC & PIN-CODE VALIDATION (\`validate_digit_input\`):
+- When collecting a phone number, pin code, or OTP, invoke \`validate_digit_input(field: "...", expected_digits: N, user_text: "...", previously_collected: "...")\`.
+- If the tool returns partial status (\`is_valid: false\`), speak the prompt returned by the tool or ask the caller specifically for the remaining digits.
+- Never manually count, guess, or concatenate digits in text without running them through \`validate_digit_input\`.`);
+  }
+
+  if (emailTool) {
+    lines.push(`\n3. EMAIL NORMALIZATION (\`${emailTool.name}\`):
+- When an email address is uttered or spelled by the caller, invoke \`${emailTool.name}(email_text: "...")\`.
+- Read back the \`spoken_email\` output string verbatim to the user for confirmation. Do not try to manually insert dot/at speech spacing.`);
+  }
+
+  if (hasEndCall) {
+    lines.push(`\n4. CALL TERMINATION (\`end_call\`):
+- When the conversation reaches a natural conclusion, refusal limit, or explicit hangup request, invoke \`end_call(reason: "...")\`.
+- Call \`end_call\` synchronously in the exact same turn where you utter your final closing sentence. Never use text tokens like [HANGUP] or [END_CALL].`);
+  }
+
+  const domainTools = effectiveTools.filter(t => t?.name && !["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma", "transfer_call"].includes(t.name));
+  if (domainTools.length > 0) {
+    lines.push(`\n5. DOMAIN-SPECIFIC BUSINESS TOOLS:
+${domainTools.map(t => `- \`${t.name}\`: ${t.description || "Execute business action."}`).join('\n')}`);
+  }
+
+  return lines.join('\n');
+}
+
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
   const specFaqs = Array.isArray(spec?.knowledgeBase?.faqs) ? spec.knowledgeBase.faqs : [];
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
@@ -108,12 +160,32 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     if (isHindiOrHinglish) {
       directive = directive.replace(/\bho\b/g, 'हो').replace(/\bbaat\b/gi, 'बात').replace(/\bkar\b/gi, 'कर').replace(/\brahi\b/gi, 'रही').replace(/\bhoon\b/gi, 'हूँ').replace(/\bhain\b/gi, 'हैं');
     }
+    const slotsToCollect = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
+
+    const hasNumericSlot = slotsToCollect.some((slot: string) => /phone|mobile|pin|whatsapp|otp|number|digits/i.test(slot));
+    const hasEmailSlot = slotsToCollect.some((slot: string) => /email|mail/i.test(slot));
+
+    let requiredToolActions = "";
+    if (hasNumericSlot) {
+      const numericField = slotsToCollect.find((slot: string) => /phone|mobile|pin|whatsapp|otp|number|digits/i.test(slot)) || "mobile_number";
+      const expectedCount = /pin|otp/i.test(numericField) ? 6 : 10;
+      requiredToolActions = `\nRequired Tool Actions:\n- Trigger \`set_capture_mode(keep_buffer: true, mode: "digits", field: "${numericField}", expected_digits: ${expectedCount})\` when asking for ${numericField}.\n- On response, call \`validate_digit_input(field: "${numericField}", expected_digits: ${expectedCount}, user_text: caller_utterance)\` to verify and accumulate digits.\n- After ${numericField} is confirmed, call \`set_capture_mode(keep_buffer: false)\`.`;
+    } else if (hasEmailSlot) {
+      const emailField = slotsToCollect.find((slot: string) => /email|mail/i.test(slot)) || "email";
+      const emailToolName = spec?.tools?.find((t: any) => t?.name?.startsWith("format_email_"))?.name || "format_email_for_voice";
+      requiredToolActions = `\nRequired Tool Actions:\n- Trigger \`set_capture_mode(keep_buffer: true, mode: "email", field: "${emailField}")\` when asking for ${emailField}.\n- On response, call \`${emailToolName}(email_text: caller_utterance)\` and read back \`spoken_email\` exactly.\n- After ${emailField} is confirmed, call \`set_capture_mode(keep_buffer: false)\`.`;
+    }
+
+    if (requiredToolActions) {
+      directive = `${directive.trim()}\n${requiredToolActions}`;
+    }
+
     return {
       sequenceOrder: s?.sequenceOrder || idx + 1,
       stateId: s?.stateId || `step_${idx + 1}`,
       stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
       scriptDirective: directive,
-      slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])
+      slotsToCollect
     };
   });
 
@@ -285,11 +357,14 @@ OFF-TOPIC REFUSAL PROTOCOL
   const objSection = objections.map((obj: any) => `Trigger: ${obj?.trigger || obj?.objection || ''}\nHandling: ${obj?.response || obj?.handling || ''}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
   const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
 
-  // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 10)
+  // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
+  const runtimeToolsProtocol = buildRuntimeToolsSection(spec?.tools);
+
   const sections = [
     identity,
     languageHandling,
     outputMechanics,
+    runtimeToolsProtocol,
     scopeAndRefusals,
     safetyOverrides,
     businessContext,

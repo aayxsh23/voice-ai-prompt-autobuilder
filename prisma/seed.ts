@@ -30,47 +30,29 @@ async function main() {
       category: 'SPEAKABILITY',
       tag: 'EMAIL',
       content: `EMAIL SPEAKABILITY RULES:
-- Never read an email address as a single continuous string. Break it into clearly spoken segments.
-- Replace "@" with the spoken word "at". Always insert a brief pause before and after "at".
-- Replace every "." with the spoken word "dot". Never say "period" or "point" for email addresses.
-- Replace "_" with "underscore" and "-" with "dash" (or "hyphen") — do not skip or silently omit these characters.
-- For common, well-known domains (gmail.com, yahoo.com, outlook.com, hotmail.com, icloud.com), it is acceptable to read the domain naturally, e.g. "gmail dot com" at normal pace.
-- For uncommon, misspelled-sounding, or ambiguous domains, spell the domain letter-by-letter before saying "dot com" (or the relevant TLD) to avoid STT/TTS ambiguity.
-- Spell out the local-part (the text before "@") letter-by-letter and digit-by-digit if it contains a mix of letters, numbers, or is not a recognizable dictionary word. Do NOT pronounce it as a made-up word.
-- Explicitly state capitalization only if the system has verified the email is case-sensitive; otherwise assume lowercase and do not mention casing.
-- Never abbreviate ".com" as "dot com" quickly without a pause — always slow down slightly around the TLD.
-- After stating a collected or confirmed email address, always read it back in full using the above rules and ask the user to confirm accuracy before proceeding.
-- Do not merge two consecutive numbers into a larger number (e.g., "john23" must be spoken as "john two three", not "john twenty-three").`,
+- Never attempt to manually format or pronounce dot/at letter-by-letter in text.
+- When confirming or verbalizing an email address, always invoke the format_email_for_voice (or format_email_for_voice_no_comma) tool and read back the returned spoken_email payload exactly.
+- Always ask the user to confirm accuracy of the email after reading it back using the tool result.`,
       isDefault: true,
     },
     {
       category: 'SPEAKABILITY',
       tag: 'PHONE_NUMBER',
       content: `PHONE NUMBER SPEAKABILITY RULES:
-- Always read phone numbers digit-by-digit. Never combine digits into larger numbers (e.g., "215" must be "two one five", never "two hundred fifteen").
-- Say "zero" for the digit 0. Never say "oh" unless explicitly matching a regional convention the system has been configured for.
-- Group digits according to the standard regional format (e.g., area code, then exchange, then line number) and insert a short natural pause between each group to aid comprehension.
-- Use a slightly slower pace than normal conversational speech when reading any phone number, to reduce STT/TTS transcription errors.
-- If a phone number includes a country code (e.g., "+1"), say "plus" then read the country code digit-by-digit, followed by a pause, before continuing with the rest of the number.
-- If the number includes an extension, say the word "extension" clearly before reading the extension digits one-by-one.
-- Never insert artificial words like "hundred" or "thousand" while reading a phone number under any circumstance.
-- When collecting a phone number from the user, always read it back digit-by-digit in full and explicitly ask for confirmation before proceeding.
-- If interrupted or corrected mid-read, restart the confirmation from the beginning of the full number rather than resuming mid-sequence, to avoid ambiguity.`,
+- When collecting or validating a phone number, always rely on the validate_digit_input and set_capture_mode runtime tools. Never attempt to manually count digits or combine audio fragments in text.
+- If partial digits are collected across multiple turns, pass the previously collected digits into validate_digit_input.
+- Say "zero" for the digit 0. Never say "oh" unless explicitly matching a regional convention.
+- When reading back a confirmed phone number, speak digits clearly and insert brief natural pauses between groups (e.g., area code, exchange, line number) to aid comprehension.`,
       isDefault: true,
     },
     {
       category: 'SPEAKABILITY',
       tag: 'PINCODE',
       content: `PINCODE SPEAKABILITY RULES:
-- ZIP codes, passcodes, PINs, OTPs, and verification codes must ALWAYS be read strictly digit-by-digit. This rule has no exceptions.
-- Never group digits into tens, hundreds, or any composite number, even if the digits form a recognizable pattern (e.g., "1234" must be spoken as "one two three four", never "twelve thirty-four" or "one thousand two hundred thirty-four").
-- Say "zero" for the digit 0, never "oh", to avoid ambiguity with the letter "O" in alphanumeric codes.
-- If the code is alphanumeric, alternate clearly between letter names and digit names, spelling each character individually (e.g., "A1B2" is "A, one, B, two").
-- Insert a brief, deliberate pause between each individual character to maximize clarity and reduce transcription/comprehension errors.
-- Never infer or "helpfully" round/simplify a code for readability — the exact sequence must be preserved character-for-character.
-- After stating any PIN, passcode, or verification code, always read it back character-by-character and require explicit user confirmation before proceeding with any dependent action.
-- Do not speak PINs, passcodes, or verification codes at a fast conversational pace — always slow down for these specifically.
-- If a code contains repeated digits (e.g., "0000" or "1111"), read each repetition individually and distinctly rather than saying "four zeros".`,
+- When collecting a PIN, passcode, OTP, or verification code, always rely on validate_digit_input with the required expected_digits parameter. Do not manually count or guess partial codes.
+- Say "zero" for the digit 0, never "oh", to avoid ambiguity with the letter "O".
+- If the code is alphanumeric, alternate clearly between letter names and digit names (e.g., "A, one, B, two").
+- Always read back the confirmed PIN/OTP character-by-character and require explicit user confirmation before executing any dependent action.`,
       isDefault: true,
     },
     {
@@ -78,21 +60,10 @@ async function main() {
       tag: 'NUMBER',
       content: `NUMBER SPEAKABILITY RULES:
 - Whole numbers from zero to one hundred should be spoken naturally as words (e.g., "42" → "forty-two"), not digit-by-digit.
-- Numbers with 4+ digits that represent a genuine quantity (not an ID/code) should be read using natural place-value grouping (e.g., "4,500" → "four thousand five hundred"), not digit-by-digit.
-- Never use shorthand notations in spoken output. Always expand abbreviations before speaking:
-  - "1K" → "one thousand"
-  - "2.5M" → "two point five million"
-  - "3B" → "three billion"
-- Currency must always state the currency unit explicitly and follow natural spoken conventions:
-  - "$45.99" → "forty-five dollars and ninety-nine cents"
-  - "€12" → "twelve euros"
-  - Never read the currency symbol itself (e.g., never say "dollar sign").
-- Percentages must be read with the word "percent" stated explicitly (e.g., "50%" → "fifty percent"), never as "fifty per".
-- Decimals in measurements or normal quantities should be read as "point" followed by the natural spoken digits (e.g., "3.14" → "three point one four").
-- Any number functioning as an identifier, code, PIN, order number, tracking number, or similar (NOT a quantity) must instead follow the PINCODE or PHONE_NUMBER digit-by-digit rules — never read IDs using place-value grouping.
-- Ranges should be read with a connecting word (e.g., "10-15" → "ten to fifteen"), never as a hyphen or dash sound.
-- Ordinal numbers (1st, 2nd, 3rd) must be read as ordinals ("first", "second", "third"), not cardinals, when referring to rank, order, or dates.
-- When ambiguous whether a number is a quantity or an identifier, default to the identifier (digit-by-digit) treatment, since misreading an ID is more harmful than a slightly unnatural quantity reading.`,
+- Numbers with 4+ digits that represent a genuine quantity (not an ID/code) should be read using natural place-value grouping (e.g., "4,500" → "four thousand five hundred").
+- Never use shorthand notations in spoken output. Always expand abbreviations before speaking ("1K" → "one thousand", "2.5M" → "two point five million").
+- Currency must always state the currency unit explicitly ("$45.99" → "forty-five dollars and ninety-nine cents").
+- Any number functioning as an identifier, code, PIN, order number, or tracking number (NOT a quantity) must follow the PHONE_NUMBER or PINCODE rules. Never attempt to count or assemble digits manually.`,
       isDefault: true,
     },
     {

@@ -13,6 +13,7 @@ interface Turn {
   text: string;
   intent?: string;
   guardrail?: boolean;
+  toolCalls?: Array<{ name: string; arguments: Record<string, any> }>;
 }
 
 export const TestPromptSimulator: React.FC<Props> = ({ projectId, defaultPersona = 'easy caller', initialMessage = '' }) => {
@@ -54,7 +55,8 @@ export const TestPromptSimulator: React.FC<Props> = ({ projectId, defaultPersona
           sender: 'agent',
           text: data.simulatedResponse || "Error generating response.",
           intent: data.detectedIntent,
-          guardrail: data.guardrailTriggered
+          guardrail: data.guardrailTriggered,
+          toolCalls: Array.isArray(data.toolCalls) ? data.toolCalls : undefined
         }
       ]);
     } catch (e) {
@@ -108,7 +110,28 @@ export const TestPromptSimulator: React.FC<Props> = ({ projectId, defaultPersona
                     : "bg-[#161718] text-[#d0d6e0] border border-[#23252a] rounded-tl-[2px]"
                 }`}
               >
-                {turn.text}
+                <div>{turn.text}</div>
+                {turn.toolCalls && turn.toolCalls.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-[#23252a] space-y-1.5">
+                    <div className="text-[10px] font-mono uppercase text-lime-400 flex items-center gap-1">
+                      <span>⚡ Tool Invocations ({turn.toolCalls.length})</span>
+                    </div>
+                    <div className="space-y-1">
+                      {turn.toolCalls.map((tc, idx) => (
+                        <div key={idx} className="bg-[#0b0c0d] p-2 rounded-[6px] border border-[#282a30] font-mono text-[11px]">
+                          <div className="text-lime-300 font-medium">{tc.name}()</div>
+                          {tc.arguments && Object.keys(tc.arguments).length > 0 && (
+                            <div className="mt-1 text-[#a0a6b0] text-[10px] pl-2 border-l border-[#32353c]">
+                              {Object.entries(tc.arguments).map(([k, v]) => (
+                                <div key={k}><span className="text-[#62666d]">{k}:</span> {typeof v === 'object' ? JSON.stringify(v) : String(v)}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))

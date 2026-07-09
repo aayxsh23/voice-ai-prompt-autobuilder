@@ -1,11 +1,57 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
+function getSystemPresetFunctions(projectId: string) {
+  return [
+    {
+      id: `preset_validate_digit_input_${projectId}`,
+      projectId,
+      name: "validate_digit_input",
+      category: "System Runtime Preset",
+      description: "Validate phone number or pin-code digits from a spoken user turn, including partial input and repeated STT fragments.",
+      purposeInPrompt: "Validate digits and partial inputs.",
+      associatedStateId: "global_runtime"
+    },
+    {
+      id: `preset_set_capture_mode_${projectId}`,
+      projectId,
+      name: "set_capture_mode",
+      category: "System Runtime Preset",
+      description: "Toggle whether user speech captured while the bot was speaking is kept (true) or discarded (false).",
+      purposeInPrompt: "Retain audio buffer during bot digit/email questioning.",
+      associatedStateId: "global_runtime"
+    },
+    {
+      id: `preset_format_email_for_voice_${projectId}`,
+      projectId,
+      name: "format_email_for_voice",
+      category: "System Runtime Preset",
+      description: "Normalize a spoken or typed email ID and return TTS-friendly speech with pauses.",
+      purposeInPrompt: "Speak email segments cleanly without manual string splitting.",
+      associatedStateId: "global_runtime"
+    },
+    {
+      id: `preset_end_call_${projectId}`,
+      projectId,
+      name: "end_call",
+      category: "System Runtime Preset",
+      description: "End the voice call after the closing agent's one-shot terminal closing turn.",
+      purposeInPrompt: "Synchronous call termination in closing turn.",
+      associatedStateId: "resolution"
+    }
+  ];
+}
+
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const fns = await prisma.suggestedFunction.findMany({ where: { projectId: id } });
-    return NextResponse.json(fns);
+    const presets = getSystemPresetFunctions(id);
+    const combined = [
+      ...presets,
+      ...fns.filter(f => !presets.some(p => p.name === f.name))
+    ];
+    return NextResponse.json(combined);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -15,6 +61,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   try {
     const { id } = await params;
     const body = await req.json();
+    if (["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma"].includes(body.name)) {
+      return NextResponse.json({ error: "System runtime tools are protected presets and cannot be created as database rows." }, { status: 400 });
+    }
     const created = await prisma.suggestedFunction.create({
       data: {
         projectId: id,

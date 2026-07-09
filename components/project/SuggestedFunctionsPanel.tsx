@@ -42,21 +42,30 @@ export const SuggestedFunctionsPanel: React.FC<Props> = ({ projectId, functions,
       </div>
 
       <div className="space-y-2">
-        {functions.map(f => (
-          <div key={f.id} className="p-3 bg-[#0f1011] rounded-[6px] border border-[#23252a] flex items-start justify-between text-[12px]">
-            <div className="space-y-1">
-              <div className="flex items-center space-x-2">
-                <Terminal className="h-3 w-3 text-[#62666d]" />
-                <span className="font-mono font-medium text-[#d0d6e0]">{f.name}()</span>
-                <Badge variant="outline" className="text-[10px] font-mono">{f.category}</Badge>
+        {functions.map(f => {
+          const isSystemPreset = f?.category === "System Runtime Preset" || f?.associatedStateId === "global_runtime" || f?.id?.startsWith("preset_") || ["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma"].includes(f?.name);
+          return (
+            <div key={f.id || f.name} className="p-3 bg-[#0f1011] rounded-[6px] border border-[#23252a] flex items-start justify-between text-[12px]">
+              <div className="space-y-1">
+                <div className="flex items-center space-x-2">
+                  <Terminal className="h-3 w-3 text-[#62666d]" />
+                  <span className="font-mono font-medium text-[#d0d6e0]">{f.name}()</span>
+                  {isSystemPreset ? (
+                    <Badge variant="outline" className="text-[10px] font-mono border-lime-500/30 text-lime-400 bg-lime-500/10">System Runtime Preset</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] font-mono">{f.category}</Badge>
+                  )}
+                </div>
+                <p className="text-[#62666d] text-[11px] pl-5">{f.description || f.purposeInPrompt || "Tool specification."}</p>
               </div>
-              <p className="text-[#62666d] text-[11px] pl-5">{f.description || f.purposeInPrompt || "Tool specification."}</p>
+              {!isSystemPreset && (
+                <Button variant="ghost" size="sm" onClick={() => handleDelete(f.id)} className="h-7 w-7 p-0 text-[#62666d] hover:text-[#eb5757]">
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              )}
             </div>
-            <Button variant="ghost" size="sm" onClick={() => handleDelete(f.id)} className="h-7 w-7 p-0 text-[#62666d] hover:text-[#eb5757]">
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Card>
   );

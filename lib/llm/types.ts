@@ -201,6 +201,7 @@ export interface SimulationTurnOutput {
   nextRequiredField: string;
   guardrailTriggered: boolean;
   issueNotes: string;
+  toolCalls?: Array<{ name: string; arguments: Record<string, any> }>;
 }
 
 export interface BlueprintJson {
@@ -252,8 +253,9 @@ export interface BuilderChatTurnResponse {
 }
 
 export function safeParseJson<T>(raw: string, fallback: T): T {
+  const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   try {
-    let cleaned = raw.trim();
+    let cleaned = cleanedRaw;
     // Strip markdown fences if present anywhere
     const fenceJsonMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (fenceJsonMatch && fenceJsonMatch[1]) {
@@ -268,16 +270,16 @@ export function safeParseJson<T>(raw: string, fallback: T): T {
   } catch (error) {
     try {
       // Find the outermost {...} or [...] block
-      const firstObj = raw.indexOf('{');
-      const lastObj = raw.lastIndexOf('}');
-      const firstArr = raw.indexOf('[');
-      const lastArr = raw.lastIndexOf(']');
+      const firstObj = cleanedRaw.indexOf('{');
+      const lastObj = cleanedRaw.lastIndexOf('}');
+      const firstArr = cleanedRaw.indexOf('[');
+      const lastArr = cleanedRaw.lastIndexOf(']');
       
       if (firstObj !== -1 && lastObj !== -1 && (firstArr === -1 || firstObj < firstArr)) {
-        return JSON.parse(raw.substring(firstObj, lastObj + 1)) as T;
+        return JSON.parse(cleanedRaw.substring(firstObj, lastObj + 1)) as T;
       }
       if (firstArr !== -1 && lastArr !== -1) {
-        return JSON.parse(raw.substring(firstArr, lastArr + 1)) as T;
+        return JSON.parse(cleanedRaw.substring(firstArr, lastArr + 1)) as T;
       }
     } catch (e2) {
       // Ignore fallback extraction errors

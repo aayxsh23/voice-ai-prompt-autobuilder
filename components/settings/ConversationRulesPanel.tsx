@@ -14,7 +14,7 @@ export const ConversationRulesPanel: React.FC<{ project: any; onChange: (key: st
       </div>
       <div>
         <Textarea
-          defaultValue={(conv.confirmationRules || []).join('\n')}
+          defaultValue={(conv.confirmationRules && conv.confirmationRules.length > 0 ? conv.confirmationRules : ["Always confirm appointment times before executing a booking tool.", "Verify caller identity before sharing sensitive account details."]).join('\n')}
           onBlur={e => {
             conv.confirmationRules = e.target.value.split('\n').filter(Boolean);
             onChange('blueprintJson', JSON.stringify({ ...bp, conversation: conv }));
