@@ -302,6 +302,7 @@ export interface BusinessSpecification {
     toneProfile: string[];
     primaryGoal: string;
     languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
+    callDirection?: 'inbound' | 'outbound' | 'both';
   };
   businessSnapshot: {
     operatingHours: string;
@@ -339,6 +340,7 @@ export interface BusinessSpecification {
   };
   resolvedTopics?: string[];
   capturedTopics?: Array<{ topic: string; summary: string }>;
+  dynamicVariables?: DynamicVariableSpec[];
 }
 
 export const businessSpecificationSchema = z.object({
@@ -349,14 +351,15 @@ export const businessSpecificationSchema = z.object({
     isRegulated: z.boolean().default(false),
     toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
     primaryGoal: z.string().default("Assist callers effectively"),
-    languageMode: z.enum(["english", "hindi", "hinglish", "multilingual"]).default("english").optional()
+    languageMode: z.enum(["english", "hindi", "hinglish", "multilingual"]).default("english").optional(),
+    callDirection: z.enum(["inbound", "outbound", "both"]).optional()
   }),
   businessSnapshot: z.object({
     operatingHours: z.string().default("Standard Business Hours"),
     servicesOffered: z.array(z.string()).default([]),
     policies: z.object({
-      cancellation: z.string().default("Standard cancellation policy applies."),
-      refunds: z.string().default("Standard refund policy applies."),
+      cancellation: z.string().default("Standard policy apply"),
+      refunds: z.string().default("Case-by-case evaluation"),
       escalationNumbers: z.array(z.string()).default([])
     })
   }),
@@ -394,6 +397,15 @@ export const businessSpecificationSchema = z.object({
     servicesOrOfferings: z.array(z.string()).default([])
   }).optional(),
   resolvedTopics: z.array(z.string()).default([]).optional(),
-  capturedTopics: z.array(z.object({ topic: z.string(), summary: z.string() })).default([]).optional()
+  capturedTopics: z.array(z.object({ topic: z.string(), summary: z.string() })).default([]).optional(),
+  dynamicVariables: z.array(z.object({
+    key: z.string(),
+    label: z.string().optional().default(''),
+    description: z.string().optional().default(''),
+    type: z.string().optional().default('string'),
+    fieldDirection: z.enum(['infield', 'outfield']).optional().default('outfield'),
+    required: z.boolean().optional().default(false),
+    defaultValue: z.string().optional().default(''),
+    source: z.string().optional().default('extraction')
+  })).default([]).optional()
 });
-

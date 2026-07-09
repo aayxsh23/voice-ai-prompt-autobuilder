@@ -172,16 +172,18 @@ export class GeminiProvider implements LlmService {
       : languageMode === 'multilingual'
       ? "\nCRITICAL LANGUAGE MANDATE: Support English, Hindi, and Hinglish. When generating Hindi sentences in dialogue, FAQ answers, or objection responses, they MUST be written in Devanagari script (देवनागरी), not Roman script."
       : "";
-    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"stepNumber":"number","label":"string","condition":"string","collectsVariable":"string|null","generatedLine":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
+    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"sequenceOrder":"number","stateId":"string","stateName":"string","objective":"string","slotsToCollect":["string"],"scriptDirective":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3,"invokesTools":["string"]}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
     const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
 Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
 
 MANDATORY RULES FOR CALL FLOW GENERATION:
-1. MULTI-REQUEST ROUTING: If the business handles multiple request types, generate a ROUTE BY REQUEST TYPE step with sub-flows for each intent.
-2. CONFIRMATION READ-BACK: The second-to-last step MUST be a CONFIRM ALL DETAILS step that reads back every collected variable using {{variable_name}} syntax.
-3. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
-4. RETRY LIMITS: Each step that collects information must include maxRetries: 3.
-5. EDGE-CASE BRANCHES: Generate branches for: silence timeout, past dates, caller upset/frustrated, mid-flow transfer request, audio dropout.${langNote}
+1. ONE QUESTION PER TURN: Ask exactly ONE question or prompt in each step. Never stack multiple questions in a single turn.
+2. DEDICATED SLOT STEPS: If multiple variables/outfields must be collected (e.g. fitness_goal, health_concerns, language_preference, callback_time), generate ONE dedicated state step for each slot! Never collect more than one slot in a single step.
+3. BRANCHING & ROUTING: Every step must include explicit 'branchingConditions' indicating transitions (e.g., if confirmed -> goToStep N; if busy/wrong number -> goToStep 'end_call' or 'transfer').
+4. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots to verify accuracy.
+5. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
+6. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
+7. RETRY LIMITS: Each step that collects information must include maxRetries: 3.${langNote}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt);
@@ -227,7 +229,18 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
     draft.faqCards = Array.isArray(draft.faqCards) ? draft.faqCards : [];
     draft.objectionCards = Array.isArray(draft.objectionCards) ? draft.objectionCards : [];
     draft.dynamicVariables = Array.isArray(draft.dynamicVariables) ? draft.dynamicVariables : [];
-    draft.callFlowSteps = Array.isArray(plan.steps) ? plan.steps : [];
+    draft.callFlowSteps = Array.isArray(plan.steps) ? plan.steps.map((s: any, idx: number) => ({
+      sequenceOrder: s.sequenceOrder || s.stepNumber || idx + 1,
+      stateId: s.stateId || `step_${idx + 1}`,
+      stateName: s.stateName || s.label || `Step ${idx + 1}`,
+      objective: s.objective || s.stateName || s.label || `Step ${idx + 1}`,
+      scriptDirective: s.scriptDirective || (s.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`),
+      slotsToCollect: Array.isArray(s.slotsToCollect) ? s.slotsToCollect : (s.collectsVariable ? [String(s.collectsVariable)] : []),
+      branchingConditions: Array.isArray(s.branchingConditions) ? s.branchingConditions : [],
+      fallbackBehavior: s.fallbackBehavior || "",
+      maxRetries: s.maxRetries || 3,
+      invokesTools: Array.isArray(s.invokesTools) ? s.invokesTools : []
+    })) : [];
     draft.emergencyTriggers = Array.isArray(plan.emergencyTriggers) ? plan.emergencyTriggers : [];
     draft.outOfScopeTopics = Array.isArray(plan.outOfScopeTopics) ? plan.outOfScopeTopics : [];
     return draft;

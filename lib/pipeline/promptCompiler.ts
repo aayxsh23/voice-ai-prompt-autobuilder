@@ -66,24 +66,15 @@ function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: a
     const tag = (r.tag || '').toUpperCase();
     
     // Core foundational rules for voice AI integrity
-    if (['NUMBER', 'HALLUCINATION', 'OUT_OF_SCOPE'].includes(tag)) {
+    if (tag === 'NUMBER') {
       return true;
     }
-
-    // Telephony mechanics (only if active phone conversation features exist)
-    if (tag === 'PHONE_NUMBER') {
-      return /\b(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b/.test(contentOnlyText) || /\b(phone number|telephone|call back|mobile|dial|extension)\b/.test(contentOnlyText);
+    if (['HALLUCINATION', 'OUT_OF_SCOPE', 'ABUSIVE_USER', 'SAFETY_CRITICAL', 'ESCALATION'].includes(tag)) {
+      return false; // Handled deterministically via canonical built-in sections in PromptAssembler to prevent duplicated guardrail blocks (Issue #1)
     }
-    if (['ABUSIVE_USER', 'INTERRUPTION', 'SILENCE'].includes(tag)) {
+
+    if (['INTERRUPTION', 'SILENCE'].includes(tag)) {
       return /\b(phone|call|caller|voice|agent|speak|transfer|hang up)\b/.test(contentOnlyText);
-    }
-
-    // Context-dependent Speakability rules
-    if (tag === 'EMAIL') {
-      return /\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/i.test(contentOnlyText) || /\b(email|e-mail|gmail|outlook|yahoo|inbox)\b/.test(contentOnlyText);
-    }
-    if (tag === 'PINCODE') {
-      return /\b(pin|pincode|passcode|otp|verification code|security code|zip code|postal code)\b/.test(contentOnlyText);
     }
     if (tag === 'DATE_TIME') {
       return /\b(date|time|schedule|booking|reschedule|appointment|calendar|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\bam\b|\bpm\b|hours|mins|minutes)\b/.test(contentOnlyText);

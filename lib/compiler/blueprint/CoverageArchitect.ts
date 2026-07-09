@@ -142,7 +142,7 @@ export class CoverageArchitect {
     languageMode?: 'english' | 'hindi' | 'multilingual'
   ): Promise<string> {
     if (missingFields.length === 0) {
-      return "I have all the core and in-depth operational specifications needed! Shall I compile your structured Voice AI agent prompt now?";
+      return "I have all the core and in-depth operational specifications needed! Automatically generating your structured Voice AI agent prompt now...";
     }
 
     const vertical = spec?.meta?.industry || "General";

@@ -60,6 +60,7 @@ Output ONLY a JSON object with these top-level keys:
 - extractedEntities (departments: string[], namedContacts: Array<{ label: string, value: string }>, servicesOrOfferings: string[])
 - resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy', 'language_preference')
 - capturedTopics (Array<{ topic: string, summary: string }>: detailed operational answers that do not fit standard fields)
+- dynamicVariables (Array<{ key: string, label: string, description: string, fieldDirection: 'infield' | 'outfield', required: boolean, source: string }>): extract any CRM/pre-call variables available before the call as 'infield' (source: 'crm') and any variables collected during the call as 'outfield' (source: 'extraction')
 
 Do NOT include callFlowPlan, knowledgeBase, or tools in your output under any circumstances — those are generated later by a separate specialist process, not by you.
 Only include a field if the user has explicitly and specifically stated it. Do not infer, invent, guess, or generalize values the user did not say.
@@ -95,6 +96,8 @@ Ensure you return valid JSON with no markdown fences.`;
         const patchResolved = (patch.resolvedTopics as unknown as string[]) || [];
         const existingCaptured = existingSpec.capturedTopics || [];
         const patchCaptured = (patch.capturedTopics as unknown as Array<{ topic: string; summary: string }>) || [];
+        const existingVars = existingSpec.dynamicVariables || [];
+        const patchVars = (patch.dynamicVariables as unknown as Array<any>) || [];
 
         const isValEmpty = (v: unknown): boolean => {
           if (v === null || v === undefined) return true;
@@ -166,6 +169,10 @@ Ensure you return valid JSON with no markdown fences.`;
           capturedTopics: dedupeBy(
             [...existingCaptured, ...patchCaptured],
             (c) => String(c?.topic || '').trim().toLowerCase()
+          ),
+          dynamicVariables: dedupeBy(
+            [...existingVars, ...patchVars],
+            (v) => String(v?.key || '').trim().toLowerCase()
           )
         };
       }
@@ -192,7 +199,7 @@ Ensure you return valid JSON with no markdown fences.`;
 
     const lastUserMsg = messages[messages.length - 1]?.content || "";
     const userAgreed = /\b(yes|yeah|yep|generate|go ahead|ready|ok|okay|sure|let'?s do it|build|looks good|agree|proceed|create|split|finalize|done)\b/i.test(lastUserMsg.trim());
-    const triggerGeneration = coverageReport.isReadyForCompilation && userAgreed;
+    const triggerGeneration = coverageReport.isReadyForCompilation || (userAgreed && coverageReport.missingFields.length <= 1);
 
     const result = {
       reply,

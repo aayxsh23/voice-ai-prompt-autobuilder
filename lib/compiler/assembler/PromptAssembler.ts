@@ -1,4 +1,5 @@
 import { BusinessSpecification } from "@/lib/llm/types";
+import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
 
 function formatOperatingHours(hours: any): string {
   if (!hours) return "Standard Business Hours";
@@ -17,6 +18,93 @@ function formatPolicyString(val: any, defaultVal: string): string {
     return Object.entries(val).map(([k, v]) => `${k}: ${v}`).join('; ');
   }
   return String(val);
+}
+
+export function getSemanticCore(slot: string): string {
+  if (!slot) return '';
+  return slot.trim().toLowerCase()
+    .replace(/^(preferred|caller|user|customer|client|primary|app|selected|expected|target|desired|requested)_+/i, '')
+    .replace(/_+(preference|time|date|number|id|info|details)$/i, (match, p1) => `_${p1}`)
+    .replace(/_+/g, '_');
+}
+
+export function semanticDedupSlots(slots: string[]): string[] {
+  const uniqueList: string[] = [];
+  const seenCores = new Set<string>();
+
+  const sorted = [...slots].sort((a, b) => {
+    const aCore = getSemanticCore(a);
+    const bCore = getSemanticCore(b);
+    return a.length - b.length;
+  });
+
+  for (const rawSlot of sorted) {
+    if (!rawSlot) continue;
+    const core = getSemanticCore(rawSlot);
+    let isDuplicate = false;
+    for (const existingCore of seenCores) {
+      if (existingCore === core || core.endsWith(`_${existingCore}`) || existingCore.endsWith(`_${core}`)) {
+        isDuplicate = true;
+        break;
+      }
+    }
+    if (!isDuplicate) {
+      seenCores.add(core);
+      uniqueList.push(rawSlot);
+    }
+  }
+  return uniqueList;
+}
+
+function buildDefaultSafetySection(customRules?: string, spec?: BusinessSpecification, draft?: any): string {
+  const langMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
+  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const countryCodeVar = draftVars.find(v => /country|region/i.test(v?.key || ''))?.defaultValue || '';
+  const isIndiaOrHindi = langMode === 'hindi' || langMode === 'hinglish' || langMode === 'multilingual' || /india|\+91|ist/i.test(`${countryCodeVar} ${JSON.stringify(spec?.businessSnapshot || {})} ${spec?.meta?.companyName || ''}`);
+
+  const emergencyText = isIndiaOrHindi
+    ? `- Always direct the user to appropriate emergency resources as configured for the deployment region: call 112 for immediate physical danger/emergency services in India, or the KIRAN Mental Health Helpline (1800-599-0019) for psychological distress and crisis support.`
+    : `- Always direct the user to appropriate emergency resources as configured for the deployment region (e.g., call 911 for immediate danger in the US, or the 988 Suicide & Crisis Lifeline for suicide/crisis situations).`;
+
+  const lines: string[] = [];
+  lines.push("### MANDATORY EMERGENCY & SAFETY OVERRIDES");
+  lines.push(`SAFETY CRITICAL OVERRIDES:
+- If the user expresses intent of self-harm, suicide, or says they want to hurt themselves or someone else, IMMEDIATELY stop the current workflow/task. Do not continue collecting information, upselling, troubleshooting, or pursuing any scripted flow.
+- If the user describes a medical emergency (e.g., chest pain, difficulty breathing, severe bleeding, loss of consciousness, choking), IMMEDIATELY stop the current workflow and prioritize directing them to emergency services.
+- If the user discloses abuse (physical, sexual, emotional) or describes an active threat of violence to themselves or others, treat this with the same urgency as a medical emergency.
+- In all above cases, respond with a calm, brief, non-judgmental acknowledgment. Do not sound alarmed, robotic, or dismissive.
+${emergencyText}
+- Do not end the call or disengage abruptly if the user is in active danger. Remain present, remain calm, and follow the configured escalation/handoff protocol.
+- This rule takes precedence over ALL other instructions, scripts, sales goals, or workflow completion targets in the system prompt.
+
+HALLUCINATION GUARDRAILS:
+- Only state facts, policies, prices, availability, or promises that are explicitly present in the provided context, knowledge base, or tool/API results. Never invent or assume information that is not present.
+- If the requested information is not available in the provided context, explicitly say so (e.g., "I don't have that information right now") rather than guessing, estimating, or fabricating a plausible-sounding answer.
+- Never make commitments, guarantees, or promises on behalf of the business unless explicitly authorized in context.
+- When in doubt between saying "I don't know" and guessing, always choose to say "I don't know" or offer to find out and follow up.
+
+ABUSIVE USER GUARDRAILS:
+- If the user becomes verbally abusive, uses hate speech, or is persistently hostile, remain calm, neutral, and professional in tone — never mirror aggression or become defensive.
+- Issue one polite, clear boundary-setting statement (e.g., "I want to help, but I'm not able to continue if the conversation stays disrespectful").
+- If abusive behavior continues after the boundary-setting statement, follow the system-configured de-escalation path: offer to transfer to a human agent, or end the call/session per configured policy.
+
+HUMAN ESCALATION GUARDRAILS:
+- If the user explicitly asks to speak to a human, a real person, or a manager, honor this request promptly — do not attempt to talk them out of it or loop them through additional automated steps first.
+- Escalate immediately without further scripted questions in cases of: safety-critical disclosures, repeated failed identity verification, or explicit escalation requests.`);
+
+  if (customRules && customRules.trim() && customRules.trim() !== "No special guardrail rules defined.") {
+    // Filter out paragraphs that duplicate our canonical headers or text
+    const customBlocks = customRules.split(/\n\n+/).filter(b => {
+      const lower = b.toLowerCase();
+      if (/hallucination guardrails|abusive user guardrails|human escalation guardrails|safety critical overrides/i.test(b)) return false;
+      if (/only state facts, policies, prices|if the user becomes verbally abusive|if the user explicitly asks to speak to a human/i.test(lower)) return false;
+      return b.trim().length > 0;
+    });
+    if (customBlocks.length > 0) {
+      lines.push(`\nCUSTOM PROJECT GUARDRAILS:\n${customBlocks.join('\n\n')}`);
+    }
+  }
+  return lines.join("\n\n");
 }
 
 function buildRuntimeToolsSection(tools?: any[]): string {
@@ -82,18 +170,63 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     draftFaqsFull: draftFaqs
   });
 
+  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const draftVarsMap = new Map<string, any>();
+  draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
+
+  const rawStepsForCheck = (Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.length > 0)
+    ? spec!.callFlowPlan!.steps
+    : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
+  const rawCollectedSlots = new Set<string>(
+    rawStepsForCheck.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []))
+  );
+
+  const isOutfieldPreCheck = (slot: string): boolean => {
+    if (rawCollectedSlots.has(slot)) return true;
+    const v = draftVarsMap.get(slot);
+    if (v?.fieldDirection === 'outfield') return true;
+    if (v?.fieldDirection === 'infield') return false;
+    if (v && (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static')) return false;
+    return true;
+  };
+
+  const nameInfieldKey = draftVars.find(v => !isOutfieldPreCheck(v.key) && /first_name|caller_name|name/i.test(v.key))?.key;
+
+  const allSlotNamesForSpeakability = new Set<string>([
+    ...Array.from(rawCollectedSlots),
+    ...draftVars.map(v => v.key)
+  ]);
+  const slotNamesStr = Array.from(allSlotNamesForSpeakability).join(' ');
+
+  const codeLevelSpeakability: string[] = [];
+  if (/phone|mobile|whatsapp|contact_number|telephone/i.test(slotNamesStr) || /phone|mobile/i.test(JSON.stringify(spec?.businessSnapshot))) {
+    codeLevelSpeakability.push(`PHONE NUMBER SPEAKABILITY RULES:
+- When collecting or validating a phone number, always rely on the validate_digit_input and set_capture_mode runtime tools. Never attempt to manually count digits or combine audio fragments in text.
+- If partial digits are collected across multiple turns, pass the previously collected digits into validate_digit_input.
+- Say "zero" for the digit 0. Never say "oh" unless explicitly matching a regional convention.
+- When reading back a confirmed phone number, speak digits clearly and insert brief natural pauses between groups (e.g., area code, exchange, line number) to aid comprehension.`);
+  }
+  if (/pin|pincode|pin_code|passcode|otp|verification_code|security_code|postal|zip|postal_code|zipcode/i.test(slotNamesStr)) {
+    codeLevelSpeakability.push(`PINCODE SPEAKABILITY RULES:
+- When collecting a PIN, passcode, OTP, verification code, or pincode, always rely on validate_digit_input with the required expected_digits parameter. Do not manually count or guess partial codes.
+- Say "zero" for the digit 0, never "oh", to avoid ambiguity with the letter "O".
+- If the code is alphanumeric, alternate clearly between letter names and digit names (e.g., "A, one, B, two").
+- Always read back the confirmed PIN/OTP character-by-character and require explicit user confirmation before executing any dependent action.`);
+  }
+
   const appliedRules = Array.isArray(draft?.appliedRules) ? draft.appliedRules : [];
   const speakabilityRules = appliedRules
     .filter((r: any) => r?.category === 'SPEAKABILITY' && r?.content)
     .map((r: any) => r.content.trim())
     .join('\n\n');
-  const speakabilityContent = speakabilityRules || "No special speakability rules defined.";
+  const combinedSpeakability = [speakabilityRules, ...codeLevelSpeakability].filter(Boolean).join('\n\n');
+  const speakabilityContent = combinedSpeakability || "No special speakability rules defined.";
 
   const guardrailRules = appliedRules
     .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
     .map((r: any) => r.content.trim())
     .join('\n\n');
-  const guardrailsContent = guardrailRules || "No special guardrail rules defined.";
+  const guardrailsContent = guardrailRules || "";
 
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
   const languageMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
@@ -160,44 +293,87 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     if (isHindiOrHinglish) {
       directive = directive.replace(/\bho\b/g, 'हो').replace(/\bbaat\b/gi, 'बात').replace(/\bkar\b/gi, 'कर').replace(/\brahi\b/gi, 'रही').replace(/\bhoon\b/gi, 'हूँ').replace(/\bhain\b/gi, 'हैं');
     }
+    if ((idx === 0 || s?.stateId === 'identity_gate') && nameInfieldKey) {
+      if (/right contact today|account holder|right contact/i.test(directive)) {
+        directive = directive.replace(/right contact today|account holder|right contact/gi, `{{${nameInfieldKey}}}`);
+      } else if (/सही नंबर पर|सही व्यक्ति/i.test(directive)) {
+        directive = directive.replace(/सही नंबर पर|सही व्यक्ति/gi, `{{${nameInfieldKey}}}`);
+      }
+    }
     const slotsToCollect = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
 
-    const hasNumericSlot = slotsToCollect.some((slot: string) => /phone|mobile|pin|whatsapp|otp|number|digits/i.test(slot));
-    const hasEmailSlot = slotsToCollect.some((slot: string) => /email|mail/i.test(slot));
+    let requiredToolActions: string[] = [];
+    slotsToCollect.forEach((slot: string) => {
+      const specMatch = resolveSlotDigitSpec(slot);
+      if (specMatch) {
+        if (specMatch.mode === 'digits') {
+          requiredToolActions.push(`- Before asking: Invoke \`set_capture_mode(keep_buffer: true, mode: "digits", field: "${slot}", expected_digits: ${specMatch.expectedDigits})\` in the SAME turn you ask for ${slot}.`);
+          requiredToolActions.push(`- On response: Call \`validate_digit_input(field: "${slot}", expected_digits: ${specMatch.expectedDigits}, user_text: caller_utterance, previously_collected: all_digits_collected_so_far)\` to verify and accumulate digits. If \`is_valid: false\`, speak the prompt returned by the tool or ask specifically for remaining digits. Retry up to 3 times.`);
+          requiredToolActions.push(`- On completion: Call \`set_capture_mode(keep_buffer: false)\` before proceeding to the next step.`);
+        } else if (specMatch.mode === 'email') {
+          const emailToolName = spec?.tools?.find((t: any) => t?.name?.startsWith("format_email_"))?.name || "format_email_for_voice";
+          requiredToolActions.push(`- Before asking: Invoke \`set_capture_mode(keep_buffer: true, mode: "email", field: "${slot}")\` in the SAME turn you ask for ${slot}.`);
+          requiredToolActions.push(`- On response: Call \`${emailToolName}(email_text: caller_utterance)\` and read back \`spoken_email\` exactly for confirmation.`);
+          requiredToolActions.push(`- On completion: Call \`set_capture_mode(keep_buffer: false)\` before proceeding to the next step.`);
+        }
+      }
+    });
 
-    let requiredToolActions = "";
-    if (hasNumericSlot) {
-      const numericField = slotsToCollect.find((slot: string) => /phone|mobile|pin|whatsapp|otp|number|digits/i.test(slot)) || "mobile_number";
-      const expectedCount = /pin|otp/i.test(numericField) ? 6 : 10;
-      requiredToolActions = `\nRequired Tool Actions:\n- Trigger \`set_capture_mode(keep_buffer: true, mode: "digits", field: "${numericField}", expected_digits: ${expectedCount})\` when asking for ${numericField}.\n- On response, call \`validate_digit_input(field: "${numericField}", expected_digits: ${expectedCount}, user_text: caller_utterance)\` to verify and accumulate digits.\n- After ${numericField} is confirmed, call \`set_capture_mode(keep_buffer: false)\`.`;
-    } else if (hasEmailSlot) {
-      const emailField = slotsToCollect.find((slot: string) => /email|mail/i.test(slot)) || "email";
-      const emailToolName = spec?.tools?.find((t: any) => t?.name?.startsWith("format_email_"))?.name || "format_email_for_voice";
-      requiredToolActions = `\nRequired Tool Actions:\n- Trigger \`set_capture_mode(keep_buffer: true, mode: "email", field: "${emailField}")\` when asking for ${emailField}.\n- On response, call \`${emailToolName}(email_text: caller_utterance)\` and read back \`spoken_email\` exactly.\n- After ${emailField} is confirmed, call \`set_capture_mode(keep_buffer: false)\`.`;
+    const isUnconditionalTerminal = s?.isTerminal === true || s?.stateId === "resolution" || s?.stateId === "closing" || s?.stateId === "end_call";
+    const hasConditionalEndCall = Array.isArray(s?.branchingConditions) && s.branchingConditions.some((b: any) => b?.goToStep === 'end_call' || b?.action === 'end_call');
+
+    if (isUnconditionalTerminal) {
+      requiredToolActions.push(`- Call Termination: Invoke \`end_call(reason: "${s?.stateId === "resolution" ? "closing_complete" : "flow_terminal"}")\` synchronously in the exact same turn as your closing sentence.`);
+    } else if (hasConditionalEndCall) {
+      const termBranches = (s.branchingConditions as any[] || []).filter(b => b?.goToStep === 'end_call' || b?.action === 'end_call');
+      termBranches.forEach(tb => {
+        const reason = tb?.reason || tb?.condition || "flow_terminal";
+        requiredToolActions.push(`- Conditional Call Termination: IF caller triggers condition "${tb?.condition}", speak your closing line and invoke \`end_call(reason: "${reason}")\` synchronously in that same turn.`);
+      });
+    } else if (Array.isArray(s?.invokesTools) && s.invokesTools.includes("end_call")) {
+      requiredToolActions.push(`- Conditional Call Termination: If caller asks to disconnect or terminate during this step, speak your closing response and invoke \`end_call(reason: "flow_terminal")\` in that same turn.`);
     }
 
-    if (requiredToolActions) {
-      directive = `${directive.trim()}\n${requiredToolActions}`;
+    if (Array.isArray(s?.invokesTools)) {
+      s.invokesTools.forEach((tName: string) => {
+        if (tName !== "set_capture_mode" && tName !== "validate_digit_input" && !tName.startsWith("format_email_") && tName !== "end_call") {
+          requiredToolActions.push(`- Domain Tool: Invoke \`${tName}()\` when condition for ${s?.stateId || "this step"} is met.`);
+        }
+      });
+    }
+
+    if (requiredToolActions.length > 0) {
+      directive = `${directive.trim()}\n\nRequired Tool Actions:\n${requiredToolActions.join('\n')}`;
     }
 
     return {
       sequenceOrder: s?.sequenceOrder || idx + 1,
       stateId: s?.stateId || `step_${idx + 1}`,
       stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
+      objective: s?.objective || s?.stateName || s?.label || `Step ${idx + 1}`,
       scriptDirective: directive,
-      slotsToCollect
+      slotsToCollect,
+      branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
+      fallbackBehavior: s?.fallbackBehavior || "",
+      maxRetries: s?.maxRetries || 3
     };
   });
 
   // 1. IDENTITY & PERSONA
+  const callDirection = (spec?.meta?.callDirection || '').toLowerCase() || (
+    /\b(inbound|customer support|helpline|receptionist|incoming|answer calls|handle queries|receive calls|support line)\b/i.test(`${primaryGoal} ${spec?.meta?.agentName} ${spec?.meta?.companyName}`) ? 'inbound' : 'outbound'
+  );
+  const isInbound = callDirection === 'inbound';
+
   const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
   const identity = `### AGENT IDENTITY & PERSONA
 You are a voice AI agent for phone conversations representing ${spec?.meta?.companyName || "the company"}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
 - Name: ${spec?.meta?.agentName || "Agent"}
 - Company: ${spec?.meta?.companyName || "Company"}
+- Call Direction: ${isInbound ? "INBOUND (Customer calling into the business/helpline)" : "OUTBOUND (Agent calling out to the customer/lead)"}
 - Primary Goal: ${primaryGoal}
 - Tone Profile: ${toneList.join(', ')}
-- AI Identity Disclosure: Always state clearly that you are an AI assistant representing ${spec?.meta?.companyName || "the company"} when asked.`.trim();
+- AI Identity Disclosure: Always state clearly upfront when ${isInbound ? "answering the call that you are an AI assistant for " + (spec?.meta?.companyName || "the company") + " (e.g., 'Thank you for calling " + (spec?.meta?.companyName || "the company") + ", I am " + (spec?.meta?.agentName || "Agent") + ", your AI voice assistant...')" : "initiating the call that you are an AI assistant calling on behalf of " + (spec?.meta?.companyName || "the company") + " before verifying the contact's identity"}. Never conceal your AI status if asked.`.trim();
 
   let languageHandling = "";
   if (isHindiOrHinglish) {
@@ -206,7 +382,13 @@ All Hindi sentences across spoken dialogue, call flow lines, FAQ answers, and ob
 - ONLY specific English domain/business terms (such as 'online demo', 'software', 'pincode', 'team', 'business owner', 'Marg ERP') can be written in English characters inside the Devanagari sentence.
 - Use natural, polite Hindi phrasing suitable for Indian business calls.
 - Greetings: 'नमस्ते', acknowledgments: 'जी', 'ठीक है', 'बिल्कुल', 'ज़रूर'.
-- Never write Hindi sentences using Romanized English letters. Keep all grammatical structure and sentence text strictly in Devanagari.`.trim();
+- Never write Hindi sentences using Romanized English letters. Keep all grammatical structure and sentence text strictly in Devanagari.
+- If caller speaks English → respond in English.
+- If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
+- If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
+- NEVER switch languages mid-sentence unless the caller does.
+- If uncertain, default to the language of the caller's last message.
+- Always use natural phrasing suitable for Indian business calls.`.trim();
   } else if (languageMode === 'multilingual') {
     languageHandling = `### LANGUAGE HANDLING
 LANGUAGE DETECTION & RESPONSE PROTOCOL:
@@ -217,6 +399,11 @@ LANGUAGE DETECTION & RESPONSE PROTOCOL:
 - NEVER switch languages mid-sentence unless the caller does.
 - If uncertain, default to the language of the caller's last message.
 - All variable collection (names, dates, numbers) should be confirmed back in the caller's detected language.`.trim();
+  } else {
+    languageHandling = `### LANGUAGE HANDLING
+- Speak clearly in natural conversational English.
+- Never switch languages unless the caller explicitly initiates or requests a language switch.
+- Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`.trim();
   }
 
   // 2. OUTPUT / VOICE MECHANICS
@@ -265,7 +452,7 @@ OFF-TOPIC REFUSAL PROTOCOL
 - If the user repeats or persists with off-topic or refused requests more than two times, politely end the call.`.trim();
 
   // 4. SAFETY-CRITICAL OVERRIDES
-  const safetyOverrides = `### MANDATORY EMERGENCY & SAFETY OVERRIDES\n${guardrailsContent}`.trim();
+  const safetyOverrides = buildDefaultSafetySection(guardrailsContent);
 
   // 5. BUSINESS CONTEXT & STATIC FACTS
   const servicesList = Array.isArray(spec?.businessSnapshot?.servicesOffered) ? spec.businessSnapshot.servicesOffered : [];
@@ -296,9 +483,6 @@ OFF-TOPIC REFUSAL PROTOCOL
     : `### ESCALATION & ROUTING MAP\nNo specific transfer numbers or departments configured. Address inquiries directly or offer a callback.`;
 
   // 7. DYNAMIC VARIABLES
-  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
-  const draftVarsMap = new Map<string, any>();
-  draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
 
   const stepCollectedSlots = new Set<string>(
     steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
@@ -322,7 +506,9 @@ OFF-TOPIC REFUSAL PROTOCOL
   const infields: string[] = [];
   const outfields: string[] = [];
 
-  allSlots.forEach(slot => {
+  const dedupedSlots = semanticDedupSlots(allSlots);
+
+  dedupedSlots.forEach(slot => {
     const v = draftVarsMap.get(slot);
     if (!isOutfield(slot)) {
       infields.push(`{{${slot}}}${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
@@ -335,7 +521,8 @@ OFF-TOPIC REFUSAL PROTOCOL
   if (infields.length > 0 || outfields.length > 0) {
     const sectionsList: string[] = [];
     if (infields.length > 0) {
-      sectionsList.push(`#### INFIELDS (Pre-Call Context)\nThe following variables are provided before the call begins. Reference them using {{variable_name}} syntax:\n${infields.join('\n')}`);
+      const infieldNames = allSlots.filter(s => !isOutfield(s));
+      sectionsList.push(`#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (e.g., {{first_name}}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`);
     }
     if (outfields.length > 0) {
       sectionsList.push(`#### OUTFIELDS (Post-Call Extraction)\nThe following details must be extracted from the conversation transcript. Mark them using [variable_name] syntax:\n${outfields.join('\n')}`);
@@ -345,7 +532,26 @@ OFF-TOPIC REFUSAL PROTOCOL
 
   // 8. CALL FLOW / STATE MACHINE
   const flowContent = steps.length > 0
-    ? steps.map((step: any) => `STATE: [${step?.stateId}] (${step?.stateName})\nDirective: ${step?.scriptDirective}\nRequired Extractions: ${(Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : []).map((slot: string) => `[${slot}]`).join(', ')}`).join('\n\n')
+    ? steps.map((step: any) => {
+        const slots = Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : [];
+        const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
+        const branchText = branches.length > 0
+          ? branches.map((b: any) => `  * If ${b.condition} -> ${b.goToStep === 'end_call' || b.action === 'end_call' ? `Trigger end_call(reason: "${b.reason || 'completed'}")` : b.goToStep === 'transfer' || b.action === 'transfer' ? 'Trigger transfer_call()' : `Go to Step ${b.goToStep}`}`).join('\n')
+          : `  * On completion / confirmation -> Go to Step ${step.sequenceOrder + 1}`;
+
+        const lines: string[] = [];
+        lines.push(`STATE: [${step?.stateId}] (${step?.stateName})`);
+        lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute step ${step?.sequenceOrder || step?.stateId}`}`);
+        if (slots.length > 0) {
+          lines.push(`* **Required Extractions:** ${slots.map((s: string) => `[${s}]`).join(', ')}`);
+        }
+        lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
+        lines.push(`* **Routing & Branches:**\n${branchText}`);
+        if (step?.fallbackBehavior) {
+          lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior} (Max retries: ${step?.maxRetries || 3})`);
+        }
+        return lines.join('\n');
+      }).join('\n\n---\n\n')
     : "No structured call flow defined. Engage conversationally based on primary goal.";
   const flow = `### CALL FLOW\n${flowContent}`;
 
