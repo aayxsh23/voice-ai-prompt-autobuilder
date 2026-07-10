@@ -41,24 +41,24 @@ export class CoverageArchitect {
     if (!goalStr || goalStr === "Assist callers effectively" || goalStr.trim().length < 15) {
       missingFields.push("Primary Agent Goal / Use Case");
     }
-    const hasLanguageInHistory = /\b(english|hindi|hinglish|bilingual|multilingual|devanagari|language|dialect|speak in|talk in|voice language|kannada|tamil|telugu|marathi|gujarati|bengali|punjabi|malayalam|urdu)\b/i.test(fullUserText) || (spec?.resolvedTopics || []).some(t => t.toLowerCase().includes("language") || t.toLowerCase().includes("dialect"));
+    const hasLanguageInHistory = /\b(english|hindi|hinglish|bilingual|multilingual|devanagari|language|dialect|speak in|talk in|voice language|kannada|tamil|telugu|marathi|gujarati|bengali|punjabi|malayalam|urdu)\b/i.test(fullUserText) || (spec?.resolvedTopics || []).some(t => t.toLowerCase().includes("language") || t.toLowerCase().includes("dialect")) || (spec?.capturedTopics || []).some(c => c.topic.toLowerCase().includes("language") || c.topic.toLowerCase().includes("dialect"));
     if (!hasLanguageInHistory) {
       missingFields.push("Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)");
     }
     const resolved = spec?.resolvedTopics || [];
     const captured = spec?.capturedTopics || [];
 
-    const hasServicesInHistory = /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation)\b/i.test(fullUserText) || (spec?.extractedEntities?.servicesOrOfferings && spec.extractedEntities.servicesOrOfferings.length > 0) || resolved.some(t => t.toLowerCase().includes("service") || t.toLowerCase().includes("offering") || t.toLowerCase().includes("course") || t.toLowerCase().includes("product") || t.toLowerCase().includes("module"));
+    const hasServicesInHistory = /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation)\b/i.test(fullUserText) || (spec?.extractedEntities?.servicesOrOfferings && spec.extractedEntities.servicesOrOfferings.length > 0) || resolved.some(t => t.toLowerCase().includes("service") || t.toLowerCase().includes("offering") || t.toLowerCase().includes("course") || t.toLowerCase().includes("product") || t.toLowerCase().includes("module")) || captured.some(c => c.topic.toLowerCase().includes("service") || c.topic.toLowerCase().includes("offering") || c.topic.toLowerCase().includes("course") || c.topic.toLowerCase().includes("product") || c.topic.toLowerCase().includes("module"));
     if ((!snap.servicesOffered || !Array.isArray(snap.servicesOffered) || snap.servicesOffered.length === 0) && !hasServicesInHistory) {
       missingFields.push("Services Offered");
     }
     const hoursStr = toStr(snap.operatingHours);
-    const hasHoursInHistory = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|10:00|am|pm|hours|timings|timing|window|available all days|available from)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("hour") || t.toLowerCase().includes("timing") || t.toLowerCase().includes("schedule") || t.toLowerCase().includes("availability"));
+    const hasHoursInHistory = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|10:00|am|pm|hours|timings|timing|window|available all days|available from)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("hour") || t.toLowerCase().includes("timing") || t.toLowerCase().includes("schedule") || t.toLowerCase().includes("availability")) || captured.some(c => c.topic.toLowerCase().includes("hour") || c.topic.toLowerCase().includes("timing") || c.topic.toLowerCase().includes("schedule") || c.topic.toLowerCase().includes("availability"));
     if ((!hoursStr || hoursStr === "Standard Business Hours" || hoursStr === "{}" || hoursStr === "[]" || hoursStr.trim() === "") && !hasHoursInHistory) {
       missingFields.push("Operating Hours");
     }
 
-    const hasLocation = /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("location") || t.toLowerCase().includes("address") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("website"));
+    const hasLocation = /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact)\b/i.test(fullUserText) || resolved.some(t => t.toLowerCase().includes("location") || t.toLowerCase().includes("address") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("website")) || captured.some(c => c.topic.toLowerCase().includes("location") || c.topic.toLowerCase().includes("address") || c.topic.toLowerCase().includes("contact") || c.topic.toLowerCase().includes("website"));
     if (!hasLocation) {
       missingFields.push("Physical Location & Contact Info (address, phone number, or website)");
     }
@@ -123,64 +123,73 @@ export class CoverageArchitect {
     // --- Checkpoints 14 to 27 ---
     const callFlowSteps = spec?.callFlowPlan?.userDefinedSteps || spec?.callFlowPlan?.steps || [];
     const hasCallFlowSkeleton = callFlowSteps.length > 0 ||
-      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("flow") || t.toLowerCase().includes("skeleton") || t.toLowerCase().includes("template"));
+      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("flow") || t.toLowerCase().includes("skeleton") || t.toLowerCase().includes("template") || t.toLowerCase().includes("steps")) ||
+      captured.some(c => c.topic.toLowerCase().includes("flow") || c.topic.toLowerCase().includes("skeleton") || c.topic.toLowerCase().includes("template") || c.topic.toLowerCase().includes("steps"));
     if (!hasCallFlowSkeleton) {
       missingFields.push("Call Flow Skeleton (greeting, step sequence, branches, or template selection)");
     }
 
     const hasOpeningPhrase = !!meta.openingPhrase ||
-      /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("opening") || t.toLowerCase().includes("greeting"));
+      /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("opening") || t.toLowerCase().includes("greeting") || t.toLowerCase().includes("start")) ||
+      captured.some(c => c.topic.toLowerCase().includes("opening") || c.topic.toLowerCase().includes("greeting") || c.topic.toLowerCase().includes("start"));
     if (!hasOpeningPhrase) {
       missingFields.push("Opening Line / Greeting Script (exact opening phrasing)");
     }
 
     const hasClosingScript = !!spec?.callFlowPlan?.closingScript ||
-      /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("closing") || t.toLowerCase().includes("wrap"));
+      /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("closing") || t.toLowerCase().includes("wrap") || t.toLowerCase().includes("goodbye") || t.toLowerCase().includes("end_call")) ||
+      captured.some(c => c.topic.toLowerCase().includes("closing") || c.topic.toLowerCase().includes("wrap") || c.topic.toLowerCase().includes("goodbye") || c.topic.toLowerCase().includes("end_call"));
     if (!hasClosingScript) {
       missingFields.push("Closing Line / Call Wrap-up Script (exact closing phrasing or N/A)");
     }
 
     const hasSilenceHandling = !!spec?.callFlowPlan?.silenceHandling ||
-      /\b(silence|no input|doesn't answer|quiet|timeout|reprompt|re-prompt|no-input|if caller says nothing|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("silence") || t.toLowerCase().includes("timeout"));
+      /\b(silence|no input|no-input|doesn't answer|quiet|timeout|reprompt|re-prompt|if caller says nothing|say nothing|when silent|no response|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("silence") || t.toLowerCase().includes("timeout") || t.toLowerCase().includes("no_input") || t.toLowerCase().includes("no-input") || t.toLowerCase().includes("reprompt")) ||
+      captured.some(c => c.topic.toLowerCase().includes("silence") || c.topic.toLowerCase().includes("timeout") || c.topic.toLowerCase().includes("no_input") || c.topic.toLowerCase().includes("no-input") || c.topic.toLowerCase().includes("reprompt"));
     if (!hasSilenceHandling) {
       missingFields.push("No-Input / Silence Handling (timeout seconds, reprompt action, or N/A)");
     }
 
     const hasInterruptionPolicy = !!spec?.callFlowPlan?.interruptionPolicy ||
       /\b(barge in|barge-in|interrupt|interruption|talk over|cut off|allow interruption|do not interrupt|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("interrupt") || t.toLowerCase().includes("barge"));
+      resolved.some(t => t.toLowerCase().includes("interrupt") || t.toLowerCase().includes("barge")) ||
+      captured.some(c => c.topic.toLowerCase().includes("interrupt") || c.topic.toLowerCase().includes("barge"));
     if (!hasInterruptionPolicy) {
       missingFields.push("Interruption / Barge-in Behavior (allow interruption vs disallow, or N/A)");
     }
 
     const hasDigressionPolicy = !!spec?.callFlowPlan?.digressionPolicy ||
-      /\b(digress|off topic|off-topic|mid flow|mid-flow|tangent|answer and return|return to script|resume where left off|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("digress") || t.toLowerCase().includes("tangent"));
+      /\b(digress|digression|off topic|off-topic|off script|off-script|mid flow|mid-flow|tangent|answer and return|return to script|resume where left off|steer back|redirect|avoid going outside|guide the conversation back|keep the conversation focused|bring the user back|sidetrack|sidetracked|unrelated|focus|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("digress") || t.toLowerCase().includes("tangent") || t.toLowerCase().includes("off_script") || t.toLowerCase().includes("off-script") || t.toLowerCase().includes("unrelated") || t.toLowerCase().includes("sidetrack") || t.toLowerCase().includes("focus")) ||
+      captured.some(c => c.topic.toLowerCase().includes("digress") || c.topic.toLowerCase().includes("tangent") || c.topic.toLowerCase().includes("off_script") || c.topic.toLowerCase().includes("off-script") || c.topic.toLowerCase().includes("unrelated") || c.topic.toLowerCase().includes("sidetrack") || c.topic.toLowerCase().includes("focus"));
     if (!hasDigressionPolicy) {
       missingFields.push("Mid-Flow Digression Handling (answer off-script question then resume vs refuse, or N/A)");
     }
 
     const hasRetryExhaustion = callFlowSteps.some((s: any) => s?.onFailure?.action || s?.onFailure?.target) ||
-      /\b(after 3 retries|max retries|retry limit|three failures|failed attempts|if caller can't provide|give up and transfer|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("retry") || t.toLowerCase().includes("exhaustion"));
+      /\b(after 3 retries|max retries|retry limit|three failures|failed attempts|if caller can't provide|give up and transfer|retry exhaustion|fallback|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("retry") || t.toLowerCase().includes("exhaustion") || t.toLowerCase().includes("fallback")) ||
+      captured.some(c => c.topic.toLowerCase().includes("retry") || c.topic.toLowerCase().includes("exhaustion") || c.topic.toLowerCase().includes("fallback"));
     if (!hasRetryExhaustion) {
       missingFields.push("Retry Exhaustion Fallback (action after max retries per slot e.g. transfer/hangup)");
     }
 
     const hasConfirmationStyle = !!spec?.callFlowPlan?.confirmationStyle ||
-      /\b(read back|confirm back|character by character|digit by digit|repeat back|confirm phone number|confirmation style|no readback|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("confirmation") || t.toLowerCase().includes("readback"));
+      /\b(read back|confirm back|character by character|digit by digit|repeat back|confirm phone number|confirmation style|no readback|readback|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("confirmation") || t.toLowerCase().includes("readback") || t.toLowerCase().includes("confirm")) ||
+      captured.some(c => c.topic.toLowerCase().includes("confirmation") || c.topic.toLowerCase().includes("readback") || c.topic.toLowerCase().includes("confirm"));
     if (!hasConfirmationStyle) {
       missingFields.push("Confirmation & Read-back Style (character-by-character vs summary, or N/A)");
     }
 
     const hasVoicePersona = !!meta.voiceCharacteristics ||
-      /\b(pacing|fast|slow|formality|formal|casual|filler words|um|uh|accent|british|american|indian accent|voice style|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("voice") || t.toLowerCase().includes("persona") || t.toLowerCase().includes("pacing"));
+      /\b(pacing|fast|slow|formality|formal|casual|filler words|um|uh|accent|british|american|indian accent|voice style|voice persona|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("voice") || t.toLowerCase().includes("persona") || t.toLowerCase().includes("pacing") || t.toLowerCase().includes("accent") || t.toLowerCase().includes("tone")) ||
+      captured.some(c => c.topic.toLowerCase().includes("voice") || c.topic.toLowerCase().includes("persona") || c.topic.toLowerCase().includes("pacing") || c.topic.toLowerCase().includes("accent") || c.topic.toLowerCase().includes("tone"));
     if (!hasVoicePersona) {
       missingFields.push("Voice & Persona Characteristics (pacing, formality, accent, or N/A)");
     }
@@ -188,14 +197,16 @@ export class CoverageArchitect {
     const hasDisclosures = (snap.policies?.disclosures && snap.policies.disclosures.length > 0) ||
       (spec?.guardrails?.disclosures && spec.guardrails.disclosures.length > 0) ||
       /\b(disclosure|disclose|recorded call|recording consent|ai disclosure|state that you are ai|compliance notice|no disclosure|not regulated|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("disclosure") || t.toLowerCase().includes("consent") || t.toLowerCase().includes("compliance"));
+      resolved.some(t => t.toLowerCase().includes("disclosure") || t.toLowerCase().includes("consent") || t.toLowerCase().includes("compliance") || t.toLowerCase().includes("recording")) ||
+      captured.some(c => c.topic.toLowerCase().includes("disclosure") || c.topic.toLowerCase().includes("consent") || c.topic.toLowerCase().includes("compliance") || c.topic.toLowerCase().includes("recording"));
     if (!hasDisclosures) {
       missingFields.push("Consent & Compliance Disclosures (recording consent, AI identity disclosure, or N/A)");
     }
 
     const hasDtmfFallback = !!spec?.callFlowPlan?.dtmfFallback ||
       /\b(dtmf|keypad|press 1|type digits|keypad entry|touch tone|if speech fails use keypad|no dtmf|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("dtmf") || t.toLowerCase().includes("keypad"));
+      resolved.some(t => t.toLowerCase().includes("dtmf") || t.toLowerCase().includes("keypad") || t.toLowerCase().includes("touch_tone")) ||
+      captured.some(c => c.topic.toLowerCase().includes("dtmf") || c.topic.toLowerCase().includes("keypad") || c.topic.toLowerCase().includes("touch_tone"));
     if (!hasDtmfFallback) {
       missingFields.push("DTMF / Keypad Input Fallback (keypad entry fallback after speech recognition failure, or N/A)");
     }
@@ -203,21 +214,24 @@ export class CoverageArchitect {
     const hasHolidayHours = (typeof snap.operatingHours === 'object' && snap.operatingHours?.exceptions && snap.operatingHours.exceptions.length > 0) ||
       (snap.exceptions && snap.exceptions.length > 0) ||
       /\b(holiday|holidays|exceptions|closed on|christmas|new year|national holiday|no special holiday hours|standard only|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("holiday") || t.toLowerCase().includes("exception"));
+      resolved.some(t => t.toLowerCase().includes("holiday") || t.toLowerCase().includes("exception")) ||
+      captured.some(c => c.topic.toLowerCase().includes("holiday") || c.topic.toLowerCase().includes("exception"));
     if (!hasHolidayHours) {
       missingFields.push("Holiday / Exception Hours (special closures, holiday schedules, or N/A)");
     }
 
     const hasEntryRouting = (spec?.callFlowPlan?.entryRouting && spec.callFlowPlan.entryRouting.length > 0) ||
-      /\b(entry routing|multiple request types|if caller says cancel|if caller says book|branching from start|single request type only|one flow only|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("entry") || t.toLowerCase().includes("routing") || t.toLowerCase().includes("multi-request"));
+      /\b(entry routing|multiple request types|if caller says cancel|if caller says book|branching from start|single request type only|one flow only|single, straightforward|single straightforward|straightforward welcome flow|standard onboarding flow first|smart branching|branch into specific handling flows|branching into different paths|branching right away|single flow|standard onboarding journey|branching \/ exception|branch|branching|handling flows|n\/a)\b/i.test(fullUserText) ||
+      resolved.some(t => t.toLowerCase().includes("entry") || t.toLowerCase().includes("routing") || t.toLowerCase().includes("multi-request") || t.toLowerCase().includes("multi_request") || t.toLowerCase().includes("branch") || t.toLowerCase().includes("flow")) ||
+      captured.some(c => c.topic.toLowerCase().includes("entry") || c.topic.toLowerCase().includes("routing") || c.topic.toLowerCase().includes("multi-request") || c.topic.toLowerCase().includes("multi_request") || c.topic.toLowerCase().includes("branch") || c.topic.toLowerCase().includes("flow"));
     if (!hasEntryRouting) {
       missingFields.push("Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)");
     }
 
     const hasInjectionResistance = !!spec?.guardrails?.injectionResistance ||
       /\b(injection|jailbreak|override|ignore instructions|reveal prompt|bypass rules|security prompt|default guardrails|n\/a)\b/i.test(fullUserText) ||
-      resolved.some(t => t.toLowerCase().includes("injection") || t.toLowerCase().includes("jailbreak") || t.toLowerCase().includes("resistance"));
+      resolved.some(t => t.toLowerCase().includes("injection") || t.toLowerCase().includes("jailbreak") || t.toLowerCase().includes("resistance") || t.toLowerCase().includes("override")) ||
+      captured.some(c => c.topic.toLowerCase().includes("injection") || c.topic.toLowerCase().includes("jailbreak") || c.topic.toLowerCase().includes("resistance") || c.topic.toLowerCase().includes("override"));
     if (!hasInjectionResistance) {
       missingFields.push("Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)");
     }

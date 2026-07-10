@@ -131,7 +131,29 @@ async function runVerification() {
     console.log("Prompt around capture_dob:\n", prompt.slice(idx, idx + 1200));
   }
 
-  if (hasCallFlowCheckpoints && preservedOnFailure && preservedConfirmation && validCheck.isValid && !invalidCheck.isValid && hasPoliciesHeader && hasStepOnFailure) {
+  console.log("\n=== 5. VERIFYING DIGRESSION HANDLING & LOOP PREVENTION IN COVERAGE ARCHITECT ===");
+  const chatHistoryWithNaturalDigressionAnswer = [
+    {
+      role: "user",
+      content: "Avoid going outside her role, keep the conversation focused on the welcome flow, and gently bring the user back to onboarding steps like goal capture, health flag, language preference, and callback timing."
+    }
+  ];
+  const evalAfterAnswer = CoverageArchitect.evaluate(testSpec, chatHistoryWithNaturalDigressionAnswer);
+  const stillAskingDigression = evalAfterAnswer.missingFields.some(f => f.includes("Mid-Flow Digression Handling"));
+  console.log(`Natural answer clears Checkpoint 19 without loop: ${!stillAskingDigression ? "PASSED" : "FAILED"}`);
+
+  console.log("\n=== 6. VERIFYING ENTRY ROUTING & BRANCHING HANDLING IN COVERAGE ARCHITECT ===");
+  const chatHistoryWithBranchingAnswer = [
+    {
+      role: "user",
+      content: "Riya should start with a single, straightforward welcome flow for every new user, but she should be able to branch into specific handling flows when the user’s response requires it."
+    }
+  ];
+  const evalAfterBranchingAnswer = CoverageArchitect.evaluate(testSpec, chatHistoryWithBranchingAnswer);
+  const stillAskingBranching = evalAfterBranchingAnswer.missingFields.some(f => f.includes("Entry Routing & Multi-Request Branching"));
+  console.log(`Natural answer clears Checkpoint 26 without loop: ${!stillAskingBranching ? "PASSED" : "FAILED"}`);
+
+  if (hasCallFlowCheckpoints && preservedOnFailure && preservedConfirmation && validCheck.isValid && !invalidCheck.isValid && hasPoliciesHeader && hasStepOnFailure && !stillAskingDigression && !stillAskingBranching) {
     console.log("\n>>> ALL ROADMAP OBJECTIVES SUCCESSFULLY VERIFIED! <<<");
   } else {
     console.error("\n>>> VERIFICATION FAILED SOME CHECKS <<<");
