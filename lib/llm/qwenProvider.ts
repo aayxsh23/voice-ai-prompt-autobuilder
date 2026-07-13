@@ -20,6 +20,9 @@ import {
 } from './types';
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
+import { llmConfig } from "@/lib/config";
+import { fewShotBlock } from "@/lib/llm/fewshot";
+import { logger } from "@/lib/logger";
 
 export const COMPILER_GENERATION_CONFIG = {
   temperature: 0.1,
@@ -90,6 +93,14 @@ CRITICAL PROHIBITIONS:
 OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY & PERSONA.
 `.trim();
 
+// Keeps generated content dense (Aakash-style), not token-heavy (FITTR-style).
+// Appended to the structured-generation passes.
+const DENSITY_DIRECTIVE = `
+DENSITY & ANTI-BLOAT (KEEP IT LEAN):
+- Each scriptDirective / fallback line: 1-2 short spoken sentences. No rationale, no meta-commentary, no "(this is because...)".
+- Keep FAQ and objection answers to 1-2 spoken sentences each. Do not pad.
+- State each rule once. Never restate global policies inside individual steps or cross-reference other sections.`;
+
 function stripThinkTags(text: string): string {
   if (!text) return "";
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
@@ -109,19 +120,18 @@ function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string
   
   const extractedThinking = nativeThinking || tagThinking;
   if (extractedThinking) {
-    console.log(`\n================= 🧠 QWEN THINKING TOKENS (${contextLabel}) =================`);
-    console.log(extractedThinking);
-    console.log(`=================================================================================\n`);
+    logger.debug(`Qwen thinking tokens (${contextLabel})`, extractedThinking);
   }
   return rawContent;
 }
 
 function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
-  const finalBaseUrl = baseUrl || process.env.QWEN_BASE_URL_FOR_LLM || process.env.QWEN_BASE_URL || "http://localhost:8000/v1";
-  const finalApiKey = apiKey || process.env.QWEN_API_KEY || "EMPTY";
   return new OpenAI({
-    apiKey: finalApiKey,
-    baseURL: finalBaseUrl,
+    apiKey: apiKey || llmConfig.apiKey,
+    baseURL: baseUrl || llmConfig.baseUrl,
+    // Fail fast on hangs; the SDK retries transient failures with exponential backoff.
+    timeout: llmConfig.timeoutMs,
+    maxRetries: llmConfig.maxRetries,
   });
 }
 
@@ -129,7 +139,7 @@ export const llmClient = {
   async generate({ systemInstruction, prompt, responseMimeType }: { systemInstruction: string, prompt: string, responseMimeType?: string }) {
     const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
     const client = getOpenAIClient();
-    const model = process.env.QWEN_MODEL || "Qwen/Qwen3.6-35B-A3B-FP8";
+    const model = llmConfig.model;
 
     const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
     if (systemInstruction && systemInstruction.trim() !== "") {
@@ -162,8 +172,8 @@ export class QwenProvider implements LlmService {
   private client: OpenAI;
   private modelName: string;
 
-  constructor(apiKey?: string, modelName = "Qwen/Qwen3.6-35B-A3B-FP8", baseUrl?: string) {
-    this.modelName = process.env.QWEN_MODEL || modelName;
+  constructor(apiKey?: string, modelName?: string, baseUrl?: string) {
+    this.modelName = modelName || llmConfig.model;
     this.client = getOpenAIClient(apiKey, baseUrl);
   }
 
@@ -188,7 +198,7 @@ export class QwenProvider implements LlmService {
     return safeParseJson<T>(cleanContent, {} as T);
   }
 
-  public async generateRaw(prompt: string): Promise<string> {
+  public async generateRaw(prompt: string, temperature = 0.1): Promise<string> {
     const isJsonRequest = prompt.includes("ONLY valid JSON") || prompt.includes("JSON matching");
     const response = await this.client.chat.completions.create({
       model: this.modelName,
@@ -201,7 +211,7 @@ export class QwenProvider implements LlmService {
         },
         { role: "user", content: prompt }
       ],
-      temperature: 0.1,
+      temperature,
       ...(isJsonRequest ? { response_format: { type: "json_object" as const } } : {}),
       chat_template_kwargs: { enable_thinking: true },
     } as any);
@@ -218,13 +228,15 @@ export class QwenProvider implements LlmService {
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
     const { overrides, ...llmInput } = input;
     const languageMode = input.languageMode || input.business?.languageMode || (input as any).businessSpec?.meta?.languageMode || 'english';
-    const capturedText = JSON.stringify((input as any).businessSpec?.capturedTopics || (input as any).capturedTopics || []) + JSON.stringify((input as any).businessSpec?.resolvedTopics || (input as any).resolvedTopics || []);
-    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+    // Primary output language follows the declared mode only (multilingual/English
+    // default stays English; the agent switches to Hindi live, not by pre-writing it).
+    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
     const langNote = isHindiOrHinglish
       ? "\nCRITICAL LANGUAGE MANDATE (DEVANAGARI STRICT RULE):\n1. All dialogue lines ('generatedLine', 'fallbackBehavior', 'scriptDirective'), FAQ questions/answers ('question', 'answer'), and objection handling triggers/responses ('trigger', 'response') MUST be written entirely in Devanagari script (देवनागरी), NOT Romanized/English letters.\n2. NEVER write common Hindi words ('kya', 'ho', 'hai', 'baat', 'kar', `rahi`, 'hoon', 'sir', 'maam', 'namaste', 'haan', 'nahi') or Indian names ('Deepika', 'Ananya') in English letters! Write them strictly in Devanagari ('क्या', 'हो', 'है', 'बात', 'कर', 'रही', 'हूँ', 'सर/मैम', 'नमस्ते', 'हाँ', `नहीं`, 'दीपिका', 'अनन्या').\n3. ONLY specific technical/domain software keywords (like 'Marg ERP', 'business owner', 'online demo', 'software', 'accounting', 'inventory', 'billing', 'pincode', 'team', 'office', 'schedule') can remain in English characters inside the Devanagari sentence.\n4. Do NOT output duplicate questions/objections — never output both a Romanized and a Devanagari version of the same FAQ or objection. Output ONLY the Devanagari version."
       : languageMode === 'multilingual'
       ? "\nCRITICAL LANGUAGE MANDATE: Support English, Hindi, and Hinglish. When generating Hindi sentences in dialogue, FAQ answers, or objection responses, they MUST be written in Devanagari script (देवनागरी), not Roman script."
       : "";
+    const styleExemplars = fewShotBlock({ policy: { mode: languageMode as 'english' | 'hindi' | 'hinglish' | 'multilingual' } });
     const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"sequenceOrder":"number","stateId":"string","stateName":"string","objective":"string","slotsToCollect":["string"],"scriptDirective":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3,"invokesTools":["string"]}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
     const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
 Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
@@ -236,7 +248,7 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 4. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots to verify accuracy.
 5. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
 6. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
-7. RETRY LIMITS: Each step that collects information must include maxRetries: 3.${langNote}
+7. RETRY LIMITS: Each step that collects information must include maxRetries: 3.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt);
@@ -256,7 +268,7 @@ Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
 ${langNote}
 
-FAQ GENERATION RULE: Generate 8-12 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.${langNote}
+FAQ GENERATION RULE: Generate 5-8 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 GUARDRAIL GENERATION RULES:
 1. Generate 5-8 guardrails specific to THIS exact business.
@@ -269,7 +281,10 @@ VARIABLE CLASSIFICATION RULE:
 2. OUTFIELDS (Post-Call Extraction): All details collected or extracted from the conversation transcript ('collectsVariable', 'interest_status', 'demo_type', 'pincode') MUST be marked as 'fieldDirection: "outfield"' and referenced with '[variable_name]' syntax in extractions.
 
 SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
-    const pass2Raw = await this.generateRaw(pass2Prompt);
+    // Structure (pass 1) stays deterministic; the dialogue-heavy draft (pass 2)
+    // gets a modest temperature bump for more natural spoken lines. JSON validity
+    // is still enforced by response_format.
+    const pass2Raw = await this.generateRaw(pass2Prompt, 0.35);
     let draft: PromptPackageDraft = safeParseJson<PromptPackageDraft>(pass2Raw, {} as any);
     if (!draft || (!draft.systemPrompt && !draft.faqCards)) {
       try {
@@ -473,6 +488,3 @@ Return ONLY valid JSON matching the exact schema:
     return res;
   }
 }
-
-// Backward-compatibility alias
-export class GeminiProvider extends QwenProvider {}
