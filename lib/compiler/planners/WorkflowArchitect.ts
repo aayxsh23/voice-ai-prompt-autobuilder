@@ -2,6 +2,9 @@ import { BusinessSpecification } from "@/lib/llm/types";
 import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 import { safeParseJson } from "@/lib/llm/types";
 import { semanticDedupSlots, getSemanticCore } from "@/lib/compiler/assembler/PromptAssembler";
+import { hindiVerbForms } from "@/lib/llm/language/LanguagePolicy";
+import { isDerivedSlot } from "@/lib/compiler/constants/slotRegistry";
+import { logger } from "@/lib/logger";
 
 export class WorkflowArchitect {
   public static async planWorkflow(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['callFlowPlan']['steps']> {
@@ -10,8 +13,10 @@ export class WorkflowArchitect {
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
     const capturedTopics = spec.capturedTopics || [];
     const resolvedTopics = spec.resolvedTopics || [];
-    const capturedText = JSON.stringify(capturedTopics) + JSON.stringify(resolvedTopics);
-    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+    // Primary output language is decided by the declared mode only — a multilingual /
+    // English-default agent must NOT be flipped to Hindi just because the discovery
+    // notes mention Hindi support.
+    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
     const primaryGoal = meta.primaryGoal || meta.description || "Assist callers professionally";
 
     // Extract call direction (inbound vs outbound)
@@ -31,6 +36,12 @@ export class WorkflowArchitect {
     const infieldsList = allDynamicVars.filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'));
     const outfieldsList = allDynamicVars.filter((v: any) => v && v.key && v.fieldDirection !== 'infield' && v.source !== 'crm' && v.source !== 'api');
     semanticDedupSlots(outfieldsList.map((o: any) => o.key)).forEach((key: string) => existingSlots.add(key));
+    // Derived/classification outfields (objection_type, intent_category, eligibility_status,
+    // detected_language, opt_out_*, …) are extracted silently from the conversation — they
+    // must NEVER become "please tell me your <x>" steps. Drop them from the collectable set.
+    for (const s of Array.from(existingSlots)) {
+      if (isDerivedSlot(s)) existingSlots.delete(s);
+    }
 
     const nameInfield = infieldsList.find((v: any) => /first_name|caller_name|name/i.test(v.key))?.key;
     const greetingContactString = nameInfield ? `{{${nameInfield}}}` : "the right contact today";
@@ -38,6 +49,9 @@ export class WorkflowArchitect {
 
     const companyStr = meta.companyName || (isHindiOrHinglish ? 'कंपनी' : 'our team');
     const agentStr = meta.agentName || (isHindiOrHinglish ? 'असिस्टेंट' : 'Agent');
+    const agentGender: 'female' | 'male' = meta.agentGender === 'male' ? 'male' : 'female';
+    const vf = hindiVerbForms(agentGender);
+    const denyAiDisclosure = meta.aiDisclosure === 'deny';
 
     // 1. Identity / Greeting Step (tailored for Outbound vs Inbound - Issue #8 & Inbound Review)
     const step1 = isHindiOrHinglish ? {
@@ -46,8 +60,8 @@ export class WorkflowArchitect {
       stateName: isInbound ? "Inbound Greeting & Purpose" : "Identity Gate & Greeting",
       objective: isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity.",
       scriptDirective: isInbound
-        ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर सकती हूँ?"`
-        : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI असिस्टेंट बात कर रही हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`,
+        ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
+        : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI असिस्टेंट बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`,
       slotsToCollect: [] as string[],
       branchingConditions: isInbound ? [
         { condition: "Caller states request or query", goToStep: 2 },
@@ -58,7 +72,7 @@ export class WorkflowArchitect {
         { condition: "Wrong number", goToStep: "end_call", reason: "wrong_number" }
       ],
       fallbackBehavior: isHindiOrHinglish
-        ? (isInbound ? `Say: "कृपया बताएं आज मैं आपकी क्या मदद कर सकती हूँ?"` : `Say: "माफ़ कीजिएगा, क्या मेरी बात ${hindiContactString} से हो रही है?"`)
+        ? (isInbound ? `Say: "कृपया बताएं आज मैं आपकी क्या मदद कर ${vf.sakti} हूँ?"` : `Say: "माफ़ कीजिएगा, क्या मेरी बात ${hindiContactString} से हो रही है?"`)
         : `Say: "How can I assist you today?"`,
       maxRetries: 3,
       invokesTools: [] as string[],
@@ -181,9 +195,15 @@ export class WorkflowArchitect {
 
     const fallbackSteps = [step1, ...slotSteps, confirmStep, terminalStep];
 
-    const langDirective = isHindiOrHinglish
-      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}'). EVERY SINGLE scriptDirective and fallbackBehavior across every step MUST be written in Devanagari script (देवनागरी), NOT Romanized English. ONLY specific domain keywords can remain in English letters.`
+    const genderDirective = isHindiOrHinglish
+      ? `\nAGENT GENDER: The agent is ${agentGender}. Use ${agentGender === 'male' ? 'MASCULINE' : 'FEMININE'} verb inflections for the agent's own speech (e.g., "${agentGender === 'male' ? 'कर रहा हूँ, कर सकता हूँ' : 'कर रही हूँ, कर सकती हूँ'}"). Address the caller respectfully with "आप" and plural verbs.`
       : "";
+    const disclosureDirective = denyAiDisclosure
+      ? `\nAI DISCLOSURE: DO NOT disclose or hint that the agent is an AI. The identity/greeting step must present the agent as a human representative of the company; never say "AI assistant".`
+      : `\nAI DISCLOSURE: The identity/greeting step MUST proactively state that the agent is an AI assistant for the company.`;
+    const langDirective = isHindiOrHinglish
+      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}'). EVERY SINGLE scriptDirective and fallbackBehavior across every step MUST be written in Devanagari script (देवनागरी), NOT Romanized English. ONLY specific domain keywords can remain in English letters.${genderDirective}${disclosureDirective}`
+      : `${disclosureDirective}`;
 
     const prompt = `You are a WorkflowArchitect specializing in designing deterministic voice AI call flow state machines.
 Given the following business goal, metadata, and operational topics, design a comprehensive, multi-step call flow state machine (typically 4 to 8 steps).${langDirective}
@@ -213,6 +233,8 @@ MANDATORY STATE MACHINE DESIGN RULES:
 5. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots explicitly (${readbackStr}) to verify accuracy.
 6. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
 
+DENSITY: Keep every scriptDirective and fallbackBehavior to 1-2 short spoken sentences. No rationale or meta-commentary. State rules once; do not restate global policy inside steps.
+
 Return a JSON array of step objects with sequenceOrder, stateId, stateName, objective, scriptDirective, slotsToCollect, branchingConditions, fallbackBehavior, maxRetries, and invokesTools.`;
 
     try {
@@ -235,7 +257,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       steps = WorkflowArchitect.postProcessSteps(steps, existingSlots, isInbound, meta, isHindiOrHinglish);
       return steps.length > 0 ? steps : fallbackSteps;
     } catch (err) {
-      console.warn("WorkflowArchitect fallback triggered:", err);
+      logger.warn("WorkflowArchitect fallback triggered", err);
       return WorkflowArchitect.postProcessSteps(fallbackSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
     }
   }
@@ -250,6 +272,8 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     const refined: any[] = [];
     const collectedSoFar = new Set<string>();
     const collectedCores = new Set<string>();
+    const vf = hindiVerbForms(meta?.agentGender === 'male' ? 'male' : 'female');
+    const denyAi = meta?.aiDisclosure === 'deny';
 
     steps.forEach((s: any, idx: number) => {
       // Preserve user-elicited flags and branch policies
@@ -262,28 +286,39 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
         isTerminal: s.isTerminal
       };
 
-      // Ensure proactive AI disclosure on step 1 (`Issue #8`)
+      // Ensure proactive AI disclosure on step 1 (`Issue #8`), UNLESS the deployment
+      // is configured to present as a human representative (aiDisclosure: 'deny').
       if (idx === 0 || s.stateId === 'identity_gate') {
         let directive = s.scriptDirective || "";
-        if (!/ai assistant|ai voice|ai असिस्टेंट/i.test(directive)) {
+        const hasDisclosure = /ai assistant|ai voice|ai असिस्टेंट/i.test(directive);
+        if (!denyAi && !hasDisclosure) {
           if (isInbound) {
             directive = isHindiOrHinglish
-              ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। मैं ${meta?.agentName || 'असिस्टेंट'}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर सकती हूँ?"`
+              ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। मैं ${meta?.agentName || 'असिस्टेंट'}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
               : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. My name is ${meta?.agentName || 'Agent'}, your AI voice assistant. How can I help you today?"`;
           } else {
             const contactTarget = /{{[a-zA-Z0-9_]+}}/.exec(directive)?.[0] || (isHindiOrHinglish ? "सही नंबर पर" : "the right contact today");
             directive = isHindiOrHinglish
-              ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'}, एक AI असिस्टेंट बात कर रही हूँ। क्या मेरी बात ${contactTarget} से हो रही है?"`
+              ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'}, एक AI असिस्टेंट बात कर ${vf.rahi} हूँ। क्या मेरी बात ${contactTarget} से हो रही है?"`
               : `Say: "Hello, I'm ${meta?.agentName || 'Agent'}, an AI assistant calling on behalf of ${meta?.companyName || 'our team'}. Am I speaking with ${contactTarget}?"`;
           }
+        } else if (denyAi && !directive) {
+          directive = isInbound
+            ? (isHindiOrHinglish
+                ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। आज मैं आपकी क्या मदद कर ${vf.sakti} हूँ?"`
+                : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. How can I help you today?"`)
+            : (isHindiOrHinglish
+                ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'} बात कर ${vf.rahi} हूँ।"`
+                : `Say: "Hello, I'm ${meta?.agentName || 'Agent'} from ${meta?.companyName || 'our team'}."`);
         }
         s.scriptDirective = directive;
         refined.push({ ...s, ...preservedProps, sequenceOrder: 1 });
         return;
       }
 
-      // Semantic deduplication against previously collected slots or within the step itself
-      const rawSlots = Array.isArray(s.slotsToCollect) ? s.slotsToCollect.filter(Boolean) : [];
+      // Semantic deduplication against previously collected slots or within the step itself.
+      // Also drop derived/classification slots so they never become a caller question.
+      const rawSlots = (Array.isArray(s.slotsToCollect) ? s.slotsToCollect.filter(Boolean) : []).filter((slot: string) => !isDerivedSlot(slot));
       const slots: string[] = [];
       rawSlots.forEach((singleSlot: string) => {
         const core = getSemanticCore(singleSlot);

@@ -1,5 +1,7 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
+import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
+import { logger } from "@/lib/logger";
 
 function formatOperatingHours(hours: any): string {
   if (!hours) return "Standard Business Hours";
@@ -162,13 +164,7 @@ ${domainTools.map(t => `- \`${t.name}\`: ${t.description || "Execute business ac
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
   const specFaqs = Array.isArray(spec?.knowledgeBase?.faqs) ? spec.knowledgeBase.faqs : [];
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
-  console.log("[PromptAssembler] assembleUnifiedPrompt() invoked.", {
-    hasSpec: !!spec,
-    specFaqsCount: specFaqs.length,
-    draftFaqsCount: draftFaqs.length,
-    specFaqsFull: specFaqs,
-    draftFaqsFull: draftFaqs
-  });
+  logger.debug("assembleUnifiedPrompt()", { specFaqsCount: specFaqs.length, draftFaqsCount: draftFaqs.length });
 
   const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
   const draftVarsMap = new Map<string, any>();
@@ -229,9 +225,17 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const guardrailsContent = guardrailRules || "";
 
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
-  const languageMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
-  const capturedText = JSON.stringify(spec?.capturedTopics || []) + JSON.stringify(spec?.resolvedTopics || []);
-  const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+  const policy = resolveLanguagePolicy(spec, draft);
+  const languageMode = policy.mode;
+  const isHindiOrHinglish = policy.isHindiOrHinglish;
+
+  const hindiSpeakability = policy.mayUseHindi
+    ? `HINDI/HINGLISH SPEAKABILITY RULES:
+- अंक शब्दों में बोलें: कीमत/मात्रा हिंदी शब्दों में कहें (जैसे "पैंतालीस", "दो हज़ार")। बड़ी रकम लाख/करोड़ में बोलें (₹2,50,000 → "दो लाख पचास हज़ार रुपये")।
+- फ़ोन नंबर, OTP, पिन कोड एक-एक अंक करके हिंदी में बोलें (शून्य, एक, दो…); "शून्य" कहें, "ओ" नहीं।
+- तारीख़ और समय हिंदी में बोलें (जैसे "सोमवार, चौदह जुलाई", "शाम छह बजे") — कभी अंक-दर-अंक न पढ़ें।
+- English domain terms (जैसे "demo", "software", "email", "WhatsApp") Latin script में ही रखें; बाक़ी सब देवनागरी में।`
+    : "";
 
   let allFaqCandidates = [
     ...specFaqs.map((f: any) => ({ question: f?.question || f?.q || '', answer: f?.answer || f?.a || '' })),
@@ -289,10 +293,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     ? spec!.callFlowPlan!.steps
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
   const steps = rawSteps.map((s: any, idx: number) => {
+    // Script correctness is enforced at generation time via the LanguagePolicy
+    // (see lib/llm/language/LanguagePolicy.ts). We do NOT transliterate directives
+    // here — blind word-level regex substitution corrupts already-correct text.
     let directive = s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`);
-    if (isHindiOrHinglish) {
-      directive = directive.replace(/\bho\b/g, 'हो').replace(/\bbaat\b/gi, 'बात').replace(/\bkar\b/gi, 'कर').replace(/\brahi\b/gi, 'रही').replace(/\bhoon\b/gi, 'हूँ').replace(/\bhain\b/gi, 'हैं');
-    }
     if ((idx === 0 || s?.stateId === 'identity_gate') && nameInfieldKey) {
       if (/right contact today|account holder|right contact/i.test(directive)) {
         directive = directive.replace(/right contact today|account holder|right contact/gi, `{{${nameInfieldKey}}}`);
@@ -369,14 +373,21 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const isInbound = callDirection === 'inbound';
 
   const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
+  const companyName = spec?.meta?.companyName || "the company";
+  const agentName = spec?.meta?.agentName || "Agent";
+  // AI-disclosure is configurable: some deployments proactively disclose the AI
+  // (default), others require the agent to present as a human representative.
+  const disclosureLine = policy.aiDisclosure === 'deny'
+    ? `- AI Identity (DO NOT DISCLOSE): Never state, hint, or confirm that you are an AI, bot, or automated system. If asked whether you are a bot/AI/recording, deflect naturally and present yourself as ${agentName}, a representative from ${companyName}. Stay in character as a human representative throughout.`
+    : `- AI Identity Disclosure: Always state clearly upfront when ${isInbound ? `answering the call that you are an AI assistant for ${companyName} (e.g., 'Thank you for calling ${companyName}, I am ${agentName}, your AI voice assistant...')` : `initiating the call that you are an AI assistant calling on behalf of ${companyName} before verifying the contact's identity`}. Never conceal your AI status if asked.`;
   const identity = `### AGENT IDENTITY & PERSONA
-You are a voice AI agent for phone conversations representing ${spec?.meta?.companyName || "the company"}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
-- Name: ${spec?.meta?.agentName || "Agent"}
-- Company: ${spec?.meta?.companyName || "Company"}
+You are a voice ${policy.aiDisclosure === 'deny' ? '' : 'AI '}agent for phone conversations representing ${companyName}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
+- Name: ${agentName}
+- Company: ${companyName}
 - Call Direction: ${isInbound ? "INBOUND (Customer calling into the business/helpline)" : "OUTBOUND (Agent calling out to the customer/lead)"}
 - Primary Goal: ${primaryGoal}
 - Tone Profile: ${toneList.join(', ')}
-- AI Identity Disclosure: Always state clearly upfront when ${isInbound ? "answering the call that you are an AI assistant for " + (spec?.meta?.companyName || "the company") + " (e.g., 'Thank you for calling " + (spec?.meta?.companyName || "the company") + ", I am " + (spec?.meta?.agentName || "Agent") + ", your AI voice assistant...')" : "initiating the call that you are an AI assistant calling on behalf of " + (spec?.meta?.companyName || "the company") + " before verifying the contact's identity"}. Never conceal your AI status if asked.`.trim();
+${disclosureLine}`.trim();
 
   let languageHandling = "";
   if (isHindiOrHinglish) {
@@ -395,7 +406,8 @@ All Hindi sentences across spoken dialogue, call flow lines, FAQ answers, and ob
   } else if (languageMode === 'multilingual') {
     languageHandling = `### LANGUAGE HANDLING
 LANGUAGE DETECTION & RESPONSE PROTOCOL:
-- Detect the caller's language from their first 1-2 utterances.
+- DEFAULT: open the call and greet in English. All scripted lines below are written in English; treat English as the default unless the caller indicates otherwise.
+- Detect the caller's language from their first 1-2 utterances, then mirror it for the rest of the call.
 - If caller speaks English → respond in English.
 - If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
 - If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
@@ -420,7 +432,7 @@ VOICE RULES
 - Never end mid-sentence.
 - If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate.
 
-${speakabilityContent}
+${speakabilityContent}${hindiSpeakability ? `\n\n${hindiSpeakability}` : ''}
 
 AUDIO & HELLO HANDLING
 Conversation State Awareness: Track whether the conversation has been initiated. The conversation is considered "started" only after a substantive exchange has occurred beyond the initial greeting.
@@ -622,17 +634,11 @@ OFF-TOPIC REFUSAL PROTOCOL
 
 export class PromptAssembler {
   assemble(specOrIr: any, draft?: any): string {
-    console.log("[PromptAssembler] assemble() invoked.", {
-      specOrIrIsSpec: !!(specOrIr && specOrIr.meta && specOrIr.businessSnapshot),
-      draftKeys: draft ? Object.keys(draft) : null
-    });
+    logger.debug("PromptAssembler.assemble()", { isSpec: !!(specOrIr && specOrIr.meta && specOrIr.businessSnapshot) });
     if (specOrIr && specOrIr.meta && specOrIr.businessSnapshot) {
       return assembleUnifiedPrompt(specOrIr as BusinessSpecification, draft);
     }
-    console.warn("[PromptAssembler] Legacy fallback branch triggered in assemble()", {
-      hadMeta: !!specOrIr?.meta,
-      hadBusinessSnapshot: !!specOrIr?.businessSnapshot
-    });
+    logger.warn("PromptAssembler: legacy fallback branch triggered in assemble()");
     // Convert legacy IR/draft to BusinessSpecification format deterministically
     const meta = specOrIr?.meta || draft?.business || {};
     const existingSnap = specOrIr?.businessSnapshot || draft?.businessSnapshot || {};

@@ -1,4 +1,3 @@
-import { z } from 'zod';
 
 export interface BusinessSnapshot {
   businessName?: string;
@@ -167,6 +166,7 @@ export interface PromptPackageDraft {
   testScenarios: TestScenarioSpec[];
   qualityReview: QualityReview;
   primaryGoal?: string;
+  languageMode?: string;
   verbatimLines?: { stepLabel: string; exactLine: string }[];
   transferConditions?: TransferCondition[];
   callFlowSteps?: any[];
@@ -184,6 +184,8 @@ export interface PromptPackageDraft {
   validationErrors?: string[];
   validationWarnings?: string[];
   requiresHumanReview?: boolean;
+  estimatedTokens?: number;
+  languageQualityScore?: number;
 }
 
 export interface SimulationTurnInput {
@@ -227,7 +229,7 @@ export interface LlmService {
   runGapAudit(input: { business: BusinessSnapshot; mission: CallMission; conversation: ConversationDesign; personality: VoicePersonality }): Promise<GapAuditResult>;
   generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft>;
   generateWithCoT?(input: BlueprintJson): Promise<PromptPackageDraft>;
-  generateRaw?(prompt: string): Promise<string>;
+  generateRaw?(prompt: string, temperature?: number): Promise<string>;
   generateAgentPrompt(input: BlueprintJson): Promise<string>;
   generateSystemPrompt(input: BlueprintJson): Promise<string>;
   extractDynamicVariables(input: BlueprintJson): Promise<DynamicVariableSpec[]>;
@@ -308,6 +310,11 @@ export interface BusinessSpecification {
     languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
     callDirection?: 'inbound' | 'outbound' | 'both';
     openingPhrase?: string;
+    // Language policy (see lib/llm/language/LanguagePolicy.ts)
+    agentGender?: 'female' | 'male';
+    formality?: 'aap' | 'tum';
+    aiDisclosure?: 'disclose' | 'deny';
+    targetTTS?: string;
     voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
   };
   businessSnapshot: {
@@ -389,106 +396,3 @@ export interface BusinessSpecification {
     prohibitions?: string[];
   };
 }
-
-export const businessSpecificationSchema = z.object({
-  meta: z.object({
-    companyName: z.string().default("Enterprise Client"),
-    agentName: z.string().default("Voice Assistant"),
-    industry: z.string().default("General"),
-    isRegulated: z.boolean().default(false),
-    toneProfile: z.array(z.string()).default(["Professional", "Helpful"]),
-    primaryGoal: z.string().default("Assist callers effectively"),
-    languageMode: z.enum(["english", "hindi", "hinglish", "multilingual"]).default("english").optional(),
-    callDirection: z.enum(["inbound", "outbound", "both"]).optional(),
-    openingPhrase: z.string().optional(),
-    voiceCharacteristics: z.object({
-      pacing: z.string().optional(),
-      formality: z.string().optional(),
-      fillerWords: z.boolean().optional(),
-      accent: z.string().optional()
-    }).optional()
-  }),
-  businessSnapshot: z.object({
-    operatingHours: z.union([
-      z.string(),
-      z.object({ standard: z.string().optional(), exceptions: z.array(z.string()).optional() })
-    ]).default("Standard Business Hours"),
-    exceptions: z.array(z.string()).optional(),
-    servicesOffered: z.array(z.string()).default([]),
-    policies: z.object({
-      cancellation: z.string().default("Standard policy apply"),
-      refunds: z.string().default("Case-by-case evaluation"),
-      escalationNumbers: z.array(z.string()).default([]),
-      disclosures: z.array(z.string()).optional()
-    })
-  }),
-  callFlowPlan: z.object({
-    userDefinedSteps: z.array(z.any()).optional(),
-    entryRouting: z.array(z.object({ trigger: z.string(), goToStep: z.union([z.string(), z.number()]) })).optional(),
-    silenceHandling: z.object({ timeoutSeconds: z.number().optional(), action: z.string().optional(), maxReprompts: z.number().optional() }).optional(),
-    interruptionPolicy: z.string().optional(),
-    digressionPolicy: z.string().optional(),
-    confirmationStyle: z.string().optional(),
-    dtmfFallback: z.object({ enabled: z.boolean().optional(), triggerAfterFailures: z.number().optional() }).optional(),
-    closingScript: z.string().optional(),
-    steps: z.array(z.object({
-      sequenceOrder: z.number(),
-      stateId: z.string(),
-      stateName: z.string(),
-      objective: z.string().optional(),
-      scriptDirective: z.string(),
-      slotsToCollect: z.array(z.string()).default([]),
-      branchingConditions: z.array(z.any()).optional(),
-      fallbackBehavior: z.string().optional(),
-      maxRetries: z.number().optional(),
-      onFailure: z.object({ afterRetries: z.number().optional(), action: z.string().optional(), target: z.string().optional(), fallbackLine: z.string().optional() }).optional(),
-      confirmationRequired: z.boolean().optional(),
-      digressionAllowed: z.boolean().optional(),
-      invokesTools: z.array(z.string()).optional(),
-      isFallback: z.boolean().optional(),
-      isTerminal: z.boolean().optional()
-    })).default([])
-  }),
-  knowledgeBase: z.object({
-    faqs: z.array(z.object({
-      question: z.string(),
-      answer: z.string(),
-      isFallback: z.boolean().optional()
-    })).default([]),
-    objections: z.array(z.object({
-      trigger: z.string(),
-      response: z.string(),
-      isFallback: z.boolean().optional()
-    })).default([])
-  }),
-  tools: z.array(z.object({
-    name: z.string(),
-    description: z.string(),
-    parameters: z.record(z.string(), z.any()).default({}),
-    associatedStateId: z.string()
-  })).default([]),
-  extractedEntities: z.object({
-    departments: z.array(z.string()).default([]),
-    namedContacts: z.array(z.object({ label: z.string(), value: z.string() })).default([]),
-    servicesOrOfferings: z.array(z.string()).default([])
-  }).optional(),
-  resolvedTopics: z.array(z.string()).default([]).optional(),
-  capturedTopics: z.array(z.object({ topic: z.string(), summary: z.string() })).default([]).optional(),
-  dynamicVariables: z.array(z.object({
-    key: z.string(),
-    label: z.string().optional().default(''),
-    description: z.string().optional().default(''),
-    type: z.string().optional().default('string'),
-    fieldDirection: z.enum(['infield', 'outfield']).optional().default('outfield'),
-    required: z.boolean().optional().default(false),
-    defaultValue: z.string().optional().default(''),
-    source: z.string().optional().default('extraction')
-  })).default([]).optional(),
-  guardrails: z.object({
-    injectionResistance: z.string().optional(),
-    disclosures: z.array(z.string()).optional(),
-    emergencyTriggers: z.array(z.string()).optional(),
-    emergencyAction: z.string().optional(),
-    prohibitions: z.array(z.string()).optional()
-  }).optional()
-});
