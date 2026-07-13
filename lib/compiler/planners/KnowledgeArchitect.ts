@@ -1,14 +1,16 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 import { safeParseJson } from "@/lib/llm/types";
+import { logger } from "@/lib/logger";
 
 export class KnowledgeArchitect {
   public static async planKnowledge(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['knowledgeBase']> {
     const meta = spec.meta || {} as any;
     const snap = spec.businessSnapshot || {} as any;
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
-    const capturedText = JSON.stringify(spec.capturedTopics || []) + JSON.stringify(spec.resolvedTopics || []);
-    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || /hindi|hinglish/i.test(capturedText);
+    // Primary output language follows the declared mode only (a multilingual/English
+    // agent generates English FAQs and switches to Hindi live).
+    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
 
     const fallbackKB = isHindiOrHinglish ? {
       faqs: [
@@ -93,7 +95,7 @@ Return a JSON object with:
         }))
       };
     } catch (err) {
-      console.warn("KnowledgeArchitect fallback triggered:", err);
+      logger.warn("KnowledgeArchitect fallback triggered", err);
       return fallbackKB;
     }
   }

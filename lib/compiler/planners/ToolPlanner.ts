@@ -1,6 +1,7 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 import { safeParseJson } from "@/lib/llm/types";
+import { logger } from "@/lib/logger";
 
 const SYSTEM_RUNTIME_TOOLS = [
   {
@@ -121,7 +122,7 @@ Return a JSON array of tool objects with:
 
       return [...immutableSystemTools, ...domainTools];
     } catch (err) {
-      console.warn("ToolPlanner fallback triggered:", err);
+      logger.warn("ToolPlanner fallback triggered", err);
       return [...immutableSystemTools, ...fallbackTools];
     }
   }

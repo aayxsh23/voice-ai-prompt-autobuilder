@@ -23,3 +23,18 @@ export function resolveSlotDigitSpec(slotName: string): { expectedDigits: number
   if (!match) return null;
   return { expectedDigits: match.expectedDigits, mode: match.mode };
 }
+
+/**
+ * A "derived" slot is a post-call classification/extraction the agent determines
+ * BY ANALYZING the conversation (e.g. objection_type, intent_category,
+ * eligibility_status, detected_language, opt_out_confirmed) — it must NEVER become
+ * a "please tell me your <slot>" question to the caller. Contrast with collected
+ * slots the caller genuinely states (name, phone, appointment_date/time, address).
+ */
+export function isDerivedSlot(slotName: string): boolean {
+  if (!slotName) return false;
+  return (
+    /(^|_)(intent|classification|category|disposition|status|eligibility|sentiment|outcome|type|flag)($|_)/i.test(slotName) ||
+    /(objection_type|opt_out|detected_language|flag_status|is_[a-z])/i.test(slotName)
+  );
+}
