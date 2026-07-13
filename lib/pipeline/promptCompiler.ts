@@ -1,38 +1,60 @@
-import { PromptAssembler, assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
+import { assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
 import { getLlmClient } from "../llm/llmClient";
-import { BlueprintJson, PromptPackageDraft, SchemaOverrides, BusinessSpecification } from "../llm/types";
+import {
+  BlueprintJson,
+  PromptPackageDraft,
+  SchemaOverrides,
+  BusinessSpecification,
+  BusinessSnapshot,
+  CallMission,
+  DynamicVariableSpec,
+} from "../llm/types";
+import type { PromptRule } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
+import { cached } from "@/lib/cache";
+import { logger } from "@/lib/logger";
 import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
 import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
 import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
 import { validateFlowCompleteness } from "@/lib/pipeline/validators/FlowCompletenessValidator";
+import { validatePromptBudget } from "@/lib/pipeline/validators/PromptBudgetValidator";
+import { validateLanguageQuality } from "@/lib/pipeline/validators/LanguageQualityValidator";
+import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
 import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
 import { ToolPlanner } from "../compiler/planners/ToolPlanner";
 
-export async function executePromptCompilationPipeline(extractedIR: any, draft?: Partial<PromptPackageDraft>): Promise<string> {
-  const assembler = new PromptAssembler();
-  const completedPromptString = assembler.assemble(extractedIR, draft);
+/**
+ * Bounded LLM repair pass for Devanagari deployments: rewrites ONLY romanized
+ * Hindi into Devanagari and fixes agent verb-gender, leaving structure, headers,
+ * placeholders, and English terms untouched. Caller decides whether to accept
+ * the result (see the "accept only if better" guard in compilePromptPackage).
+ */
+async function repairPromptLanguage(prompt: string, agentGender: string): Promise<string> {
+  const llm = getLlmClient();
+  if (!llm.generateRaw) return prompt;
+  const repairPrompt = `You are correcting a voice-agent system prompt for a Hindi/Hinglish deployment.
+Fix ONLY these two issues, changing nothing else:
+1. Any Hindi written in Roman/Latin letters -> rewrite it in Devanagari (देवनागरी). Keep genuine English domain terms (software, demo, email, WhatsApp, coach, etc.) in Latin script.
+2. Make the agent's own verb inflections agree with the agent's gender: ${agentGender} (${agentGender === 'male' ? 'masculine, e.g. कर रहा हूँ / कर सकता हूँ' : 'feminine, e.g. कर रही हूँ / कर सकती हूँ'}).
+Do NOT change section headers (lines starting with ###), placeholders ({{...}} or [ ... ]), overall structure, English sentences, or meaning.
+Return ONLY the full corrected prompt text, starting directly with the first section header.
 
-  const varValidation = validateVariableConsistency(completedPromptString, draft?.dynamicVariables || []);
-  const fallbackValidation = validateFallbackDialogue(completedPromptString);
-  const coherenceValidation = validateCoherence(completedPromptString, draft, extractedIR);
-  const flowValidation = validateFlowCompleteness(extractedIR?.businessSpec || extractedIR || {}, draft?.callFlowSteps || extractedIR?.callFlowPlan?.steps || []);
-
-  const allErrors = [
-    ...varValidation.errors,
-    ...fallbackValidation.errors,
-    ...coherenceValidation.errors,
-    ...flowValidation.errors
-  ];
-
-  if (allErrors.length > 0) {
-    throw new PromptCompilationError(`Prompt validation failed:\n${allErrors.join("\n")}`);
-  }
-
-  return completedPromptString;
+${prompt}`;
+  const out = await llm.generateRaw(repairPrompt, 0.1);
+  return (out || '').trim() || prompt;
 }
+
+/**
+ * Input accepted by the compiler. It is a (partial) blueprint plus a few fields
+ * that arrive from the builder/CRM path but aren't part of the base blueprint.
+ */
+type CompileInput = Partial<BlueprintJson> & {
+  businessSpec?: BusinessSpecification;
+  dynamicVariables?: DynamicVariableSpec[];
+  extractedIR?: Record<string, unknown>;
+  overrides?: SchemaOverrides & { dynamicVariables?: DynamicVariableSpec[] };
+};
 
 function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrides): PromptPackageDraft {
   if (!overrides) return draft;
@@ -50,7 +72,7 @@ function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrid
   };
 }
 
-function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: any): any[] {
+function filterRelevantRules(rules: PromptRule[], spec: BusinessSpecification, draft: PromptPackageDraft): PromptRule[] {
   const contextObj = {
     meta: spec?.meta,
     snapshot: spec?.businessSnapshot,
@@ -60,7 +82,7 @@ function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: a
     draftFlow: draft?.callFlowSteps,
     draftFaqs: draft?.faqCards,
     draftObjs: draft?.objectionCards,
-    useCase: draft?.useCase || spec?.meta?.primaryGoal
+    useCase: (draft as { useCase?: string })?.useCase || spec?.meta?.primaryGoal
   };
   // Exclude structural keys like "faqCards" or "faq_topic" from raw text matching
   const contentOnlyText = JSON.stringify(contextObj).replace(/"(?:faqCards|faq_topic|faqs)":/g, '').toLowerCase();
@@ -125,14 +147,15 @@ function filterRelevantRules(rules: any[], spec: BusinessSpecification, draft: a
   });
 }
 
-export async function compilePromptPackage(input: BlueprintJson | any): Promise<PromptPackageDraft | any> {
+export async function compilePromptPackage(input: CompileInput): Promise<PromptPackageDraft> {
   let spec: BusinessSpecification;
 
   if (input.businessSpec && input.businessSpec.meta) {
-    spec = input.businessSpec;
+    // Deep-clone so we never mutate the caller's input object in place.
+    spec = structuredClone(input.businessSpec);
   } else {
-    const biz = input.business || {};
-    const mission = input.mission || {};
+    const biz = (input.business || {}) as BusinessSnapshot & { agentName?: string };
+    const mission = (input.mission || {}) as CallMission;
     const tone = input.personality?.tone ? [input.personality.tone] : ["Professional", "Helpful"];
     spec = {
       meta: {
@@ -159,25 +182,35 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
     };
   }
 
-  // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and missing Devanagari)
-  const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish' || /hindi|hinglish/i.test(JSON.stringify(spec.capturedTopics || []));
-  if (spec.callFlowPlan.steps.length === 0 || (isHindiMode && !spec.callFlowPlan.steps.some((s: any) => /[\u0900-\u097F]/.test(s.scriptDirective || '')))) {
-    spec.callFlowPlan.steps = await WorkflowArchitect.planWorkflow(spec);
-  }
-  if (spec.knowledgeBase.faqs.length === 0 || (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)))) {
-    spec.knowledgeBase = await KnowledgeArchitect.planKnowledge(spec);
-  }
+  // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and
+  // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
+  const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
+  const needWorkflow = spec.callFlowPlan.steps.length === 0 ||
+    (isHindiMode && !spec.callFlowPlan.steps.some((s: any) => /[\u0900-\u097F]/.test(s.scriptDirective || '')));
+  const needKnowledge = spec.knowledgeBase.faqs.length === 0 ||
+    (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)));
+
+  // WorkflowArchitect and KnowledgeArchitect are independent (Knowledge reads
+  // meta/snapshot/topics, not the call-flow steps), so run them concurrently.
+  const [plannedSteps, plannedKb] = await Promise.all([
+    needWorkflow ? WorkflowArchitect.planWorkflow(spec) : Promise.resolve(spec.callFlowPlan.steps),
+    needKnowledge ? KnowledgeArchitect.planKnowledge(spec) : Promise.resolve(spec.knowledgeBase),
+  ]);
+  spec.callFlowPlan.steps = plannedSteps;
+  spec.knowledgeBase = plannedKb;
+
+  // ToolPlanner consumes the finalized call-flow steps, so it must run afterwards.
   if (spec.tools.length === 0) {
     spec.tools = await ToolPlanner.planTools(spec);
   }
 
   const llm = getLlmClient();
-  let draft: any = input.extractedIR ? { ...input.extractedIR } : await llm.generateReviewDraft(input);
-  console.log("[compilePromptPackage] CoT draft returned:", {
-    primaryGoal: draft?.primaryGoal,
+  let draft: PromptPackageDraft = input.extractedIR
+    ? ({ ...input.extractedIR } as unknown as PromptPackageDraft)
+    : await llm.generateReviewDraft(input as BlueprintJson);
+  logger.debug("compilePromptPackage: CoT draft returned", {
     faqsCount: draft?.faqCards?.length,
     objectionsCount: draft?.objectionCards?.length,
-    guardrails: draft?.guardrails
   });
   draft = mergeUserOverrides(draft, input.overrides);
   draft.businessSpec = spec;
@@ -193,7 +226,7 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
   const userSpecifiedInfields = new Set<string>(
     [
       ...(Array.isArray(input.dynamicVariables) ? input.dynamicVariables : []),
-      ...(Array.isArray((spec as any).dynamicVariables) ? (spec as any).dynamicVariables : []),
+      ...(Array.isArray(spec.dynamicVariables) ? spec.dynamicVariables : []),
       ...(Array.isArray(input.overrides?.dynamicVariables) ? input.overrides.dynamicVariables : [])
     ]
       .filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'))
@@ -236,15 +269,40 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
   });
 
   try {
-    const dbRules = await prisma.promptRule.findMany({ where: { isDefault: true } });
+    // Default rules rarely change; cache them so we don't hit the DB on every compile.
+    const dbRules = await cached('default_prompt_rules', 5 * 60_000, () =>
+      prisma.promptRule.findMany({ where: { isDefault: true } }));
     draft.appliedRules = filterRelevantRules(dbRules, spec, draft);
   } catch (err) {
-    console.warn("[compilePromptPackage] Could not fetch default PromptRules:", err);
+    logger.warn("compilePromptPackage: could not fetch default PromptRules", err);
     draft.appliedRules = draft.appliedRules || [];
   }
 
-  const finalPrompt = assembleUnifiedPrompt(spec, draft);
+  let finalPrompt = assembleUnifiedPrompt(spec, draft);
+
+  // Validate -> repair loop (language quality): in a Devanagari deployment, fix
+  // romanized-Hindi leaks and agent verb-gender mismatches via a bounded, guarded
+  // LLM pass. The rewrite is accepted ONLY if it strictly reduces warnings and
+  // preserves length, so a misbehaving model can never damage the prompt.
+  const policy = resolveLanguagePolicy(spec, draft);
+  let langQuality = validateLanguageQuality(finalPrompt, policy);
+  if (policy.script === 'devanagari' && langQuality.warnings && langQuality.warnings.length > 0) {
+    try {
+      const repaired = await repairPromptLanguage(finalPrompt, policy.agentGender);
+      const repairedQuality = validateLanguageQuality(repaired, policy);
+      if (
+        repaired.trim().length >= finalPrompt.length * 0.7 &&
+        (repairedQuality.warnings?.length ?? 0) < (langQuality.warnings?.length ?? 0)
+      ) {
+        finalPrompt = repaired;
+        langQuality = repairedQuality;
+      }
+    } catch (err) {
+      logger.warn("compilePromptPackage: language repair pass failed", err);
+    }
+  }
   draft.finalPrompt = finalPrompt;
+  draft.languageQualityScore = langQuality.score;
 
   const varValidation = validateVariableConsistency(finalPrompt, draft?.dynamicVariables || []);
   const fallbackValidation = validateFallbackDialogue(finalPrompt);
@@ -282,8 +340,13 @@ export async function compilePromptPackage(input: BlueprintJson | any): Promise<
     validationErrors.push(`Suspiciously short prompt generated (${finalPrompt.length} chars) relative to ${totalItems} operational items.`);
   }
 
+  // Non-blocking token-budget check: flags a token-heavy prompt without failing it.
+  const budget = validatePromptBudget(finalPrompt);
+  draft.estimatedTokens = budget.score;
+
   draft.validationStatus = validationErrors.length > 0 ? 'warning' : 'success';
   draft.validationErrors = validationErrors;
+  draft.validationWarnings = [...(draft.validationWarnings || []), ...(budget.warnings || []), ...(langQuality.warnings || [])];
   draft.requiresHumanReview = validationErrors.length > 0;
 
   return draft;

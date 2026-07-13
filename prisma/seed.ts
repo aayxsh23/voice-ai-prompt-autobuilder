@@ -4,8 +4,9 @@ const prisma = new PrismaClient();
 
 async function main() {
   console.log('Resetting / clearing existing data...');
-  await prisma.projectRule?.deleteMany().catch(() => {});
-  await prisma.promptRule?.deleteMany().catch(() => {});
+  // These two models may not exist yet on a brand-new database; ignore is intentional.
+  await prisma.projectRule?.deleteMany().catch(() => { /* table not present on first run */ });
+  await prisma.promptRule?.deleteMany().catch(() => { /* table not present on first run */ });
   await prisma.promptQualityIssue.deleteMany();
   await prisma.testScenario.deleteMany();
   await prisma.promptVersion.deleteMany();
