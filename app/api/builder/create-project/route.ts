@@ -1,17 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { apiHandler } from '@/lib/apiHandler';
+import { getCurrentUser } from '@/lib/auth';
 
-export async function POST(req: Request) {
-  try {
+export const POST = apiHandler(async (req: Request) => {
     const body = await req.json();
     const { sessionId, draft, blueprint } = body;
 
-    let user = await prisma.user.findFirst();
-    if (!user) {
-      user = await prisma.user.create({
-        data: { id: 'default-user-id', name: 'Alex Rivera', email: 'alex@example.com' }
-      });
-    }
+    const user = await getCurrentUser();
 
     const bizName = blueprint?.business?.businessName || "New Prompt Project";
     const agentName = blueprint?.personality?.phrasesToUse?.[0] || "Sarah";
@@ -99,11 +95,8 @@ export async function POST(req: Request) {
       await prisma.builderSession.update({
         where: { id: sessionId },
         data: { generatedProjectId: project.id }
-      }).catch(() => {});
+      }).catch((e) => console.warn('[create-project] failed to link session to project:', e));
     }
 
     return NextResponse.json(project);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+});

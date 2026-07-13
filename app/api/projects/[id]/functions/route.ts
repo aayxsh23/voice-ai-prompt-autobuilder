@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { apiHandler, ApiError } from '@/lib/apiHandler';
+import { assertProjectOwner } from '@/lib/auth';
 
 function getSystemPresetFunctions(projectId: string) {
   return [
@@ -42,42 +44,36 @@ function getSystemPresetFunctions(projectId: string) {
   ];
 }
 
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const fns = await prisma.suggestedFunction.findMany({ where: { projectId: id } });
-    const presets = getSystemPresetFunctions(id);
-    const combined = [
-      ...presets,
-      ...fns.filter(f => !presets.some(p => p.name === f.name))
-    ];
-    return NextResponse.json(combined);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
+export const GET = apiHandler(async (_req: Request, { params }: { params: Promise<{ id: string }> }) => {
+  const { id } = await params;
+  await assertProjectOwner(id);
+  const fns = await prisma.suggestedFunction.findMany({ where: { projectId: id } });
+  const presets = getSystemPresetFunctions(id);
+  const combined = [
+    ...presets,
+    ...fns.filter(f => !presets.some(p => p.name === f.name))
+  ];
+  return NextResponse.json(combined);
+});
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params;
-    const body = await req.json();
-    if (["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma"].includes(body.name)) {
-      return NextResponse.json({ error: "System runtime tools are protected presets and cannot be created as database rows." }, { status: 400 });
-    }
-    const created = await prisma.suggestedFunction.create({
-      data: {
-        projectId: id,
-        name: body.name,
-        category: body.category || "Tool",
-        description: body.description || "",
-        purposeInPrompt: body.purposeInPrompt || "",
-        requiredInputsJson: typeof body.requiredInputs === 'string' ? body.requiredInputs : JSON.stringify(body.requiredInputs || []),
-        expectedOutputsJson: typeof body.expectedOutputs === 'string' ? body.expectedOutputs : JSON.stringify(body.expectedOutputs || []),
-        enabled: body.enabled !== false
-      }
-    });
-    return NextResponse.json(created);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+export const POST = apiHandler(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
+  const { id } = await params;
+  await assertProjectOwner(id);
+  const body = await req.json();
+  if (["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma"].includes(body.name)) {
+    throw new ApiError(400, "System runtime tools are protected presets and cannot be created as database rows.");
   }
-}
+  const created = await prisma.suggestedFunction.create({
+    data: {
+      projectId: id,
+      name: body.name,
+      category: body.category || "Tool",
+      description: body.description || "",
+      purposeInPrompt: body.purposeInPrompt || "",
+      requiredInputsJson: typeof body.requiredInputs === 'string' ? body.requiredInputs : JSON.stringify(body.requiredInputs || []),
+      expectedOutputsJson: typeof body.expectedOutputs === 'string' ? body.expectedOutputs : JSON.stringify(body.expectedOutputs || []),
+      enabled: body.enabled !== false
+    }
+  });
+  return NextResponse.json(created);
+});

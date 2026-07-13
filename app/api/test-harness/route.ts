@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { MultiDomainTestHarness } from '@/lib/testing/MultiDomainTestHarness';
+import { apiHandler, ApiError } from '@/lib/apiHandler';
+import { rateLimit, clientKey } from '@/lib/rateLimit';
 
-export async function GET() {
-  try {
-    const harness = new MultiDomainTestHarness();
-    const summary = await harness.runAllScenarios();
-    return NextResponse.json(summary);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Failed to run test harness" }, { status: 500 });
+export const GET = apiHandler(async (req: Request) => {
+  // Runs the full compile pipeline across every canonical scenario (many LLM
+  // calls) — rate-limit tightly.
+  if (!rateLimit(`test-harness:${clientKey(req)}`, 2, 60_000)) {
+    throw new ApiError(429, 'Too many requests. Please wait a moment and try again.');
   }
-}
+  const harness = new MultiDomainTestHarness();
+  const summary = await harness.runAllScenarios();
+  return NextResponse.json(summary);
+});

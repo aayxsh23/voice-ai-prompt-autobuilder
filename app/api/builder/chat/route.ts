@@ -5,6 +5,8 @@ import { prisma } from '@/lib/db';
 import { llmClient as geminiClient } from '@/lib/llm/qwenProvider';
 import { safeParseJson, BusinessSpecification } from '@/lib/llm/types';
 import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
+import { rateLimit, clientKey } from '@/lib/rateLimit';
+import { detectAiDisclosure, detectAgentGender } from '@/lib/llm/language/personaExtract';
 
 function dedupeBy<T>(arr: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>();
@@ -22,6 +24,9 @@ function dedupeBy<T>(arr: T[], keyFn: (item: T) => string): T[] {
 
 export async function POST(req: Request) {
   try {
+    if (!rateLimit(`builder-chat:${clientKey(req)}`, 30, 60_000)) {
+      return NextResponse.json({ error: 'Too many requests. Please slow down.' }, { status: 429 });
+    }
     const body = await req.json();
     const { messages, currentBlueprint, sessionId, languageMode } = body;
 
@@ -194,6 +199,17 @@ Ensure you return valid JSON with no markdown fences.`;
     if (!updatedSpec.meta) updatedSpec.meta = {} as any;
     if (languageMode) updatedSpec.meta!.languageMode = languageMode;
 
+    // Deterministically capture persona prefs the JSON-patch extraction misses:
+    // whether the agent must NOT reveal it's an AI, and the agent's gender.
+    const allUserText = messages
+      .filter((m: { role: string; content: string }) => m.role.toLowerCase() === 'user')
+      .map((m: { content: string }) => m.content)
+      .join(' ');
+    const disclosurePref = detectAiDisclosure(allUserText);
+    if (disclosurePref) updatedSpec.meta!.aiDisclosure = disclosurePref;
+    const genderPref = detectAgentGender(allUserText);
+    if (genderPref) updatedSpec.meta!.agentGender = genderPref;
+
     const coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
     const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, languageMode);
 
@@ -230,7 +246,7 @@ Ensure you return valid JSON with no markdown fences.`;
     return NextResponse.json(result);
   } catch (error: unknown) {
     console.error('Error in /api/builder/chat:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Failed to process chat turn';
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    // Do not leak internal error details to the client.
+    return NextResponse.json({ error: 'Failed to process chat turn' }, { status: 500 });
   }
 }
