@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder values so build/import-time code has what it expects.
+      # No real secrets are needed for lint/typecheck/test.
+      DATABASE_URL: mongodb://localhost:27017/ci
+      QWEN_BASE_URL_FOR_LLM: http://localhost:8000/v1
+      QWEN_API_KEY: EMPTY
+      QWEN_MODEL: Qwen/Qwen3.6-35B-A3B-FP8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Non-blocking for now: the codebase carries pre-existing lint debt
+      # (React-compiler rules, `any`) scheduled for later cleanup. Lint still runs
+      # and surfaces issues; flip to a hard gate once the debt is cleared.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build

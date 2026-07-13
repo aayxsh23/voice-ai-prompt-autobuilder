@@ -1,224 +1,88 @@
-# Voice Agent Prompt Builder & Studio
+# Voice Agent Prompt Builder
 
-An enterprise-grade full-stack web application engineered to **architect, compile, audit, improve, benchmark, simulate, and version-control** human-grade prompt packages for AI telephony voice agents.
+A full-stack app that compiles a short discovery conversation into a **production-ready system prompt** for an AI telephony voice agent (English / Hindi / Hinglish). It generates the prompt package — it does **not** place calls or run STT/TTS. Export the output into your telephony runner (Bland, Retell, Vapi, or generic).
 
----
+## Stack
 
-## 🚫 Critical Product Scope Notice
+- **Next.js 16** (App Router, Route Handlers) + **React 19**
+- **MongoDB** via **Prisma 6**
+- **Qwen** LLM through an **OpenAI-compatible** endpoint (vLLM / Ollama / hosted)
+- **Tailwind 4**, `react-hook-form` + `zod`
+- **Vitest** for tests
 
-**This is NOT a telephony calling orchestration platform.** 
+## How it works
 
-- **No live telecom integration**: Does not connect directly to Twilio, Vapi, Retell, Bland AI, LiveKit, Plivo, or Telnyx VoIP SIP trunks.
-- **No phone number purchasing**: Does not search, buy, or route PSTN/DID phone numbers.
-- **No live audio streaming**: Does not run real-time WebRTC audio streaming, Speech-to-Text (STT), or Text-to-Speech (TTS) inference pipelines.
-
-### What This Product Does
-**This platform builds production-ready Prompt Packages.** Its sole mandate is to eliminate prompt engineering guesswork by generating high-reliability conversational intelligence bundles ready to be exported into your downstream telephony orchestration layer:
-*   **Agent Blueprint (`agent_prompt.md`)**: Exhaustive system instructions with strict slot collection sequences, objection handling rubrics, and verbal readback rules.
-*   **System Prompt (`system_prompt.md`)**: High-level behavioral guardrails and persona framing.
-*   **Dynamic Runtime Variables**: Injection token definitions (`{{caller_name}}`, `{{account_balance}}`) mapped to CRM payloads.
-*   **Suggested Tool Schemas**: Verbal function specifications (`lookup_booking()`, `transfer_specialist()`).
-*   **Knowledge Base & FAQ Wording Cards**: Exact speakable answers anchored to company policies.
-*   **Stress-Test Scenarios**: Automated QA benchmarks against challenging caller attitudes.
-
----
-
-## 🎨 Design Philosophy — Linear Midnight Command Deck
-
-The user interface follows a strict **Linear-inspired instrument panel aesthetic** engineered for high data density and zero cognitive noise:
-*   **Obsidian Canvas**: Ultra-dark monochrome foundation (`#08090a` canvas background, `#0f1011` nav/toolbars, `#161718` elevated cards).
-*   **Rationed Accent**: No decorative gradients. A singular vibrant **Acid Lime (`#e4f222`)** accent is rationed to exactly one primary action or active indicator per screen.
-*   **Engineering-Native Typography**: **Inter Variable** for compact UI controls and table density; **JetBrains Mono** for code editors, variable tokens, identifiers, and JSON schemas.
-*   **Quiet Surfaces**: Micro-animations are strictly functional. Loading states use static status readouts instead of distracting spinners.
-
----
-
-## 🏗️ Core Architecture & Workflow
-
-The application operates as a multi-stage compilation pipeline:
-
-```text
-┌────────────────────────┐      ┌─────────────────────────┐      ┌────────────────────────┐
-│ 1. 15 Starter Schemas  │ ───> │ 2. AI Chatbot Architect │ ───> │ 3. Automated Gap Audit │
-│    (Medical, SaaS, etc)│      │    (Conversational Spec)│      │    (Safety & Logic Scan)│
-└────────────────────────┘      └─────────────────────────┘      └────────────────────────┘
-                                                                             │
-                                                                             ▼
-┌────────────────────────┐      ┌─────────────────────────┐      ┌────────────────────────┐
-│ 6. Studio Workspace    │ <─── │ 5. Self-Critique Loop   │ <─── │ 4. Blueprint Draft Gen │
-│    (Simulate, KB, Radar│      │    (LLM Refinement Pass)│      │    (Markdown Assembly)  │
-└────────────────────────┘      └─────────────────────────┘      └────────────────────────┘
+```
+Builder chat ──► /api/builder/chat ──► CoverageArchitect (discovery gap checks)
+                                          │  extracts a BusinessSpecification patch (LLM)
+                                          ▼
+          /api/builder/generate-review ──► compilePromptPackage()   [lib/pipeline/promptCompiler.ts]
+                 1. WorkflowArchitect  → call-flow state machine   (LLM)
+                 2. KnowledgeArchitect → FAQs / objections         (LLM)
+                 3. ToolPlanner        → tool schemas              (LLM)
+                 4. QwenProvider.generateWithCoT → structured draft (LLM)
+                 5. filterRelevantRules → default guardrail rules   (DB)
+                 6. assembleUnifiedPrompt → deterministic markdown assembly
+                 7. validators → variable / fallback / coherence / flow checks
+                                          ▼
+        /api/builder/create-project ──► MongoDB ──► Studio (/project/[id]): edit, simulate, version, publish
 ```
 
-1.  **Template Selection**: Start from 15 pre-configured industry templates (Healthcare Receptionist, Real Estate Lead Qual, Restaurant Reservation, SaaS Demo Booker, Automotive Service Advisor, Insurance Claims, etc.).
-2.  **Interactive Wizard**: Walk through 7 focused design steps defining Business Snapshot, Call Mission, Conversation Flow, Voice Personality, and Readback Rules.
-3.  **Automated Gap Audit**: The engine scans your draft for acute operational vulnerabilities (e.g. missing business hours, undefined emergency transfer numbers, lack of explicit confirmation readbacks).
-4.  **Self-Critique Improvement Loop**: The AI compiler reviews the draft against telephony acoustic constraints and autonomously rewrites complex sentences into clean, speakable phrasing.
-5.  **Project Studio**: A dual-pane workspace where prompt engineers fine-tune markdown files, run live voice-turn chat simulations, inspect multi-dimensional quality scores, and manage Git-like version history.
+## Project layout
 
----
+```
+app/
+  api/                     Route handlers (builder/*, projects/*)
+  builder/[sessionId]/     Conversational builder UI
+  project/[projectId]/     Studio workspace
+components/                UI, dashboard, project panels, settings
+lib/
+  config.ts                Validated runtime config (Qwen endpoint + model)
+  db.ts                    Prisma client singleton
+  llm/                     Qwen provider, shared types, CallFlowPlan
+  compiler/
+    blueprint/             Extractors + CoverageArchitect
+    planners/              Workflow / Knowledge / Tool architects
+    assembler/             PromptAssembler (deterministic prompt builder)
+    constants/, adapters/
+  pipeline/                promptCompiler orchestrator + validators
+  testing/                 MultiDomainTestHarness (compile smoke test)
+prisma/                    schema.prisma (MongoDB) + seed.ts (default guardrail rules)
+```
 
-## 📊 Quality Radar & Performance Metrics (Calculation Methodology)
+## Getting started
 
-Every prompt package is evaluated across **10 production readiness metrics** (scored 0–100%). These metrics are calculated via deterministic rule-based heuristic audits combined with semantic LLM inspection passes:
+Requires **Node 20+** and a running **MongoDB** and **Qwen** (OpenAI-compatible) endpoint.
 
-### 1. Overall Quality Score (Weighted Composite)
-An aggregate score aggregating all sub-metrics. A prompt package scoring `< 85%` is flagged with yellow warnings; `< 70%` triggers severe red alerts preventing production deployment.
-
-### 2. Safety Score (Weight: 20%)
-*   **How it is calculated**: Scans for mandatory guardrails including explicit AI identity disclosure rules (*"I am an AI assistant on a recorded line"*), strict PII redaction rules (SSN/credit card verbal masking), and acute medical/legal emergency halts (*"If caller reports severe bleeding or chest pain, instruct to hang up and dial 911 immediately"*).
-
-### 3. Hallucination Resistance Score (Weight: 15%)
-*   **How it is calculated**: Audits prompt instructions for explicit null-fallback rules. Verifies that the prompt instructs the agent to say *"I don't have that information in my system, let me have a specialist verify that"* rather than guessing unknown dates, pricing tiers, or inventory availability.
-
-### 4. Edge Case Readiness Score (Weight: 15%)
-*   **How it is calculated**: Checks whether the prompt defines explicit behavioral branches for hostile or difficult acoustic conditions:
-    *   `angry caller`: Mandatory de-escalation tone and expedited human handoff.
-    *   `indistinct speech / background noise`: Phrasing to gracefully ask the caller to repeat.
-    *   `price-sensitive caller`: Rules to pivot to value propositions or payment plans.
-
-### 5. Voice Style & Cadence Score (Weight: 15%)
-*   **How it is calculated**: Evaluates acoustic compatibility for TTS engines:
-    *   **No Markdown in Speech**: Deducts points if prompt phrasing contains bullet points, bolding asterisks, or numbered lists that TTS synthetics vocalize awkwardly.
-    *   **One Question per Turn Rule**: Flags compound inquiries (*"What is your name and what day works best for you?"*) which cause caller confusion and STT clipping.
-    *   **Sentence Length**: Penalizes run-on sentences exceeding 25 words.
-
-### 6. Structure & Slot Sequence Score (Weight: 15%)
-*   **How it is calculated**: Validates deterministic state progression. Ensures required data parameters (`name`, `phone`, `appointment_date`) are collected in a logical step-by-step sequence rather than arbitrary jumps.
-
-### 7. Minimum Manual Edit Score (Weight: 10%)
-*   **How it is calculated**: A human-grade efficiency metric estimating how close the generated prompt is to zero-touch production readiness. Calculated by checking completeness of placeholder tokens against supplied business parameters.
-
-### 8. Completion Score (Weight: 10%)
-*   **How it is calculated**: Measures whether all mandatory telephony lifecycle phases (Spoken Greeting -> Intent Routing -> Slot Collection -> Readback Verification -> Webhook Action -> Spoken Sign-off) are fully populated.
-
----
-
-## 🤖 LLM Engine & Google GenAI SDK
-
-The studio is powered by a production-grade LLM service layer (`lib/llm/`) utilizing the official `@google/genai` SDK:
-
-*   **SDK**: Uses the official `@google/genai` Node.js SDK.
-*   **Gemini 3.1 Flash-Lite**: The application is optimized to use **`gemini-3.1-flash-lite`** (`GEMINI_MODEL="gemini-3.1-flash-lite"`). This model provides ultra-fast structured JSON generation, automated schema repairs, low-latency Chain-of-Thought reasoning, and deterministic prompt compilation.
-
----
-
-## 🚀 Getting Started Locally (Exhaustive Guide)
-
-### Prerequisites
-*   **Node.js**: v18.17.0 or higher (v20+ recommended).
-*   **Operating System**: Windows (PowerShell), macOS, or Linux.
-
-### Step 1: Clone & Install Dependencies
-
-```powershell
-git clone https://github.com/your-username/voice-agent-prompt-builder.git
-cd voice-agent-prompt-builder
+```bash
 npm install
+cp .env.example .env      # then fill in the values below
+npx prisma generate
+npx prisma db push        # sync schema to MongoDB
+npm run prisma:seed       # seed default guardrail / speakability rules
+npm run dev               # http://localhost:3000
 ```
 
-### Step 2: Configure Environment Variables
-
-Create your local environment file by copying the template:
-
-```powershell
-cp .env.example .env
-```
-
-Open `.env` in any text editor and verify the following required fields:
+### Environment (`.env`)
 
 ```env
-# 1. Local SQLite Database
-DATABASE_URL="file:./dev.db"
-
-# 2. Gemini API Key (Get one from https://aistudio.google.com/)
-GEMINI_API_KEY="AIzaSy...your_api_key_here..."
-
-# 3. Mandatory API Model Identifier
-GEMINI_MODEL="gemini-3.1-flash-lite"
+DATABASE_URL="mongodb://localhost:27017/autoprompt"
+QWEN_BASE_URL_FOR_LLM="http://localhost:8000/v1"
+QWEN_API_KEY="EMPTY"
+QWEN_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
 ```
 
-> [!IMPORTANT]
-> **Windows PowerShell Execution Policy Note**: If you encounter a red `PSSecurityException` error running `npx` or `npm` commands on Windows stating that *running scripts is disabled on this system*, run tools using explicit `.cmd` executables (e.g. `npx.cmd prisma db push` or `npm.cmd run dev`), or bypass the policy for your terminal session:
-> ```powershell
-> Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-> ```
+All LLM configuration is read and validated once in [`lib/config.ts`](lib/config.ts).
 
-### Step 3: Initialize & Seed SQLite Database
+## Scripts
 
-Sync the Prisma ORM schema to create your local `dev.db` SQLite file, then populate it with demo projects (Healthcare Clinic, Real Estate Lead Qual, Restaurant Reservation, SaaS Demo Booker):
+| Script | Purpose |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js dev / production build / serve |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Vitest (unit). Set `RUN_LLM_TESTS=1` to include the live compile smoke test |
+| `npm run prisma:seed` | Seed default rules |
+| `npm run db:reset` | Push schema (data loss) + reseed |
 
-```powershell
-npx.cmd prisma db push
-npm.cmd run prisma:seed
-```
-
-### Step 4: Launch Development Server
-
-```powershell
-npm.cmd run dev
-```
-
-The Turbopack compiler will start in `< 500ms`. Open your web browser and navigate to:
-**`http://localhost:3000`**
-
----
-
-## 📂 Exhaustive Codebase & File Map
-
-```text
-├── app/
-│   ├── layout.tsx                 # Global shell, Google font injection (Inter + JetBrains Mono)
-│   ├── globals.css                # Linear dark color palette variables & base typography
-│   ├── page.tsx                   # Obsidian landing page hero with CTA to studio
-│   ├── dashboard/page.tsx         # Projects hub displaying saved workspace cards
-│   ├── builder/                   # AI Chatbot Builder root view
-│   │   ├── page.tsx               # Session creation loader
-│   │   └── [sessionId]/page.tsx   # Interactive conversational architect & preview interface
-│   ├── project/[projectId]/page.tsx # Main Studio Workspace split view
-│   └── api/                       # Next.js Server REST Route Handlers
-│       ├── builder/               # Chatbot session endpoints (chat turns, generate draft, create project)
-│       └── projects/              # Studio CRUD endpoints (simulate turns, evaluate radar, publish)
-├── components/
-│   ├── ui/index.tsx               # Design system primitives (Button, Input, Textarea, Card, Badge)
-│   ├── layout/Navbar.tsx          # Minimal top header bar
-│   ├── dashboard/                 # Dashboard project cards
-│   ├── project/                   # Studio Workspace panels
-│   │   ├── PromptSettingsSidebar  # Left navigation bar & publish toggle
-│   │   ├── AgentPromptEditor      # Code editor for agent_prompt.md
-│   │   ├── SystemPromptEditor     # Code editor for system_prompt.md
-│   │   ├── QualityScoreCard       # Multi-dimensional Quality Radar metrics breakdown
-│   │   ├── TestPromptSimulator    # Live interactive voice-turn text simulator
-│   │   ├── DynamicVariablesTable  # Runtime token manager table
-│   │   ├── SuggestedFunctions     # Tool verbalization specifications
-│   │   ├── KnowledgeBaseNotes     # FAQ wording card manager
-│   │   ├── TestScenariosPanel     # Automated stress-test persona list
-│   │   └── VersionHistoryPanel    # One-click rollback snapshot list
-│   └── settings/                  # Studio sub-panels (VoiceStyle, Rules, Guardrails, Webhook)
-├── lib/
-│   ├── compiler/                  # Enterprise Voice AI Multi-Compiler Pipeline
-│   │   ├── ir/                    # Intermediate Representation (VoiceAgentIR)
-│   │   ├── blueprint/             # Micro-Extractors (Business, Intent, Entity)
-│   │   ├── validators/            # Programmatic Guards (State, Tool)
-│   │   ├── compilers/             # Micro-Compilers (StateMachine, Voice, Tool, Safety)
-│   │   └── assembler/             # Assembly & Optimization (PromptAssembler, PromptOptimizer)
-│   ├── llm/                       # Lean GenAI Execution Node
-│   │   ├── geminiProvider.ts      # Fail-fast Google GenAI client (temperature 0.1)
-│   │   ├── llmClient.ts           # Client factory
-│   │   └── types.ts               # Shared TypeScript schemas & interfaces
-│   └── pipeline/                  # Master Orchestrator
-│       └── promptCompiler.ts      # Pipeline execution engine
-└── prisma/
-    ├── schema.prisma              # Prisma SQLite Database Models (PromptProject, Version, etc)
-    └── seed.ts                    # Demo database seeder script
-```
-
----
-
-## 🛡️ Telephony Engineering Best Practices Enforced
-
-When exporting blueprints from this studio into Voice AI runners (Vapi, Bland, Retell), your compiled instructions adhere to best-in-class acoustic engineering rubrics:
-1.  **Acoustic Punctuation**: Punctuation is tailored to guide natural speech synthesis pauses (commas for micro-breaths, periods for full stops).
-2.  **No Bulleted Utterances**: Lists are transformed into conversational prose (*"We offer three packages: Basic, Pro, and Enterprise"*).
-3.  **Strict Readback Gates**: Write operations (`create_appointment`, `process_refund`) are wrapped in explicit confirmation checks (*"Just to make sure I have this right, I'm booking you for Tuesday at 3 PM. Does that sound good?"*).
-4.  **Graceful Disconnects**: Standardizes closing lines (*"Thanks for calling. Have a great day! Goodbye."*) to ensure clean telecom line termination.
+CI (`.github/workflows/ci.yml`) runs lint → typecheck → test → build on every push and PR.
