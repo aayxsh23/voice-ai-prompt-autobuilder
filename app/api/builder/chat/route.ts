@@ -214,8 +214,7 @@ Ensure you return valid JSON with no markdown fences.`;
     const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, languageMode);
 
     const lastUserMsg = messages[messages.length - 1]?.content || "";
-    const userAgreed = /\b(yes|yeah|yep|generate|go ahead|ready|ok|okay|sure|let'?s do it|build|looks good|agree|proceed|create|split|finalize|done)\b/i.test(lastUserMsg.trim());
-    const triggerGeneration = coverageReport.isReadyForCompilation || (userAgreed && coverageReport.missingFields.length <= 1);
+    const triggerGeneration = coverageReport.isReadyForCompilation;
 
     const result = {
       reply,
