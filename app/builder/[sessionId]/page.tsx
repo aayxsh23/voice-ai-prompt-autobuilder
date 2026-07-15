@@ -14,33 +14,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  const [languageMode, setLanguageMode] = useState<'english' | 'hindi' | 'multilingual' | null>(null);
 
-  const handleSelectLanguageMode = (mode: 'english' | 'hindi' | 'multilingual') => {
-    setLanguageMode(mode);
-    setBlueprint((prev: any) => ({
-      ...prev,
-      languageMode: mode,
-      business: { ...(prev.business || {}), languageMode: mode },
-      businessSpec: {
-        ...(prev.businessSpec || {}),
-        meta: {
-          ...(prev.businessSpec?.meta || {}),
-          languageMode: mode
-        }
-      }
-    }));
-    let initialMsg = "Hello! I'm your VoiceAgent Architect. What kind of AI voice agent would you like to build today? Tell me about your domain and what workflows you want it to handle.";
-    if (mode === 'hindi') {
-      initialMsg = "Namaste! Main aapka VoiceAgent Architect hoon. Aap kaunsa AI voice agent banana chahte hain? Apne business aur workflows ke baare mein batayein.";
-    } else if (mode === 'multilingual') {
-      initialMsg = "Hello! / Namaste! I'm your VoiceAgent Architect. I'll build a prompt that works seamlessly for English, Hindi, and Hinglish speakers. Tell me about your domain and what workflows you want it to handle.";
-    }
-    setMessages([
-      { role: 'assistant', content: initialMsg }
-    ]);
-  };
-  
   // Chat state
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -78,6 +52,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
 
   // Prompt generation state
   const [generatingDraft, setGeneratingDraft] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<string>('Compiling base prompt and structure...');
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [activeTab, setActiveTab] = useState<'agent' | 'system' | 'combined'>('agent');
@@ -111,7 +86,6 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         const initPrompt = urlParams.get('initialPrompt');
         if (initPrompt) {
           initialPromptHandledRef.current = true;
-          setLanguageMode('english');
           window.history.replaceState({}, '', `/builder/${p.sessionId}`);
           setTimeout(() => {
             handleSendMessage(undefined, initPrompt);
@@ -124,6 +98,23 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, chatLoading]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (generatingDraft) {
+      setLoadingStage('Assembling base prompt package and knowledge base...');
+      const start = Date.now();
+      interval = setInterval(() => {
+        const elapsed = Date.now() - start;
+        if (elapsed > 12000) {
+          setLoadingStage('Applying fixes from Judge review and verifying script...');
+        } else if (elapsed > 4000) {
+          setLoadingStage('Reviewing against your conversation (Judge Loop)...');
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [generatingDraft]);
 
   const handleSendMessage = async (e?: React.FormEvent, customMsg?: string) => {
     if (e) e.preventDefault();
@@ -142,7 +133,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       const res = await fetch('/api/builder/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, languageMode })
+        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, sessionId })
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -193,8 +184,10 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     try {
       const payload = {
         ...(customBlueprint || blueprint),
-        languageMode: customBlueprint?.languageMode || blueprint?.languageMode || languageMode || 'english',
-        overrides: customOverrides || overrides
+        languageMode: customBlueprint?.languageMode || blueprint?.languageMode || 'english',
+        overrides: customOverrides || overrides,
+        transcript: messages,
+        sessionId
       };
       const res = await fetch('/api/builder/generate-review', {
         method: 'POST',
@@ -221,7 +214,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         body: JSON.stringify({
           sessionId,
           draft,
-          blueprint: { ...blueprint, languageMode: blueprint?.languageMode || languageMode || 'english' }
+          blueprint: { ...blueprint, languageMode: blueprint?.languageMode || 'english' }
         })
       });
       const project = await res.json();
@@ -245,80 +238,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
         
         {/* Chat Conversation Column */}
-        {!languageMode ? (
-          /* Language Mode Selection Screen */
-          <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
-            <div className="space-y-6 w-full max-w-4xl text-center">
-              <h1 className="text-[32px] sm:text-[42px] font-semibold text-[#f3f3f3] tracking-tight leading-[1.15]">
-                Select Prompt Language & Mode
-              </h1>
-              <p className="text-[15px] text-[#909090] max-w-xl mx-auto leading-relaxed">
-                Choose the primary language capabilities for your voice agent. Our architect will tailor the dialogue lines, instructions, and detection protocols accordingly.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8 text-left">
-                <button
-                  onClick={() => handleSelectLanguageMode('english')}
-                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left"
-                >
-                  <div>
-                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
-                      EN
-                    </div>
-                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">English Only</h3>
-                    <p className="text-[13px] text-[#909090] leading-relaxed">
-                      Optimized for English-speaking callers. Standard phonetics, date rules, and number formatting.
-                    </p>
-                  </div>
-                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
-                    <span>Select English</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleSelectLanguageMode('hindi')}
-                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left"
-                >
-                  <div>
-                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
-                      HI
-                    </div>
-                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">Hindi Only</h3>
-                    <p className="text-[13px] text-[#909090] leading-relaxed">
-                      Optimized for Hindi-speaking callers. Spoken dialogue in natural Hindi phrasing (Devanagari/Romanized).
-                    </p>
-                  </div>
-                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
-                    <span>Select Hindi</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => handleSelectLanguageMode('multilingual')}
-                  className="bg-[#0c0c0c] hover:bg-[#121212] border border-[#252525] hover:border-[#ff6c02] p-6 rounded-[16px] transition-all flex flex-col justify-between group cursor-pointer text-left relative overflow-hidden"
-                >
-                  <div className="absolute top-0 right-0 bg-[#ff6c02] text-[#040404] text-[10px] font-bold px-2.5 py-1 rounded-bl-[10px]">
-                    POPULAR
-                  </div>
-                  <div>
-                    <div className="w-10 h-10 rounded-[10px] bg-[#1b1b1b] border border-[#303030] flex items-center justify-center text-[#ff6c02] font-semibold mb-4 group-hover:scale-105 transition-transform">
-                      ML
-                    </div>
-                    <h3 className="text-[18px] font-semibold text-[#f3f3f3] mb-2">Multilingual</h3>
-                    <p className="text-[13px] text-[#909090] leading-relaxed">
-                      Dynamic detection for English, Hindi, and Hinglish. Seamlessly switches and adapts to caller speech.
-                    </p>
-                  </div>
-                  <div className="mt-6 flex items-center gap-1.5 text-xs font-medium text-[#ff6c02]">
-                    <span>Select Multilingual</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : messages.length === 1 && !chatLoading ? (
+        {messages.length === 1 && !chatLoading ? (
           /* Centered Starting Screen */
           <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
             <div className="space-y-6 w-full max-w-3xl text-center">
@@ -449,8 +369,8 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                 </div>
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
                   <div className="w-8 h-8 rounded-full border-2 border-[#ff6c02] border-t-transparent animate-spin" />
-                  <h3 className="text-base font-semibold text-[#f3f3f3]">Compiling Prompt Package...</h3>
-                  <p className="text-sm text-[#909090] max-w-md">Splitting your requirements into distinct Agent Persona tabs and strict System rules.</p>
+                  <h3 className="text-base font-semibold text-[#f3f3f3]">{loadingStage}</h3>
+                  <p className="text-sm text-[#909090] max-w-md">Our automated Prompt Judge loop audits your draft against the interview requirements before presenting.</p>
                 </div>
               </div>
             ) : draft ? (
@@ -500,8 +420,82 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                 </button>
               </div>
 
-              {/* Human Review Warning Banner */}
-              {(draft.requiresHumanReview || (draft.validationErrors && draft.validationErrors.length > 0)) && (
+              {/* Judge Audit Report Banner */}
+              {draft.judgeReport && (
+                <div className={`border-b px-4 py-3.5 flex flex-col gap-2 ${
+                  draft.judgeReport.blockingCount > 0
+                    ? 'bg-[#ff3333]/15 border-[#ff3333]/40 text-[#ffdede]'
+                    : 'bg-[#00cc66]/10 border-[#00cc66]/30 text-[#e6fff2]'
+                }`}>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <ShieldAlert className={`w-4 h-4 ${draft.judgeReport.blockingCount > 0 ? 'text-[#ff5555]' : 'text-[#00ff88]'}`} />
+                      <span className="text-xs font-semibold">
+                        Prompt Judge Audit: {draft.judgeReport.verdict.toUpperCase()} (Score: {draft.judgeReport.score}/100)
+                      </span>
+                    </div>
+                    {draft.judgeReport.blockingCount > 0 ? (
+                      <span className="px-2 py-0.5 rounded-[4px] bg-[#ff3333] text-[#ffffff] font-bold text-[10px] uppercase">
+                        Deliver-Flagged (Surviving Critical Issue)
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-[4px] bg-[#00ff88]/20 text-[#00ff88] font-bold text-[10px] uppercase">
+                        All Blocking Issues Resolved
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Auto-fixed issues during compiler loop */}
+                  {draft.judgeReport.fixedIssues && draft.judgeReport.fixedIssues.length > 0 && (
+                    <div className="text-xs mt-1">
+                      <span className="font-semibold text-[#00ff88]">Auto-Fixed During Compiler Loop:</span>
+                      <ul className="list-disc ml-4 mt-1 space-y-1 text-[#aaeed3]">
+                        {draft.judgeReport.fixedIssues.map((issue, idx) => (
+                          <li key={`fixed-${idx}`} className="flex items-start justify-between gap-2">
+                            <span>{issue.description}</span>
+                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-[#00cc66]/20 text-[#00ff88] font-semibold text-[10px]">
+                              Auto-Fixed
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Remaining issues or suggestions */}
+                  {draft.judgeReport.issues && draft.judgeReport.issues.length > 0 && (
+                    <div className="text-xs mt-1">
+                      <span className="font-semibold text-[#ffb8b8]">Active Audit Findings:</span>
+                      <ul className="list-disc ml-4 mt-1 space-y-1.5">
+                        {draft.judgeReport.issues.map((issue, idx) => (
+                          <li key={`active-${idx}`} className="flex flex-col gap-0.5">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="font-medium text-[#f3f3f3]">
+                                [{issue.severity.toUpperCase()} - {issue.category}] {issue.description}
+                              </span>
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded font-semibold text-[10px] ${
+                                issue.severity === 'critical' || issue.severity === 'major'
+                                  ? 'bg-[#ff3333] text-[#ffffff]'
+                                  : 'bg-[#3366ff]/20 text-[#88bbff]'
+                              }`}>
+                                {issue.severity === 'critical' || issue.severity === 'major' ? 'Needs your review' : 'Advisory note'}
+                              </span>
+                            </div>
+                            {issue.suggestedFix && (
+                              <span className="text-[11px] text-[#909090] italic">
+                                Suggested fix: {issue.suggestedFix}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Legacy / General Validation Warning Banner */}
+              {!draft.judgeReport && (draft.requiresHumanReview || (draft.validationErrors && draft.validationErrors.length > 0)) && (
                 <div className="bg-[#ff3333]/15 border-b border-[#ff3333]/40 px-4 py-3 flex items-start gap-3">
                   <ShieldAlert className="w-4 h-4 text-[#ff5555] shrink-0 mt-0.5" />
                   <div className="text-xs text-[#ffdede]">

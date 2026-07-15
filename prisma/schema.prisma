@@ -69,6 +69,7 @@ model BuilderSession {
   refinedBlueprintJson   String   @default("{}")
   businessSpec           String   @default("{}")
   languageMode           String   @default("english") // english | hindi | multilingual
+  messagesJson           String   @default("[]")
   generatedProjectId     String?  @db.ObjectId
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

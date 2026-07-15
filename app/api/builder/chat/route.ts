@@ -211,7 +211,10 @@ Ensure you return valid JSON with no markdown fences.`;
     if (genderPref) updatedSpec.meta!.agentGender = genderPref;
 
     const coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
-    const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, languageMode);
+    // Language now comes from the chat itself (no pre-chat selector), so drive the
+    // follow-up question language off whatever the interview has resolved so far.
+    const resolvedLanguageMode = (updatedSpec.meta?.languageMode as 'english' | 'hindi' | 'multilingual' | undefined) || languageMode;
+    const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, resolvedLanguageMode);
 
     const lastUserMsg = messages[messages.length - 1]?.content || "";
     const triggerGeneration = coverageReport.isReadyForCompilation;
@@ -242,10 +245,24 @@ Ensure you return valid JSON with no markdown fences.`;
       }
     };
 
+    if (sessionId) {
+      try {
+        await prisma.builderSession.update({
+          where: { id: sessionId },
+          data: {
+            messagesJson: JSON.stringify(messages),
+            businessSpec: JSON.stringify(updatedSpec)
+          }
+        });
+      } catch (dbErr) {
+        // Ignore DB update error
+      }
+    }
+
     return NextResponse.json(result);
   } catch (error: unknown) {
     console.error('Error in /api/builder/chat:', error);
-    // Do not leak internal error details to the client.
-    return NextResponse.json({ error: 'Failed to process chat turn' }, { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Failed to process chat turn';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

@@ -1,4 +1,7 @@
 
+import type { JudgeReport, JudgeIssue } from "../pipeline/judge/types";
+export type { JudgeReport, JudgeIssue };
+
 export interface BusinessSnapshot {
   businessName?: string;
   companyName?: string;
@@ -186,6 +189,7 @@ export interface PromptPackageDraft {
   requiresHumanReview?: boolean;
   estimatedTokens?: number;
   languageQualityScore?: number;
+  judgeReport?: JudgeReport;
 }
 
 export interface SimulationTurnInput {

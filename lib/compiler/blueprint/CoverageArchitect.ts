@@ -9,6 +9,11 @@ export interface CoverageReport {
 
 const INTERVIEW_IN_PROGRESS = "Additional In-Depth Operational Detail (interview in progress)";
 
+/** Exact label of the language coverage field. Load-bearing: matched verbatim in
+ *  generateNextQuestion to force the language question first, and asserted in the
+ *  behavior snapshot — keep this string identical if edited. */
+const LANGUAGE_FIELD_LABEL = "Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)";
+
 /** Topic buckets used to sequence the discovery interview (see generateNextQuestion). */
 type TopicGroup = "identity" | "schedule" | "services" | "policies" | "callflow";
 
@@ -56,7 +61,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !c.goalStr || c.goalStr === "Assist callers effectively" || c.goalStr.trim().length < 15,
   },
   {
-    id: "language", label: "Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)", group: "identity",
+    id: "language", label: LANGUAGE_FIELD_LABEL, group: "identity",
     missing: (c) => !(
       /\b(english|hindi|hinglish|bilingual|multilingual|devanagari|language|dialect|speak in|talk in|voice language|kannada|tamil|telugu|marathi|gujarati|bengali|punjabi|malayalam|urdu)\b/i.test(c.fullUserText) ||
       c.resolved.some(t => t.toLowerCase().includes("language") || t.toLowerCase().includes("dialect")) ||
@@ -403,7 +408,11 @@ export class CoverageArchitect {
     let targetFields = topicCallFlowFields.length > 0 ? topicCallFlowFields : missingFields;
     let topicInstruction = `We are designing the conversational call flow and dialogue mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow Skeleton, offer them a standard industry 5-step template vs building from scratch. If asking about Interruption/Digression or Silence Handling, ask directly what the agent should do when interrupted, off-script, or met with silence.`;
 
-    if (topic1Fields.length > 0) {
+    if (missingFields.includes(LANGUAGE_FIELD_LABEL)) {
+      activeTopicGroup = "Identity, Language & Location";
+      targetFields = [LANGUAGE_FIELD_LABEL];
+      topicInstruction = `We must first establish the exact language and dialect the voice agent will speak on calls (e.g., English, Hindi, Hinglish, or Multilingual auto-detection). Formulate a warm, conversational question asking which language or dialect they prefer.`;
+    } else if (topic1Fields.length > 0) {
       activeTopicGroup = "Identity, Language & Location";
       targetFields = topic1Fields;
       topicInstruction = `We are exploring foundational identity, language, and location details: collecting the official clinic/business name, physical location/contact info (address, phone number, website), or the primary language/dialect the agent should speak (e.g., English, Hindi, Hinglish, or multilingual). Do NOT ask about hours, services, policies, or call flow yet. Formulate a friendly, conversational question targeting: ${topic1Fields[0]}.`;
@@ -425,8 +434,8 @@ export class CoverageArchitect {
     const langInstruction = languageMode === 'hindi'
       ? "\nLANGUAGE DIRECTIVE: Ask your question in natural conversational Hindi (Devanagari or Romanized/Hinglish)."
       : languageMode === 'multilingual'
-      ? "\nLANGUAGE DIRECTIVE: Ask your question in English, noting that we are building a multilingual voice agent (English, Hindi, Hinglish)."
-      : "";
+        ? "\nLANGUAGE DIRECTIVE: Ask your question in English, noting that we are building a multilingual voice agent (English, Hindi, Hinglish)."
+        : "";
     const prompt = `You are a Conversational AI Architect interviewing a user to build a Voice AI agent.
 Current Topic Focus: ${activeTopicGroup}
 Target missing detail for this question: ${targetFields[0]}
@@ -450,12 +459,15 @@ CRITICAL RULES FOR YOUR RESPONSE:
         systemInstruction: "You are an expert conversational AI architect building a Voice AI agent through an interactive interview. CRITICAL BEHAVIORAL RULE: NEVER mention 'Phase 1', 'Phase 2', 'Discovery Stage', 'transition', or any internal phase/stage numbers or names to the user. Never recite summaries of completed steps just to announce moving forward. Simply ask the next logical question in a warm, direct, conversational manner.",
         prompt
       });
-      let text = response.text?.trim() || `Could you walk me through your exact procedure and guidelines regarding ${targetFields[0] || missingFields[0]}?`;
+      let text = response.text?.trim();
+      if (!text) {
+        throw new Error("LLM returned an empty question response.");
+      }
       text = text.replace(/^(?:Since we have (?:already )?(?:confirmed|established|covered|completed|finalized).*?we are ready to (?:officially )?(?:transition|move)(?: on)? (?:in)?to .*?[\.\?\!]\s*)/i, "");
       text = text.replace(/\b(?:Phase|Stage)\s*\d+(?:\s*\([^)]+\))?:?\s*/gi, "");
       return text.trim();
-    } catch {
-      return `To ensure the AI handles interactions smoothly, could you share specific details regarding: ${targetFields[0] || missingFields[0]}?`;
+    } catch (error) {
+      throw new Error(`LLM Generation Error: Failed to dynamically generate interview question (${error instanceof Error ? error.message : String(error)}). Preloaded fallback questions are disabled.`);
     }
   }
 }

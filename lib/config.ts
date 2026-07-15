@@ -31,3 +31,9 @@ export const llmConfig = llmConfigSchema.parse({
 });
 
 export type LlmConfig = typeof llmConfig;
+
+export const JUDGE_ENABLED = process.env.JUDGE_ENABLED !== 'false';
+export const JUDGE_MAX_ROUNDS = Number(process.env.JUDGE_MAX_ROUNDS) || 3;
+export const JUDGE_TIME_BUDGET_MS = Number(process.env.JUDGE_TIME_BUDGET_MS) || 90_000;
+export const JUDGE_HARD_GATE = process.env.JUDGE_HARD_GATE === 'true';
+

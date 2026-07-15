@@ -39,7 +39,7 @@ STRUCTURE: Every output must contain these exact sections in this order:
 ### AGENT IDENTITY & PERSONA
 ### LANGUAGE HANDLING
 ### OUTPUT & VOICE MECHANICS
-### TELEPHONY RUNTIME TOOLS & EXECUTION PROTOCOL
+### AVAILABLE TOOLS
 ### SCOPE & REFUSAL BEHAVIOR
 ### MANDATORY EMERGENCY & SAFETY OVERRIDES
 ### BUSINESS CONTEXT & STATIC FACTS
@@ -268,7 +268,7 @@ Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
 ${langNote}
 
-FAQ GENERATION RULE: Generate 5-8 FAQ entries based on the business context. For each operational fact (hours, address, policies), create a Q&A entry. For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined." Always generate contextual entries.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
+FAQ GENERATION RULE: Generate 3-5 concise FAQ entries covering only the most common, business-specific caller questions (do not pad — the agent answers the rest from business context at runtime). For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined."${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 GUARDRAIL GENERATION RULES:
 1. Generate 5-8 guardrails specific to THIS exact business.

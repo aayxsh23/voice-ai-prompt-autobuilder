@@ -8,6 +8,7 @@ import {
   BusinessSnapshot,
   CallMission,
   DynamicVariableSpec,
+  ChatMessage,
 } from "../llm/types";
 import type { PromptRule } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -23,6 +24,8 @@ import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
 import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
 import { ToolPlanner } from "../compiler/planners/ToolPlanner";
+import { judgePrompt, repairFromJudge } from "./judge/PromptJudge";
+import { JUDGE_ENABLED, JUDGE_MAX_ROUNDS, JUDGE_TIME_BUDGET_MS, JUDGE_HARD_GATE } from "@/lib/config";
 
 /**
  * Bounded LLM repair pass for Devanagari deployments: rewrites ONLY romanized
@@ -45,15 +48,29 @@ ${prompt}`;
   return (out || '').trim() || prompt;
 }
 
+function structurePreserved(newPrompt: string, oldPrompt: string): boolean {
+  if (!newPrompt || !oldPrompt) return false;
+  const newTrimmed = newPrompt.trim();
+  const oldTrimmed = oldPrompt.trim();
+  if (newTrimmed.length < oldTrimmed.length * 0.6 || newTrimmed.length > oldTrimmed.length * 1.6) {
+    return false;
+  }
+  const oldHeaders = oldTrimmed.match(/^###\s+.+/gm) || [];
+  const newHeadersSet = new Set(newTrimmed.match(/^###\s+.+/gm) || []);
+  return oldHeaders.every(h => newHeadersSet.has(h));
+}
+
 /**
  * Input accepted by the compiler. It is a (partial) blueprint plus a few fields
  * that arrive from the builder/CRM path but aren't part of the base blueprint.
  */
-type CompileInput = Partial<BlueprintJson> & {
+export type CompileInput = Partial<BlueprintJson> & {
   businessSpec?: BusinessSpecification;
   dynamicVariables?: DynamicVariableSpec[];
   extractedIR?: Record<string, unknown>;
   overrides?: SchemaOverrides & { dynamicVariables?: DynamicVariableSpec[] };
+  transcript?: ChatMessage[];
+  sessionId?: string;
 };
 
 function mergeUserOverrides(draft: PromptPackageDraft, overrides?: SchemaOverrides): PromptPackageDraft {
@@ -182,6 +199,13 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     };
   }
 
+  spec.callFlowPlan = spec.callFlowPlan || { steps: [] };
+  spec.callFlowPlan.steps = spec.callFlowPlan.steps || [];
+  spec.knowledgeBase = spec.knowledgeBase || { faqs: [], objections: [] };
+  spec.knowledgeBase.faqs = spec.knowledgeBase.faqs || [];
+  spec.knowledgeBase.objections = spec.knowledgeBase.objections || [];
+  spec.tools = spec.tools || [];
+
   // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and
   // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
@@ -279,14 +303,72 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   }
 
   let finalPrompt = assembleUnifiedPrompt(spec, draft);
-
-  // Validate -> repair loop (language quality): in a Devanagari deployment, fix
-  // romanized-Hindi leaks and agent verb-gender mismatches via a bounded, guarded
-  // LLM pass. The rewrite is accepted ONLY if it strictly reduces warnings and
-  // preserves length, so a misbehaving model can never damage the prompt.
   const policy = resolveLanguagePolicy(spec, draft);
   let langQuality = validateLanguageQuality(finalPrompt, policy);
-  if (policy.script === 'devanagari' && langQuality.warnings && langQuality.warnings.length > 0) {
+
+  // Judge & Repair loop
+  if (JUDGE_ENABLED) {
+    let transcript: ChatMessage[] = Array.isArray(input.transcript) ? input.transcript : [];
+    if (transcript.length === 0 && input.sessionId) {
+      try {
+        const session = await prisma.builderSession.findUnique({ where: { id: input.sessionId } });
+        if (session?.messagesJson && session.messagesJson !== '[]') {
+          const parsed = JSON.parse(session.messagesJson);
+          if (Array.isArray(parsed)) {
+            transcript = parsed;
+          }
+        }
+      } catch (err) {
+        logger.warn("compilePromptPackage: failed to load transcript from builderSession", err);
+      }
+    }
+
+    let best = {
+      prompt: finalPrompt,
+      report: await judgePrompt({ transcript, finalPrompt, spec, policy })
+    };
+    const initialIssues = [...best.report.issues];
+    let round = 0;
+    const start = Date.now();
+
+    while (
+      best.report.blockingCount > 0 &&
+      round < JUDGE_MAX_ROUNDS &&
+      Date.now() - start < JUDGE_TIME_BUDGET_MS
+    ) {
+      logger.info(`compilePromptPackage: Judge loop round ${round + 1}/${JUDGE_MAX_ROUNDS}, blockingCount=${best.report.blockingCount}, score=${best.report.score}`);
+      try {
+        const repaired = await repairFromJudge({
+          finalPrompt: best.prompt,
+          report: best.report,
+          policy,
+          agentGender: policy.agentGender
+        });
+        if (!structurePreserved(repaired, best.prompt)) {
+          logger.warn(`compilePromptPackage: repair discarded due to structure mismatch in round ${round}`);
+          break;
+        }
+        const newReport = await judgePrompt({ transcript, finalPrompt: repaired, spec, policy });
+        if (newReport.score > best.report.score) {
+          best = { prompt: repaired, report: newReport };
+        } else {
+          logger.info(`compilePromptPackage: Anti-thrash triggered. New score (${newReport.score}) <= best score (${best.report.score}). Stopping loop.`);
+          break;
+        }
+      } catch (err) {
+        logger.warn(`compilePromptPackage: error in judge/repair round ${round}`, err);
+        break;
+      }
+      round++;
+    }
+
+    const remainingKeys = new Set(best.report.issues.map(i => `${i.category}:${i.description}`));
+    best.report.fixedIssues = initialIssues.filter(i => !remainingKeys.has(`${i.category}:${i.description}`));
+
+    finalPrompt = best.prompt;
+    draft.judgeReport = best.report;
+    langQuality = validateLanguageQuality(finalPrompt, policy);
+  } else if (policy.script === 'devanagari' && langQuality.warnings && langQuality.warnings.length > 0) {
     try {
       const repaired = await repairPromptLanguage(finalPrompt, policy.agentGender);
       const repairedQuality = validateLanguageQuality(repaired, policy);
@@ -301,6 +383,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
       logger.warn("compilePromptPackage: language repair pass failed", err);
     }
   }
+
   draft.finalPrompt = finalPrompt;
   draft.languageQualityScore = langQuality.score;
 
@@ -326,14 +409,6 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     }
   }
 
-  // Check outfield integrity (ensure declared outfields appear in prompt)
-  const outfields = (draft?.dynamicVariables || []).filter((v: any) => v.fieldDirection === 'outfield');
-  for (const ov of outfields) {
-    if (!finalPrompt.includes(`[${ov.key}]`)) {
-      validationErrors.push(`Declared outfield [${ov.key}] is not referenced in prompt text.`);
-    }
-  }
-
   // Check for suspicious length
   const totalItems = (draft?.faqCards?.length || 0) + (spec.callFlowPlan?.steps?.length || 0);
   if (totalItems >= 5 && finalPrompt.length < 800) {
@@ -344,10 +419,30 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   const budget = validatePromptBudget(finalPrompt);
   draft.estimatedTokens = budget.score;
 
-  draft.validationStatus = validationErrors.length > 0 ? 'warning' : 'success';
+  if (draft.judgeReport && draft.judgeReport.issues.length > 0) {
+    const blockingOrMajor = draft.judgeReport.issues.filter(i => i.severity === 'critical' || i.severity === 'major');
+    for (const issue of blockingOrMajor) {
+      validationErrors.push(`[Judge - ${issue.severity.toUpperCase()}] ${issue.description} (${issue.suggestedFix})`);
+    }
+    const minors = draft.judgeReport.issues.filter(i => i.severity === 'minor');
+    for (const issue of minors) {
+      (draft.validationWarnings = draft.validationWarnings || []).push(`[Judge - minor] ${issue.description}`);
+    }
+  }
+
   draft.validationErrors = validationErrors;
   draft.validationWarnings = [...(draft.validationWarnings || []), ...(budget.warnings || []), ...(langQuality.warnings || [])];
-  draft.requiresHumanReview = validationErrors.length > 0;
+
+  const hasCriticalJudgeIssues = (draft.judgeReport?.blockingCount ?? 0) > 0;
+  draft.requiresHumanReview = validationErrors.length > 0 || hasCriticalJudgeIssues;
+
+  if (hasCriticalJudgeIssues && JUDGE_HARD_GATE) {
+    draft.validationStatus = 'failed_review_required';
+  } else if (validationErrors.length > 0 || hasCriticalJudgeIssues) {
+    draft.validationStatus = 'warning';
+  } else {
+    draft.validationStatus = 'success';
+  }
 
   return draft;
 }

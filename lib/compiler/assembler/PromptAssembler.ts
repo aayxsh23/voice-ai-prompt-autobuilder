@@ -120,45 +120,23 @@ function buildRuntimeToolsSection(tools?: any[]): string {
   const hasValidateDigits = effectiveTools.some(t => t?.name === "validate_digit_input");
   const hasSetCaptureMode = effectiveTools.some(t => t?.name === "set_capture_mode");
   const hasEndCall = effectiveTools.some(t => t?.name === "end_call");
-  const emailTool = effectiveTools.find(t => t?.name?.startsWith("format_email_")) || { name: "format_email_for_voice" };
+  const hasTransfer = effectiveTools.some(t => t?.name === "transfer_call");
+  const emailTool = effectiveTools.find(t => t?.name?.startsWith("format_email_"));
 
-  const lines: string[] = [];
-  lines.push("### TELEPHONY RUNTIME TOOLS & EXECUTION PROTOCOL");
-  lines.push("The audio runner environment exposes deterministic global runtime tools for STT buffering, numeric/email verification, and call termination. You MUST invoke these tools whenever their trigger conditions are met:");
-
-  if (hasSetCaptureMode) {
-    lines.push(`\n1. BUFFER MANAGEMENT (\`set_capture_mode\`):
-- Before prompting the caller for a multi-digit number (PIN, phone number, OTP) or an email address, invoke \`set_capture_mode(keep_buffer: true, mode: "digits"|"email", field: "field_name", expected_digits: N)\` in the SAME turn as your asking question.
-- This ensures that if the caller starts speaking or entering digits while you are talking, the audio buffer is preserved.
-- Once the field is collected and confirmed accurately, invoke \`set_capture_mode(keep_buffer: false)\` to return to normal conversation buffering.`);
-  }
-
-  if (hasValidateDigits) {
-    lines.push(`\n2. NUMERIC & PIN-CODE VALIDATION (\`validate_digit_input\`):
-- When collecting a phone number, pin code, or OTP, invoke \`validate_digit_input(field: "...", expected_digits: N, user_text: "...", previously_collected: "...")\`.
-- If the tool returns partial status (\`is_valid: false\`), speak the prompt returned by the tool or ask the caller specifically for the remaining digits.
-- Never manually count, guess, or concatenate digits in text without running them through \`validate_digit_input\`.`);
-  }
-
-  if (emailTool) {
-    lines.push(`\n3. EMAIL NORMALIZATION (\`${emailTool.name}\`):
-- When an email address is uttered or spelled by the caller, invoke \`${emailTool.name}(email_text: "...")\`.
-- Read back the \`spoken_email\` output string verbatim to the user for confirmation. Do not try to manually insert dot/at speech spacing.`);
-  }
-
-  if (hasEndCall) {
-    lines.push(`\n4. CALL TERMINATION (\`end_call\`):
-- When the conversation reaches a natural conclusion, refusal limit, or explicit hangup request, invoke \`end_call(reason: "...")\`.
-- Call \`end_call\` synchronously in the exact same turn where you utter your final closing sentence. Never use text tokens like [HANGUP] or [END_CALL].`);
-  }
+  // Definitions only — no execution-protocol prose. Each state in the CALL FLOW
+  // already spells out exactly when to invoke a tool (see "Required Tool Actions").
+  const defs: string[] = [];
+  if (hasSetCaptureMode) defs.push('- `set_capture_mode(keep_buffer, mode, field, expected_digits)` — preserve caller audio while collecting digits/email; turn off once the field is confirmed.');
+  if (hasValidateDigits) defs.push('- `validate_digit_input(field, expected_digits, user_text, previously_collected)` — validate and accumulate spoken digits.');
+  if (emailTool) defs.push(`- \`${emailTool.name}(email_text)\` — normalize a spoken email into a TTS-friendly read-back string.`);
+  if (hasTransfer) defs.push('- `transfer_call(reason, department)` — hand the caller to a human agent or department.');
+  if (hasEndCall) defs.push('- `end_call(reason)` — end the call in the same turn as the closing line.');
 
   const domainTools = effectiveTools.filter(t => t?.name && !["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma", "transfer_call"].includes(t.name));
-  if (domainTools.length > 0) {
-    lines.push(`\n5. DOMAIN-SPECIFIC BUSINESS TOOLS:
-${domainTools.map(t => `- \`${t.name}\`: ${t.description || "Execute business action."}`).join('\n')}`);
-  }
+  domainTools.forEach(t => defs.push(`- \`${t.name}\` — ${t.description || "execute business action."}`));
 
-  return lines.join('\n');
+  if (defs.length === 0) return "";
+  return `### AVAILABLE TOOLS\nInvoke where the call flow requires; never describe or read tool names to the caller.\n${defs.join('\n')}`;
 }
 
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
@@ -519,30 +497,23 @@ OFF-TOPIC REFUSAL PROTOCOL
   };
 
   const infields: string[] = [];
-  const outfields: string[] = [];
 
   const dedupedSlots = semanticDedupSlots(allSlots);
 
   dedupedSlots.forEach(slot => {
     const v = draftVarsMap.get(slot);
+    // Only pre-call infields are published. Outfields (post-call extractions) are
+    // intentionally NOT emitted — the agent collects what it needs during the call
+    // flow; publishing a separate extraction list is redundant and token-heavy.
     if (!isOutfield(slot)) {
       infields.push(`{{${slot}}}${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
-    } else {
-      outfields.push(`[${slot}]${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
     }
   });
 
   let dynamicVariables = "";
-  if (infields.length > 0 || outfields.length > 0) {
-    const sectionsList: string[] = [];
-    if (infields.length > 0) {
-      const infieldNames = allSlots.filter(s => !isOutfield(s));
-      sectionsList.push(`#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (e.g., {{first_name}}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`);
-    }
-    if (outfields.length > 0) {
-      sectionsList.push(`#### OUTFIELDS (Post-Call Extraction)\nThe following details must be extracted from the conversation transcript. Mark them using [variable_name] syntax:\n${outfields.join('\n')}`);
-    }
-    dynamicVariables = `### DYNAMIC VARIABLES\n\n${sectionsList.join('\n\n')}`;
+  if (infields.length > 0) {
+    const infieldNames = allSlots.filter(s => !isOutfield(s));
+    dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (e.g., {{first_name}}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
   }
 
   // 8. CALL FLOW / STATE MACHINE
@@ -567,23 +538,41 @@ OFF-TOPIC REFUSAL PROTOCOL
     callFlowPolicies.push(`* **Global Closing Script Directive:** "${spec.callFlowPlan.closingScript}"`);
   }
   const callFlowPolicyHeader = callFlowPolicies.length > 0
-    ? `#### CONVERSATIONAL & CALL FLOW POLICIES\n${callFlowPolicies.join('\n')}\n\n#### STATE MACHINE STEPS\n`
+    ? `#### CONVERSATIONAL & CALL FLOW POLICIES\n${callFlowPolicies.join('\n')}\n\n#### CALL FLOW STATES\n`
     : "";
+
+  // Branch targets reference states by their stateId, not a "Step N" ordinal —
+  // the flow is a set of named states, not a numbered list.
+  const seqToState = new Map<number, any>();
+  steps.forEach((s: any) => { if (typeof s?.sequenceOrder === 'number') seqToState.set(s.sequenceOrder, s); });
+  const knownStateIds = new Set<string>(steps.map((s: any) => s?.stateId).filter(Boolean));
+  const resolveStateRef = (target: any): string => {
+    const asNum = Number(target);
+    if (!Number.isNaN(asNum) && seqToState.has(asNum)) return `Go to state [${seqToState.get(asNum).stateId}]`;
+    if (typeof target === 'string' && knownStateIds.has(target)) return `Go to state [${target}]`;
+    return `Go to state [${target}]`;
+  };
 
   const flowContent = steps.length > 0
     ? steps.map((step: any) => {
-        const slots = Array.isArray(step?.slotsToCollect) ? step.slotsToCollect : [];
         const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
         const branchText = branches.length > 0
-          ? branches.map((b: any) => `  * If ${b.condition} -> ${b.goToStep === 'end_call' || b.action === 'end_call' ? `Trigger end_call(reason: "${b.reason || 'completed'}")` : b.goToStep === 'transfer' || b.action === 'transfer' ? 'Trigger transfer_call()' : `Go to Step ${b.goToStep}`}`).join('\n')
-          : `  * On completion / confirmation -> Go to Step ${step.sequenceOrder + 1}`;
+          ? branches.map((b: any) => {
+              const dest = (b.goToStep === 'end_call' || b.action === 'end_call')
+                ? `Trigger end_call(reason: "${b.reason || 'completed'}")`
+                : (b.goToStep === 'transfer' || b.action === 'transfer')
+                ? 'Trigger transfer_call()'
+                : resolveStateRef(b.goToStep);
+              return `  * If ${b.condition} -> ${dest}`;
+            }).join('\n')
+          : (() => {
+              const next = seqToState.get((step.sequenceOrder || 0) + 1);
+              return `  * On completion / confirmation -> ${next ? `Go to state [${next.stateId}]` : 'End the call'}`;
+            })();
 
         const lines: string[] = [];
         lines.push(`STATE: [${step?.stateId}] (${step?.stateName})`);
-        lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute step ${step?.sequenceOrder || step?.stateId}`}`);
-        if (slots.length > 0) {
-          lines.push(`* **Required Extractions:** ${slots.map((s: string) => `[${s}]`).join(', ')}`);
-        }
+        lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute state [${step?.stateId}]`}`);
         lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
         lines.push(`* **Routing & Branches:**\n${branchText}`);
         if (step?.fallbackBehavior) {
@@ -603,13 +592,23 @@ OFF-TOPIC REFUSAL PROTOCOL
     : "No structured call flow defined. Engage conversationally based on primary goal.";
   const flow = `### CALL FLOW\n${callFlowPolicyHeader}${flowContent}`;
 
-  // 9. FAQS
-  const faqSection = faqs.map((faq: any) => `Q: ${faq?.question || faq?.q || ''}\nA: ${faq?.answer || faq?.a || ''}`).join('\n\n') || "No specific FAQs defined.";
-  const knowledge = `### FAQ (FREQUENTLY ASKED QUESTIONS)\nUse the following reference material opportunistically when asked:\n\n${faqSection}`;
+  // 9. FAQS — context-driven, not an exhaustive scripted dump. Give the agent a
+  // handling rule plus a capped set of specific facts; it answers from BUSINESS
+  // CONTEXT & STATIC FACTS above and reasons over these reference points.
+  const FAQ_CAP = 5;
+  const faqReference = faqs.length > 0
+    ? `\n\nReference points (paraphrase, don't recite):\n${faqs.slice(0, FAQ_CAP).map((faq: any) => `- Q: ${faq?.question || faq?.q || ''} → A: ${faq?.answer || faq?.a || ''}`).join('\n')}`
+    : "";
+  const knowledge = `### FAQ (FREQUENTLY ASKED QUESTIONS)\nAnswer caller questions conversationally from the BUSINESS CONTEXT & STATIC FACTS above and the reference points below — keep replies to 1-2 spoken sentences. If a detail isn't in your context, say you don't have it and offer to follow up or transfer. Never invent facts, prices, or policies.${faqReference}`;
 
-  // 10. OBJECTION HANDLING
-  const objSection = objections.map((obj: any) => `Trigger: ${obj?.trigger || obj?.objection || ''}\nHandling: ${obj?.response || obj?.handling || ''}`).join('\n\n') || "Address caller concerns calmly and re-route to main flow.";
-  const objectionHandling = `### OBJECTION HANDLING\n${objSection}`;
+  // 10. OBJECTION HANDLING — a reusable framework the agent applies itself, plus a
+  // compact list of known concerns (triggers only). Avoids token-heavy scripted responses.
+  const OBJ_CAP = 8;
+  const objTriggers = objections.map((o: any) => String(o?.trigger || o?.objection || '').trim()).filter(Boolean);
+  const knownConcerns = objTriggers.length > 0
+    ? ` Common concerns to expect: ${objTriggers.slice(0, OBJ_CAP).join('; ')}.`
+    : "";
+  const objectionHandling = `### OBJECTION HANDLING\nHandle pushback with judgment, not a script: (1) acknowledge the concern warmly, (2) address it in one line using a relevant fact or benefit from your context, (3) steer back toward ${primaryGoal}. Keep it to 1-2 sentences, never argue, and respect a firm "no" by closing politely.${knownConcerns}`;
 
   // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
   const runtimeToolsProtocol = buildRuntimeToolsSection(spec?.tools);
