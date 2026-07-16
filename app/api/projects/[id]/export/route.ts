@@ -17,6 +17,16 @@ function parseJsonArray(raw: string | null | undefined): unknown[] {
   }
 }
 
+function parseJsonObject(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Export a compiled prompt formatted for a specific telephony platform.
  * GET /api/projects/[id]/export?platform=bland|retell|vapi|generic
@@ -44,6 +54,7 @@ export const GET = apiHandler(async (req: Request, { params }: { params: Promise
       purposeInPrompt: f.purposeInPrompt,
       requiredInputs: parseJsonArray(f.requiredInputsJson) as string[],
       expectedOutputs: parseJsonArray(f.expectedOutputsJson) as string[],
+      parameters: parseJsonObject(f.parametersJson),
       enabled: f.enabled,
     })),
     dynamicVariables: (project.variables || []).map((v) => ({

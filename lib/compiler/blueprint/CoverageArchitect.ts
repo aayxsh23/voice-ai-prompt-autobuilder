@@ -26,6 +26,17 @@ interface CoverageContext {
   captured: Array<{ topic: string; summary: string }>;
   fullUserText: string;
   containsAny: (words: string[]) => boolean;
+  /**
+   * True when any resolved topic tag has a token starting with one of `needles`.
+   *
+   * Token-prefix, never substring: plain `.includes("flow")` matched the tag
+   * `cross_sell_workflow`, which marked "Call Flow Skeleton" answered and meant the
+   * user was never asked to describe their call stages at all. Prefix matching is
+   * kept so "escalat" still matches "escalation".
+   */
+  resolvedHas: (...needles: string[]) => boolean;
+  /** Same token-prefix matching, over capturedTopics tags. */
+  capturedHas: (...needles: string[]) => boolean;
   companyStr: string;
   goalStr: string;
   hoursStr: string;
@@ -64,8 +75,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "language", label: LANGUAGE_FIELD_LABEL, group: "identity",
     missing: (c) => !(
       /\b(english|hindi|hinglish|bilingual|multilingual|devanagari|language|dialect|speak in|talk in|voice language|kannada|tamil|telugu|marathi|gujarati|bengali|punjabi|malayalam|urdu)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("language") || t.toLowerCase().includes("dialect")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("language") || cc.topic.toLowerCase().includes("dialect"))
+      c.resolvedHas("language", "dialect") ||
+      c.capturedHas("language", "dialect")
     ),
   },
   {
@@ -76,8 +87,8 @@ const COVERAGE_RULES: CoverageRule[] = [
         /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation)\b/i.test(c.fullUserText) ||
         c.containsAny(['सेवा', 'सर्विस', 'कोर्स', 'क्लास', 'डेमो', 'सॉफ्टवेयर', 'प्रोडक्ट', 'इलाज', 'उत्पाद']) ||
         (!!c.spec?.extractedEntities?.servicesOrOfferings && c.spec.extractedEntities.servicesOrOfferings.length > 0) ||
-        c.resolved.some(t => t.toLowerCase().includes("service") || t.toLowerCase().includes("offering") || t.toLowerCase().includes("course") || t.toLowerCase().includes("product") || t.toLowerCase().includes("module")) ||
-        c.captured.some(cc => cc.topic.toLowerCase().includes("service") || cc.topic.toLowerCase().includes("offering") || cc.topic.toLowerCase().includes("course") || cc.topic.toLowerCase().includes("product") || cc.topic.toLowerCase().includes("module"))
+        c.resolvedHas("service", "offering", "course", "product", "module") ||
+        c.capturedHas("service", "offering", "course", "product", "module")
       ),
   },
   {
@@ -87,8 +98,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       !(
         /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|10:00|am|pm|hours|timings|timing|window|available all days|available from)\b/i.test(c.fullUserText) ||
         c.containsAny(['बजे', 'सुबह', 'शाम', 'समय', 'सोमवार', 'मंगलवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार', 'रविवार', 'खुला', 'बंद', 'घंटे', 'टाइम']) ||
-        c.resolved.some(t => t.toLowerCase().includes("hour") || t.toLowerCase().includes("timing") || t.toLowerCase().includes("schedule") || t.toLowerCase().includes("availability")) ||
-        c.captured.some(cc => cc.topic.toLowerCase().includes("hour") || cc.topic.toLowerCase().includes("timing") || cc.topic.toLowerCase().includes("schedule") || cc.topic.toLowerCase().includes("availability"))
+        c.resolvedHas("hour", "timing", "schedule", "availability") ||
+        c.capturedHas("hour", "timing", "schedule", "availability")
       ),
   },
   {
@@ -96,8 +107,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact)\b/i.test(c.fullUserText) ||
       c.containsAny(['पता', 'गली', 'शहर', 'वेबसाइट', 'ऑनलाइन', 'फोन', 'फ़ोन', 'संपर्क', 'रोड', 'नगर', 'दुकान', 'ऑफिस', 'ऑफ़िस']) ||
-      c.resolved.some(t => t.toLowerCase().includes("location") || t.toLowerCase().includes("address") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("website")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("location") || cc.topic.toLowerCase().includes("address") || cc.topic.toLowerCase().includes("contact") || cc.topic.toLowerCase().includes("website"))
+      c.resolvedHas("location", "address", "contact", "website") ||
+      c.capturedHas("location", "address", "contact", "website")
     ),
   },
   {
@@ -106,8 +117,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       /\b(dr\.|doctor|dentist|hygienist|practitioner|specialist|staff|team|counselor|counselors|manager|managers|supervisor|supervisors|representative|agent|advisor|deepika|ananya|department|departments|desk|desks|roster|refer to the team|centralized|no individual|no specific|no name|no names|does not need to mention|refer only to)\b/i.test(c.fullUserText) ||
       (!!c.spec?.extractedEntities?.namedContacts && c.spec.extractedEntities.namedContacts.length > 0) ||
       (!!c.spec?.extractedEntities?.departments && c.spec.extractedEntities.departments.length > 0) ||
-      c.resolved.some(t => t.toLowerCase().includes("staff") || t.toLowerCase().includes("team") || t.toLowerCase().includes("roster") || t.toLowerCase().includes("department") || t.toLowerCase().includes("contact") || t.toLowerCase().includes("counselor")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("staff") || cc.topic.toLowerCase().includes("team") || cc.topic.toLowerCase().includes("roster") || cc.topic.toLowerCase().includes("department"))
+      c.resolvedHas("staff", "team", "roster", "department", "contact", "counselor") ||
+      c.capturedHas("staff", "team", "roster", "department")
     ),
   },
   {
@@ -116,8 +127,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       const hasCancellation = c.cancelStr === "None — confirmed by business" || (!!c.cancelStr && c.cancelStr !== "Standard cancellation policy applies." && c.cancelStr.trim().length > 5);
       const hasRefunds = c.refundStr === "None — confirmed by business" || (!!c.refundStr && c.refundStr !== "Standard refund policy applies." && c.refundStr.trim().length > 5);
       const hasResolvedPolicy =
-        c.resolved.some(t => t.toLowerCase().includes("cancellation") || t.toLowerCase().includes("refund") || t.toLowerCase().includes("policy") || t.toLowerCase().includes("fee")) ||
-        c.captured.some(cc => cc.topic.toLowerCase().includes("cancellation") || cc.topic.toLowerCase().includes("refund") || cc.topic.toLowerCase().includes("policy") || cc.topic.toLowerCase().includes("fee")) ||
+        c.resolvedHas("cancellation", "refund", "policy", "fee") ||
+        c.capturedHas("cancellation", "refund", "policy", "fee") ||
         /\b(policy|policies|cancellation|refund|fee|fees|discount|scholarship|terms|rules|no policy|does not need to mention|not required|none)\b/i.test(c.fullUserText);
       return !hasCancellation && !hasRefunds && !hasResolvedPolicy;
     },
@@ -126,8 +137,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "intake", label: "Intake & Qualification Requirements (required caller info, insurance verification, or new patient prerequisites)", group: "services",
     missing: (c) => !(
       /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify|qualification|qualify|qualifying|class|exam|goal|preparation|pincode|pin code|preference|requirements|screening|question|questions)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("intake") || t.toLowerCase().includes("insurance") || t.toLowerCase().includes("qualification") || t.toLowerCase().includes("screening")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("intake") || cc.topic.toLowerCase().includes("qualification"))
+      c.resolvedHas("intake", "insurance", "qualification", "screening") ||
+      c.capturedHas("intake", "qualification")
     ),
   },
   {
@@ -135,8 +146,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       (!!c.spec?.dynamicVariables && c.spec.dynamicVariables.length > 0) ||
       /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("infield") || t.toLowerCase().includes("pre-call") || t.toLowerCase().includes("pre_call") || t.toLowerCase().includes("crm") || t.toLowerCase().includes("variable") || t.toLowerCase().includes("dynamic")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("infield") || cc.topic.toLowerCase().includes("pre-call") || cc.topic.toLowerCase().includes("pre_call") || cc.topic.toLowerCase().includes("crm") || cc.topic.toLowerCase().includes("variable") || cc.topic.toLowerCase().includes("dynamic")) ||
+      c.resolvedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
+      c.capturedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
       /* General check: if the user answered any question bounding what variables/infields are passed ("only X", "just Y", "no other", "nothing else", "none") */
       (c.fullUserText.toLowerCase().includes("only ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
       (c.fullUserText.toLowerCase().includes("just ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
@@ -148,23 +159,23 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       (!!c.spec?.knowledgeBase?.faqs && c.spec.knowledgeBase.faqs.length >= 2) ||
       /\b(faq|frequently asked|question|cost|price|pricing|parking|direction|query|queries|answer|answers)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("faq") || t.toLowerCase().includes("question")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("faq"))
+      c.resolvedHas("faq", "question") ||
+      c.capturedHas("faq")
     ),
   },
   {
     id: "routing", label: "Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)", group: "policies",
     missing: (c) => !(
-      c.resolved.some(t => t.toLowerCase().includes("routing") || t.toLowerCase().includes("transfer") || t.toLowerCase().includes("escalat") || t.toLowerCase().includes("after_hours")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("routing") || cc.topic.toLowerCase().includes("transfer") || cc.topic.toLowerCase().includes("escalat") || cc.topic.toLowerCase().includes("after_hours")) ||
+      c.resolvedHas("routing", "transfer", "escalat", "after_hours") ||
+      c.capturedHas("routing", "transfer", "escalat", "after_hours") ||
       /\b(route|routing|transfer|transferred|escalate|escalated|escalation|connect with|route to|senior counselor|support team|follow-up|callback|call back|schedule callback)\b/i.test(c.fullUserText)
     ),
   },
   {
     id: "edge_cases", label: "Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)", group: "policies",
     missing: (c) => !(
-      c.resolved.some(t => t.toLowerCase().includes("objection") || t.toLowerCase().includes("edge_case") || t.toLowerCase().includes("pushback") || t.toLowerCase().includes("emergency")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("objection") || cc.topic.toLowerCase().includes("edge_case") || cc.topic.toLowerCase().includes("pushback") || cc.topic.toLowerCase().includes("emergency")) ||
+      c.resolvedHas("objection", "edge_case", "pushback", "emergency") ||
+      c.capturedHas("objection", "edge_case", "pushback", "emergency") ||
       (!!c.spec?.knowledgeBase?.objections && c.spec.knowledgeBase.objections.length >= 1) ||
       /\b(objection|objections|busy|not interested|fees|already enrolled|pushback|concern|concerns|reject|rejection|upset|confused|edge case)\b/i.test(c.fullUserText)
     ),
@@ -174,8 +185,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       c.callFlowSteps.length > 0 ||
       /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("flow") || t.toLowerCase().includes("skeleton") || t.toLowerCase().includes("template") || t.toLowerCase().includes("steps")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("flow") || cc.topic.toLowerCase().includes("skeleton") || cc.topic.toLowerCase().includes("template") || cc.topic.toLowerCase().includes("steps"))
+      c.resolvedHas("flow", "skeleton", "template", "steps") ||
+      c.capturedHas("flow", "skeleton", "template", "steps")
     ),
   },
   {
@@ -183,8 +194,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.meta.openingPhrase ||
       /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("opening") || t.toLowerCase().includes("greeting") || t.toLowerCase().includes("start")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("opening") || cc.topic.toLowerCase().includes("greeting") || cc.topic.toLowerCase().includes("start"))
+      c.resolvedHas("opening", "greeting", "start") ||
+      c.capturedHas("opening", "greeting", "start")
     ),
   },
   {
@@ -192,8 +203,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.closingScript ||
       /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("closing") || t.toLowerCase().includes("wrap") || t.toLowerCase().includes("goodbye") || t.toLowerCase().includes("end_call")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("closing") || cc.topic.toLowerCase().includes("wrap") || cc.topic.toLowerCase().includes("goodbye") || cc.topic.toLowerCase().includes("end_call"))
+      c.resolvedHas("closing", "wrap", "goodbye", "end_call") ||
+      c.capturedHas("closing", "wrap", "goodbye", "end_call")
     ),
   },
   {
@@ -201,8 +212,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.silenceHandling ||
       /\b(silence|no input|no-input|doesn't answer|quiet|timeout|reprompt|re-prompt|if caller says nothing|say nothing|when silent|no response|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("silence") || t.toLowerCase().includes("timeout") || t.toLowerCase().includes("no_input") || t.toLowerCase().includes("no-input") || t.toLowerCase().includes("reprompt")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("silence") || cc.topic.toLowerCase().includes("timeout") || cc.topic.toLowerCase().includes("no_input") || cc.topic.toLowerCase().includes("no-input") || cc.topic.toLowerCase().includes("reprompt"))
+      c.resolvedHas("silence", "timeout", "no_input", "no-input", "reprompt") ||
+      c.capturedHas("silence", "timeout", "no_input", "no-input", "reprompt")
     ),
   },
   {
@@ -210,8 +221,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.interruptionPolicy ||
       /\b(barge in|barge-in|interrupt|interruption|talk over|cut off|allow interruption|do not interrupt|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("interrupt") || t.toLowerCase().includes("barge")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("interrupt") || cc.topic.toLowerCase().includes("barge"))
+      c.resolvedHas("interrupt", "barge") ||
+      c.capturedHas("interrupt", "barge")
     ),
   },
   {
@@ -219,8 +230,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.digressionPolicy ||
       /\b(digress|digression|off topic|off-topic|off script|off-script|mid flow|mid-flow|tangent|answer and return|return to script|resume where left off|steer back|redirect|avoid going outside|guide the conversation back|keep the conversation focused|bring the user back|sidetrack|sidetracked|unrelated|focus|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("digress") || t.toLowerCase().includes("tangent") || t.toLowerCase().includes("off_script") || t.toLowerCase().includes("off-script") || t.toLowerCase().includes("unrelated") || t.toLowerCase().includes("sidetrack") || t.toLowerCase().includes("focus")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("digress") || cc.topic.toLowerCase().includes("tangent") || cc.topic.toLowerCase().includes("off_script") || cc.topic.toLowerCase().includes("off-script") || cc.topic.toLowerCase().includes("unrelated") || cc.topic.toLowerCase().includes("sidetrack") || cc.topic.toLowerCase().includes("focus"))
+      c.resolvedHas("digress", "tangent", "off_script", "off-script", "unrelated", "sidetrack", "focus") ||
+      c.capturedHas("digress", "tangent", "off_script", "off-script", "unrelated", "sidetrack", "focus")
     ),
   },
   {
@@ -228,8 +239,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       c.callFlowSteps.some((s: any) => s?.onFailure?.action || s?.onFailure?.target) ||
       /\b(after 3 retries|max retries|retry limit|three failures|failed attempts|if caller can't provide|give up and transfer|retry exhaustion|fallback|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("retry") || t.toLowerCase().includes("exhaustion") || t.toLowerCase().includes("fallback")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("retry") || cc.topic.toLowerCase().includes("exhaustion") || cc.topic.toLowerCase().includes("fallback"))
+      c.resolvedHas("retry", "exhaustion", "fallback") ||
+      c.capturedHas("retry", "exhaustion", "fallback")
     ),
   },
   {
@@ -237,8 +248,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.confirmationStyle ||
       /\b(read back|confirm back|character by character|digit by digit|repeat back|confirm phone number|confirmation style|no readback|readback|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("confirmation") || t.toLowerCase().includes("readback") || t.toLowerCase().includes("confirm")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("confirmation") || cc.topic.toLowerCase().includes("readback") || cc.topic.toLowerCase().includes("confirm"))
+      c.resolvedHas("confirmation", "readback", "confirm") ||
+      c.capturedHas("confirmation", "readback", "confirm")
     ),
   },
   {
@@ -246,8 +257,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.meta.voiceCharacteristics ||
       /\b(pacing|fast|slow|formality|formal|casual|filler words|um|uh|accent|british|american|indian accent|voice style|voice persona|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("voice") || t.toLowerCase().includes("persona") || t.toLowerCase().includes("pacing") || t.toLowerCase().includes("accent") || t.toLowerCase().includes("tone")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("voice") || cc.topic.toLowerCase().includes("persona") || cc.topic.toLowerCase().includes("pacing") || cc.topic.toLowerCase().includes("accent") || cc.topic.toLowerCase().includes("tone"))
+      c.resolvedHas("voice", "persona", "pacing", "accent", "tone") ||
+      c.capturedHas("voice", "persona", "pacing", "accent", "tone")
     ),
   },
   {
@@ -256,8 +267,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       (!!c.snap.policies?.disclosures && c.snap.policies.disclosures.length > 0) ||
       (!!c.spec?.guardrails?.disclosures && c.spec.guardrails.disclosures.length > 0) ||
       /\b(disclosure|disclose|recorded call|recording consent|ai disclosure|state that you are ai|compliance notice|no disclosure|not regulated|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("disclosure") || t.toLowerCase().includes("consent") || t.toLowerCase().includes("compliance") || t.toLowerCase().includes("recording")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("disclosure") || cc.topic.toLowerCase().includes("consent") || cc.topic.toLowerCase().includes("compliance") || cc.topic.toLowerCase().includes("recording"))
+      c.resolvedHas("disclosure", "consent", "compliance", "recording") ||
+      c.capturedHas("disclosure", "consent", "compliance", "recording")
     ),
   },
   {
@@ -265,8 +276,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.dtmfFallback ||
       /\b(dtmf|keypad|press 1|type digits|keypad entry|touch tone|if speech fails use keypad|no dtmf|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("dtmf") || t.toLowerCase().includes("keypad") || t.toLowerCase().includes("touch_tone")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("dtmf") || cc.topic.toLowerCase().includes("keypad") || cc.topic.toLowerCase().includes("touch_tone"))
+      c.resolvedHas("dtmf", "keypad", "touch_tone") ||
+      c.capturedHas("dtmf", "keypad", "touch_tone")
     ),
   },
   {
@@ -275,8 +286,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       (typeof c.snap.operatingHours === 'object' && !!c.snap.operatingHours?.exceptions && c.snap.operatingHours.exceptions.length > 0) ||
       (!!c.snap.exceptions && c.snap.exceptions.length > 0) ||
       /\b(holiday|holidays|exceptions|closed on|christmas|new year|national holiday|no special holiday hours|standard only|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("holiday") || t.toLowerCase().includes("exception")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("holiday") || cc.topic.toLowerCase().includes("exception"))
+      c.resolvedHas("holiday", "exception") ||
+      c.capturedHas("holiday", "exception")
     ),
   },
   {
@@ -284,8 +295,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       (!!c.spec?.callFlowPlan?.entryRouting && c.spec.callFlowPlan.entryRouting.length > 0) ||
       /\b(entry routing|multiple request types|if caller says cancel|if caller says book|branching from start|single request type only|one flow only|single, straightforward|single straightforward|straightforward welcome flow|standard onboarding flow first|smart branching|branch into specific handling flows|branching into different paths|branching right away|single flow|standard onboarding journey|branching \/ exception|branch|branching|handling flows|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("entry") || t.toLowerCase().includes("routing") || t.toLowerCase().includes("multi-request") || t.toLowerCase().includes("multi_request") || t.toLowerCase().includes("branch") || t.toLowerCase().includes("flow")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("entry") || cc.topic.toLowerCase().includes("routing") || cc.topic.toLowerCase().includes("multi-request") || cc.topic.toLowerCase().includes("multi_request") || cc.topic.toLowerCase().includes("branch") || cc.topic.toLowerCase().includes("flow"))
+      c.resolvedHas("entry", "routing", "multi-request", "multi_request", "branch", "flow") ||
+      c.capturedHas("entry", "routing", "multi-request", "multi_request", "branch", "flow")
     ),
   },
   {
@@ -293,8 +304,8 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       !!c.spec?.guardrails?.injectionResistance ||
       /\b(injection|jailbreak|override|ignore instructions|reveal prompt|bypass rules|security prompt|default guardrails|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("injection") || t.toLowerCase().includes("jailbreak") || t.toLowerCase().includes("resistance") || t.toLowerCase().includes("override")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("injection") || cc.topic.toLowerCase().includes("jailbreak") || cc.topic.toLowerCase().includes("resistance") || cc.topic.toLowerCase().includes("override"))
+      c.resolvedHas("injection", "jailbreak", "resistance", "override") ||
+      c.capturedHas("injection", "jailbreak", "resistance", "override")
     ),
   },
 ];
@@ -308,6 +319,22 @@ function toStr(val: unknown): string {
   return String(val);
 }
 
+/** Splits a snake_case/kebab tag into its word tokens. */
+function tagTokens(tag: string): string[] {
+  return String(tag || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+/** A tag matches when one of its TOKENS starts with the needle (not mere substring). */
+function tagsMatch(tags: string[], needles: string[]): boolean {
+  return tags.some(tag => {
+    const tokens = tagTokens(tag);
+    return needles.some(n => {
+      const needle = n.toLowerCase();
+      return tokens.some(tok => tok.startsWith(needle));
+    });
+  });
+}
+
 function buildContext(
   spec: Partial<BusinessSpecification>,
   chatHistory: Array<{ role: string; content: string }>,
@@ -318,12 +345,16 @@ function buildContext(
     .filter(m => m.role.toLowerCase() === "user")
     .map(m => m.content)
     .join(" ");
+  const resolved = spec?.resolvedTopics || [];
+  const captured = spec?.capturedTopics || [];
   return {
     spec,
     meta,
     snap,
-    resolved: spec?.resolvedTopics || [],
-    captured: spec?.capturedTopics || [],
+    resolved,
+    captured,
+    resolvedHas: (...needles: string[]) => tagsMatch(resolved, needles),
+    capturedHas: (...needles: string[]) => tagsMatch(captured.map(c => c?.topic || ''), needles),
     fullUserText,
     // Language-aware detection: Hindi/Hinglish callers answer in Devanagari, which
     // the English keyword regexes would miss (JS \b word boundaries are ASCII-only).

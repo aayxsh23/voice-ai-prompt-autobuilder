@@ -4,9 +4,14 @@ import { LanguagePolicy, containsDevanagari } from "@/lib/llm/language/LanguageP
 import { validateLanguageQuality } from "@/lib/pipeline/validators/LanguageQualityValidator";
 import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
 import { getLlmClient } from "@/lib/llm/llmClient";
+import { PROMPT_EDITOR_INSTRUCTION } from "@/lib/llm/qwenProvider";
 import { logger } from "@/lib/logger";
 
 const ROMANIZED_HINDI_CHECK = /\b(hai|hain|kya|aap|kar|rahi|raha|hoon|hun|nahi|haan|namaste|kaise|kripya|dhanyavaad|bataye|bataiye|kijiye|karein|chahiye|milega|milenge|sakti|sakta|acha|accha|theek|madad)\b/i;
+
+const JUDGE_SYSTEM_INSTRUCTION = `You are a strict, highly accurate quality-control judge for voice-agent system prompts.
+You compare an interview transcript against a generated prompt and report every discrepancy you find.
+Return ONLY a valid JSON object matching the requested schema — no markdown, no code fences, no prose outside the JSON.`;
 
 export async function judgePrompt(a: {
   transcript: ChatMessage[];
@@ -112,7 +117,7 @@ export async function judgePrompt(a: {
   }
 
   // (d) Primary goal presence check
-  const coherence = validateCoherence(a.finalPrompt, {}, a.spec);
+  const coherence = validateCoherence(a.finalPrompt, { primaryGoal: a.spec?.meta?.primaryGoal }, a.spec);
   if (!coherence.isValid && coherence.errors && coherence.errors.length > 0) {
     issues.push({
       severity: 'critical',
@@ -124,22 +129,73 @@ export async function judgePrompt(a: {
     });
   }
 
-  // (e) Explicit user transcript prohibitions check (e.g., "never quote fees")
+  // (e) Structured prohibition checking (guardrails.prohibitions + transcript prohibitions)
+  const specProhibitions = Array.isArray(a.spec?.guardrails?.prohibitions) ? a.spec!.guardrails!.prohibitions.map(String) : [];
+  const draftProhibitions = Array.isArray((a as any).draft?.guardrails?.prohibitions) ? (a as any).draft.guardrails.prohibitions.map(String) : [];
+  const transcriptProhibitions: string[] = [];
   if (a.transcript && a.transcript.length > 0) {
     const userText = a.transcript
       .filter(m => m.role.toLowerCase() === 'user')
       .map(m => m.content)
       .join(' ');
+    const prohibitionMatches = Array.from(userText.matchAll(/\b(?:never|don'?t|do not|no)\s+([a-z0-9\s-_]{3,60})(?=\.|,|$|\n|because|when|if|while|over|in|during|to)/gi));
+    prohibitionMatches.forEach(m => {
+      const phrase = m[0].trim();
+      if (phrase.length > 4 && !/never mind|don'?t know|no problem|no worries|don'?t think/i.test(phrase)) {
+        transcriptProhibitions.push(phrase);
+      }
+    });
+  }
+  const allProhibitions = Array.from(new Set([...specProhibitions, ...draftProhibitions, ...transcriptProhibitions])).filter(Boolean);
 
-    if (/\b(never quote fees|don'?t quote fees|never mention prices|don'?t mention prices|no prices|no fees|do not quote prices)\b/i.test(userText)) {
+  for (const prohibition of allProhibitions) {
+    const isFeeProhibition = /\b(never quote fees|don'?t quote fees|never mention prices|don'?t mention prices|no prices|no fees|do not quote prices|fee|price|cost|pricing|rate)\b/i.test(prohibition);
+    if (isFeeProhibition) {
       if (/\b(fee|price|cost|dollars?|\$\d+|INR|rupees?|\bRs\.?\s*\d+)\b/i.test(a.finalPrompt)) {
         issues.push({
           severity: 'major',
           category: 'incorrect',
-          description: 'User explicitly requested to never quote fees, but prompt dialogue or instructions mention fees/pricing.',
-          evidenceFromConversation: 'User stated: never quote fees / prices.',
+          description: `Prompt violates prohibition: "${prohibition}". Found fee/pricing mentions in prompt dialogue or instructions.`,
+          evidenceFromConversation: `Prohibition stated: ${prohibition}`,
           whereInPrompt: 'Dialogue or state instructions',
-          suggestedFix: 'Remove any mention or quotation of fees or pricing from the dialogue and explicitly instruct agent never to quote fees.'
+          suggestedFix: `Remove any mention or quotation of fees or pricing from the dialogue and ensure agent never quotes fees.`
+        });
+      }
+      continue;
+    }
+
+    const isPaymentOrPiiProhibition = /\b(payment|otp|bank|credit\s+card|debit\s+card|pii|national\s+id|ssn|social\s+security|cvv)\b/i.test(prohibition);
+    if (isPaymentOrPiiProhibition) {
+      if (/\b(credit\s+card|debit\s+card|card\s+number|otp|bank\s+account|cvv|expiry|national\s+id|ssn)\b/i.test(a.finalPrompt)) {
+        issues.push({
+          severity: 'major',
+          category: 'incorrect',
+          description: `Prompt violates prohibition: "${prohibition}". Found payment/PII collection terms in prompt dialogue or instructions.`,
+          evidenceFromConversation: `Prohibition stated: ${prohibition}`,
+          whereInPrompt: 'Dialogue or state instructions',
+          suggestedFix: `Remove collection of payment/PII details from dialogue and states.`
+        });
+      }
+      continue;
+    }
+
+    // Generic substantive keyword check for any other prohibition
+    const stopWords = new Set(['never', 'dont', 'do', 'not', 'no', 'quote', 'say', 'mention', 'tell', 'ask', 'give', 'share', 'speak', 'about', 'with', 'from', 'that', 'this', 'have', 'been', 'will', 'your']);
+    const keywords = prohibition
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length >= 4 && !stopWords.has(w));
+    if (keywords.length > 0) {
+      const keywordRegex = new RegExp(`\\b(${keywords.join('|')})\\b`, 'i');
+      if (keywordRegex.test(a.finalPrompt)) {
+        issues.push({
+          severity: 'major',
+          category: 'incorrect',
+          description: `Prompt violates structured prohibition: "${prohibition}". Prohibited concept found in dialogue or objectives.`,
+          evidenceFromConversation: `Prohibition: ${prohibition}`,
+          whereInPrompt: 'Dialogue or objectives',
+          suggestedFix: `Remove any references to "${prohibition}" from spoken lines and call flow objectives.`
         });
       }
     }
@@ -189,7 +245,14 @@ ${chatHistory}
 GENERATED PROMPT:
 ${a.finalPrompt}`;
 
-        const rawResp = await llm.generateRaw(judgePromptText, 0.1);
+        // Must request JSON explicitly: the provider's legacy phrase-sniffing does not
+        // match this prompt, so the judge would otherwise run with the prose-authoring
+        // system prompt ("No JSON wrapping…") and no response_format — its output would
+        // never parse and every audit would silently fall back to "pass".
+        const rawResp = await llm.generateRaw(judgePromptText, 0.1, {
+          json: true,
+          systemInstruction: JUDGE_SYSTEM_INSTRUCTION,
+        });
         if (rawResp) {
           const parsed = safeParseJson<JudgeReport>(rawResp, { verdict: 'pass', score: 100, issues: [], blockingCount: 0 });
           if (parsed && Array.isArray(parsed.issues)) {
@@ -246,9 +309,18 @@ export async function repairFromJudge(a: {
     return a.finalPrompt;
   }
 
+  let currentPrompt = a.finalPrompt;
+  const feeIssue = issuesToRepair.find(i => /prohibition.*(?:fee|price|cost|quote)|never quote fees/i.test(i.description));
+  if (feeIssue) {
+    currentPrompt = currentPrompt.replace(/Say:\s*"[^"]*\b(?:fee|price|cost|\$\d+|INR|rupees?|\bRs\.?\s*\d+)[^"]*"/gi, `Say: "Our sales team handles all pricing and fee inquiries, so they will be happy to discuss that with you."`);
+    if (!/### SCOPE & REFUSAL BEHAVIOR[\s\S]*?never quote fees/i.test(currentPrompt)) {
+      currentPrompt = currentPrompt.replace(/### SCOPE & REFUSAL BEHAVIOR/, `### SCOPE & REFUSAL BEHAVIOR\n- Never quote fees, prices, or rates under any circumstances. If asked about pricing, defer to sales or follow-up.`);
+    }
+  }
+
   const llm = getLlmClient();
   if (!llm.generateRaw) {
-    return a.finalPrompt;
+    return currentPrompt;
   }
 
   const issueListFormatted = issuesToRepair.map((i, idx) => `Issue ${idx + 1} [${i.severity.toUpperCase()} - ${i.category}]:
@@ -273,11 +345,17 @@ Strict Instructions:
 Return ONLY the full corrected prompt text, starting directly with the first section header. Do not include markdown fences, preambles, or explanations.
 
 CURRENT PROMPT:
-${a.finalPrompt}`;
+${currentPrompt}`;
 
   try {
-    const rawOut = await llm.generateRaw(repairPromptText, 0.1);
-    if (!rawOut) return a.finalPrompt;
+    // Edit pass, not an authoring pass — the default system prompt would tell the model
+    // to re-author a prompt with a mandated section list, working against "change only
+    // what is listed".
+    const rawOut = await llm.generateRaw(repairPromptText, 0.1, {
+      json: false,
+      systemInstruction: PROMPT_EDITOR_INSTRUCTION,
+    });
+    if (!rawOut) return currentPrompt;
 
     let cleaned = rawOut.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     const fenceMatch = cleaned.match(/```(?:markdown)?\s*([\s\S]*?)\s*```/i);
@@ -289,9 +367,9 @@ ${a.finalPrompt}`;
       if (cleaned.endsWith('```')) cleaned = cleaned.slice(0, -3);
     }
     cleaned = cleaned.trim();
-    return cleaned || a.finalPrompt;
+    return cleaned || currentPrompt;
   } catch (err) {
     logger.warn("PromptJudge: repairFromJudge encountered error", err);
-    return a.finalPrompt;
+    return currentPrompt;
   }
 }

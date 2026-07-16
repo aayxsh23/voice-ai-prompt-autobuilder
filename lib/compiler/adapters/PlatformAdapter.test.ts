@@ -27,4 +27,23 @@ describe('PlatformAdapter', () => {
   it('defaults to generic', () => {
     expect(new PlatformAdapter().formatForPlatform(draft).platform).toBe('generic');
   });
+
+  // Regression: the tool JSON Schema used to be dropped on every platform (vapi
+  // hardcoded an empty `properties`), so agents registered tools with no arguments.
+  it('passes each tool JSON Schema through to every platform', () => {
+    const schema = {
+      type: 'object',
+      properties: { field: { type: 'string' }, expected_digits: { type: 'integer' } },
+      required: ['field'],
+    };
+    const withSchema = {
+      ...draft,
+      suggestedFunctions: [{ name: 'validate_digit_input', description: 'd', parameters: schema }],
+    } as unknown as PromptPackageDraft;
+    const a = new PlatformAdapter();
+
+    expect(a.formatForPlatform(withSchema, 'vapi').configPayload.model.functions[0].parameters).toEqual(schema);
+    expect(a.formatForPlatform(withSchema, 'retell').configPayload.general_tools[0].parameters).toEqual(schema);
+    expect(a.formatForPlatform(withSchema, 'bland').configPayload.tools[0].input_schema).toEqual(schema);
+  });
 });

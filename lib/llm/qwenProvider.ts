@@ -17,6 +17,7 @@ import {
   safeParseJson,
   ChatMessage,
   BuilderChatTurnResponse,
+  GenerateRawOptions,
 } from './types';
 import { PromptCompilationError } from "@/lib/errors/PromptCompilationError";
 import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
@@ -91,6 +92,25 @@ CRITICAL PROHIBITIONS:
 - Never use the phrase "As an AI" — if asked, follow the AI IDENTITY DISCLOSURE section format
 
 OUTPUT FORMAT: Plain text with ### section headers. No JSON wrapping. Start output directly with ### AGENT IDENTITY & PERSONA.
+`.trim();
+
+/**
+ * System prompt for surgical edit passes (judge repair, language repair).
+ *
+ * Deliberately NOT GLOBAL_COMPILER_INSTRUCTION: that one tells the model to author a
+ * fresh prompt with a mandated section list starting at "### AGENT IDENTITY & PERSONA",
+ * which fights an editor's job of preserving the input and changing only what it is
+ * told to (and can make it invent sections).
+ */
+export const PROMPT_EDITOR_INSTRUCTION = `
+You are a precise editor of voice-agent system prompts.
+You receive a complete, already-assembled prompt plus a specific list of fixes.
+- Apply ONLY the requested fixes. Leave every other line byte-for-byte identical.
+- Never add, remove, rename, or reorder section headers (lines starting with ###).
+- Never invent new sections or content that was not asked for.
+- Preserve every placeholder ({{...}} and [...]) exactly as written.
+- Output no preamble, commentary, explanation, or markdown code fences.
+Return ONLY the full corrected prompt text.
 `.trim();
 
 // Keeps generated content dense (Aakash-style), not token-heavy (FITTR-style).
@@ -198,17 +218,20 @@ export class QwenProvider implements LlmService {
     return safeParseJson<T>(cleanContent, {} as T);
   }
 
-  public async generateRaw(prompt: string, temperature = 0.1): Promise<string> {
-    const isJsonRequest = prompt.includes("ONLY valid JSON") || prompt.includes("JSON matching");
+  public async generateRaw(prompt: string, temperature = 0.1, options?: GenerateRawOptions): Promise<string> {
+    // Explicit options always win. The substring sniff below is a legacy fallback for
+    // callers that phrase their JSON request as "ONLY valid JSON"; it silently fails
+    // for any other phrasing, which is why `options.json` exists.
+    const isJsonRequest = options?.json ?? (prompt.includes("ONLY valid JSON") || prompt.includes("JSON matching"));
+    const systemContent = options?.systemInstruction ?? (
+      isJsonRequest
+        ? "You are an expert AI voice agent architect. Output strictly valid JSON matching the schema requested without markdown formatting or code fences."
+        : GLOBAL_COMPILER_INSTRUCTION
+    );
     const response = await this.client.chat.completions.create({
       model: this.modelName,
       messages: [
-        {
-          role: "system",
-          content: isJsonRequest
-            ? "You are an expert AI voice agent architect. Output strictly valid JSON matching the schema requested without markdown formatting or code fences."
-            : GLOBAL_COMPILER_INSTRUCTION,
-        },
+        { role: "system", content: systemContent },
         { role: "user", content: prompt }
       ],
       temperature,

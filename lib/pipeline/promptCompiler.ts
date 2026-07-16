@@ -1,5 +1,6 @@
 import { assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
 import { getLlmClient } from "../llm/llmClient";
+import { PROMPT_EDITOR_INSTRUCTION } from "../llm/qwenProvider";
 import {
   BlueprintJson,
   PromptPackageDraft,
@@ -44,7 +45,12 @@ Do NOT change section headers (lines starting with ###), placeholders ({{...}} o
 Return ONLY the full corrected prompt text, starting directly with the first section header.
 
 ${prompt}`;
-  const out = await llm.generateRaw(repairPrompt, 0.1);
+  // Edit pass — see PROMPT_EDITOR_INSTRUCTION. The default system prompt would ask the
+  // model to re-author the prompt from a mandated section list instead of correcting it.
+  const out = await llm.generateRaw(repairPrompt, 0.1, {
+    json: false,
+    systemInstruction: PROMPT_EDITOR_INSTRUCTION,
+  });
   return (out || '').trim() || prompt;
 }
 
@@ -238,6 +244,20 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   });
   draft = mergeUserOverrides(draft, input.overrides);
   draft.businessSpec = spec;
+
+  // Register the planned tools on the draft, preserving each tool's JSON Schema.
+  // This is the ONLY path by which tools reach the project record and the platform
+  // export — without it the prompt text would be the only place tools are defined.
+  draft.suggestedFunctions = (Array.isArray(spec.tools) ? spec.tools : []).map((t: any) => ({
+    name: t?.name,
+    category: 'Tool',
+    description: t?.description || '',
+    purposeInPrompt: t?.associatedStateId ? `Invoked at state: ${t.associatedStateId}` : '',
+    requiredInputs: Array.isArray(t?.parameters?.required) ? t.parameters.required : [],
+    expectedOutputs: [],
+    enabled: true,
+    parameters: t?.parameters || { type: 'object', properties: {} },
+  })).filter((f: any) => !!f.name);
 
   // Synchronize dynamicVariables with any slots required by call flow steps
   const steps = (Array.isArray(spec.callFlowPlan?.steps) && spec.callFlowPlan.steps.length > 0)

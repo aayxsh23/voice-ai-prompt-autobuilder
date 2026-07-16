@@ -57,6 +57,7 @@ export const POST = apiHandler(async (req: Request) => {
             purposeInPrompt: f.purposeInPrompt || "",
             requiredInputsJson: JSON.stringify(f.requiredInputs || []),
             expectedOutputsJson: JSON.stringify(f.expectedOutputs || []),
+            parametersJson: JSON.stringify(f.parameters || {}),
             enabled: f.enabled !== false
           }))
         },

@@ -1,5 +1,6 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
+import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
 import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { logger } from "@/lib/logger";
 
@@ -20,6 +21,58 @@ function formatPolicyString(val: any, defaultVal: string): string {
     return Object.entries(val).map(([k, v]) => `${k}: ${v}`).join('; ');
   }
   return String(val);
+}
+
+/**
+ * Region-specific reference data. This is irreducibly a lookup — no rule derives
+ * "Qatar -> 999". Correctness therefore does NOT depend on the table being
+ * complete: an unlisted region falls back to generic guidance rather than
+ * inheriting another country's numbers. Add rows to improve specificity only.
+ */
+const EMERGENCY_BY_REGION: Record<string, string> = {
+  IN: 'call 112 for immediate physical danger/emergency services in India, or the KIRAN Mental Health Helpline (1800-599-0019) for psychological distress',
+  US: 'call 911 for immediate danger, or the 988 Suicide & Crisis Lifeline for suicide/crisis situations',
+  QA: 'call 999 for emergency services in Qatar',
+  AE: 'call 999 for police or 998 for ambulance in the UAE',
+  GB: 'call 999 for emergency services',
+  SA: 'call 997 for ambulance or 999 for police in Saudi Arabia',
+};
+
+const CURRENCY_BY_REGION: Record<string, { code: string; symbol: string; name: string }> = {
+  IN: { code: 'INR', symbol: '₹', name: 'Indian Rupees' },
+  US: { code: 'USD', symbol: '$', name: 'US Dollars' },
+  CA: { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollars' },
+  GB: { code: 'GBP', symbol: '£', name: 'British Pounds' },
+  QA: { code: 'QAR', symbol: 'QR', name: 'Qatari Riyals' },
+  AE: { code: 'AED', symbol: 'AED', name: 'UAE Dirhams' },
+  SA: { code: 'SAR', symbol: 'SAR', name: 'Saudi Riyals' },
+  SG: { code: 'SGD', symbol: 'S$', name: 'Singapore Dollars' },
+  AU: { code: 'AUD', symbol: 'A$', name: 'Australian Dollars' },
+};
+
+/** Explicit signals only — never guessed from company name or free text. */
+export function resolveRegion(spec?: Partial<BusinessSpecification>, draft?: any): string | undefined {
+  const meta = spec?.meta as { region?: string } | undefined;
+  if (meta?.region) return String(meta.region).trim().toUpperCase().slice(0, 2);
+  const draftVars: unknown[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const fromVar = draftVars.find((v) => /^(country|region|country_code)$/i.test((v as { key?: string })?.key || ''));
+  const val = (fromVar as { defaultValue?: string })?.defaultValue;
+  if (val) return String(val).trim().toUpperCase().slice(0, 2);
+  return undefined;
+}
+
+export function resolveEmergencyGuidance(region?: string): string {
+  const specific = region ? EMERGENCY_BY_REGION[region] : undefined;
+  return specific
+    ? `- Always direct the user to emergency services for the deployment region: ${specific}. Do not offer numbers for any other country.`
+    : `- Always direct the user to their local emergency services. Do NOT state a specific emergency number, hotline, or country's service — you have not been told the deployment region, and naming the wrong one is dangerous.`;
+}
+
+export function resolveCurrencyGuidance(region?: string): string {
+  const specific = region ? CURRENCY_BY_REGION[region] : undefined;
+  return specific
+    ? `- Currency & Monetary Formats: When stating prices or monetary values (if authorized and not prohibited), always use ${specific.name} (${specific.symbol} / ${specific.code}) for ${region}. Never assume or state US Dollars ($) or other currencies unless explicitly specified.`
+    : `- Do NOT assume or state a specific currency (such as US Dollars $, INR ₹, or EUR €) unless explicitly provided in the business context or facts. When the deployment region is unestablished, state monetary figures neutrally or verify the preferred pricing currency before quoting.`;
 }
 
 export function getSemanticCore(slot: string): string {
@@ -58,15 +111,18 @@ export function semanticDedupSlots(slots: string[]): string[] {
   return uniqueList;
 }
 
-function buildDefaultSafetySection(customRules?: string, spec?: BusinessSpecification, draft?: any): string {
-  const langMode = spec?.meta?.languageMode || draft?.languageMode || 'english';
-  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
-  const countryCodeVar = draftVars.find(v => /country|region/i.test(v?.key || ''))?.defaultValue || '';
-  const isIndiaOrHindi = langMode === 'hindi' || langMode === 'hinglish' || langMode === 'multilingual' || /india|\+91|ist/i.test(`${countryCodeVar} ${JSON.stringify(spec?.businessSnapshot || {})} ${spec?.meta?.companyName || ''}`);
-
-  const emergencyText = isIndiaOrHindi
-    ? `- Always direct the user to appropriate emergency resources as configured for the deployment region: call 112 for immediate physical danger/emergency services in India, or the KIRAN Mental Health Helpline (1800-599-0019) for psychological distress and crisis support.`
-    : `- Always direct the user to appropriate emergency resources as configured for the deployment region (e.g., call 911 for immediate danger in the US, or the 988 Suicide & Crisis Lifeline for suicide/crisis situations).`;
+/**
+ * `region` is passed in (not re-derived) so the caller owns the single resolution.
+ * The previous signature took an optional `spec` that the only call site never
+ * passed, so the country check silently evaluated to false for every prompt and
+ * emitted US 911/988 unconditionally — including for a Qatar deployment.
+ */
+function buildDefaultSafetySection(customRules?: string, region?: string): string {
+  // Emergency numbers and currency are region-specific facts. Emitting one we were not told is
+  // the same failure our own HALLUCINATION guardrail forbids. Unknown region is
+  // safe; a confidently wrong fact is not.
+  const emergencyText = resolveEmergencyGuidance(region);
+  const currencyText = resolveCurrencyGuidance(region);
 
   const lines: string[] = [];
   lines.push("### MANDATORY EMERGENCY & SAFETY OVERRIDES");
@@ -84,6 +140,7 @@ HALLUCINATION GUARDRAILS:
 - If the requested information is not available in the provided context, explicitly say so (e.g., "I don't have that information right now") rather than guessing, estimating, or fabricating a plausible-sounding answer.
 - Never make commitments, guarantees, or promises on behalf of the business unless explicitly authorized in context.
 - When in doubt between saying "I don't know" and guessing, always choose to say "I don't know" or offer to find out and follow up.
+${currencyText}
 
 ABUSIVE USER GUARDRAILS:
 - If the user becomes verbally abusive, uses hate speech, or is persistently hostile, remain calm, neutral, and professional in tone — never mirror aggression or become defensive.
@@ -107,36 +164,6 @@ HUMAN ESCALATION GUARDRAILS:
     }
   }
   return lines.join("\n\n");
-}
-
-function buildRuntimeToolsSection(tools?: any[]): string {
-  const effectiveTools = (tools && tools.length > 0) ? tools : [
-    { name: "validate_digit_input" },
-    { name: "set_capture_mode" },
-    { name: "end_call" },
-    { name: "format_email_for_voice" }
-  ];
-
-  const hasValidateDigits = effectiveTools.some(t => t?.name === "validate_digit_input");
-  const hasSetCaptureMode = effectiveTools.some(t => t?.name === "set_capture_mode");
-  const hasEndCall = effectiveTools.some(t => t?.name === "end_call");
-  const hasTransfer = effectiveTools.some(t => t?.name === "transfer_call");
-  const emailTool = effectiveTools.find(t => t?.name?.startsWith("format_email_"));
-
-  // Definitions only — no execution-protocol prose. Each state in the CALL FLOW
-  // already spells out exactly when to invoke a tool (see "Required Tool Actions").
-  const defs: string[] = [];
-  if (hasSetCaptureMode) defs.push('- `set_capture_mode(keep_buffer, mode, field, expected_digits)` — preserve caller audio while collecting digits/email; turn off once the field is confirmed.');
-  if (hasValidateDigits) defs.push('- `validate_digit_input(field, expected_digits, user_text, previously_collected)` — validate and accumulate spoken digits.');
-  if (emailTool) defs.push(`- \`${emailTool.name}(email_text)\` — normalize a spoken email into a TTS-friendly read-back string.`);
-  if (hasTransfer) defs.push('- `transfer_call(reason, department)` — hand the caller to a human agent or department.');
-  if (hasEndCall) defs.push('- `end_call(reason)` — end the call in the same turn as the closing line.');
-
-  const domainTools = effectiveTools.filter(t => t?.name && !["validate_digit_input", "set_capture_mode", "end_call", "format_email_for_voice", "format_email_for_voice_no_comma", "transfer_call"].includes(t.name));
-  domainTools.forEach(t => defs.push(`- \`${t.name}\` — ${t.description || "execute business action."}`));
-
-  if (defs.length === 0) return "";
-  return `### AVAILABLE TOOLS\nInvoke where the call flow requires; never describe or read tool names to the caller.\n${defs.join('\n')}`;
 }
 
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
@@ -165,6 +192,9 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   };
 
   const nameInfieldKey = draftVars.find(v => !isOutfieldPreCheck(v.key) && /first_name|caller_name|name/i.test(v.key))?.key;
+
+  // Gates every region-specific fact below (emergency numbers, phone digit counts).
+  const region = resolveRegion(spec, draft);
 
   const allSlotNamesForSpeakability = new Set<string>([
     ...Array.from(rawCollectedSlots),
@@ -283,32 +313,53 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
       }
     }
     let slotsToCollect = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
-    if (slotsToCollect.length === 0 || !slotsToCollect.some((slot: any) => resolveSlotDigitSpec(slot))) {
-      const stepText = `${s?.stateId || ''} ${s?.stateName || ''} ${s?.objective || ''} ${(s?.invokesTools || []).join(' ')}`;
-      if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText) || (Array.isArray(s?.invokesTools) && s.invokesTools.includes("validate_digit_input"))) {
-        const inferredSlot = /whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number";
+    if (slotsToCollect.length === 0 && Array.isArray(s?.invokesTools)) {
+      if (s.invokesTools.includes("validate_digit_input") || s.invokesTools.includes("set_capture_mode")) {
+        const stepText = `${s?.stateId || ''} ${s?.stateName || ''} ${s?.objective || ''}`;
+        const inferredSlot = /whatsapp/i.test(stepText) ? "whatsapp_number" : (/pin|pincode|otp|passcode/i.test(stepText) ? "pin_code" : "phone_number");
         if (!slotsToCollect.includes(inferredSlot)) slotsToCollect = [...slotsToCollect, inferredSlot];
-      } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
-        if (!slotsToCollect.includes("pin_code")) slotsToCollect = [...slotsToCollect, "pin_code"];
-      } else if (/email|mail/i.test(stepText)) {
+      } else if (s.invokesTools.some((t: string) => t.startsWith("format_email_"))) {
         if (!slotsToCollect.includes("email")) slotsToCollect = [...slotsToCollect, "email"];
       }
     }
 
+    // Invocation strings are built from the registered tool's JSON Schema (see
+    // lib/compiler/constants/toolRegistry.ts) so parameter names can never drift from
+    // what the platform actually registered. An unregistered tool renders nothing.
+    const registeredTools = Array.isArray(spec?.tools) ? spec.tools : [];
+    const invoke = (name: string, args: Record<string, ToolArgValue>): string | null =>
+      buildToolInvocation(name, args, registeredTools as any);
+
     let requiredToolActions: string[] = [];
     slotsToCollect.forEach((slot: string) => {
-      const specMatch = resolveSlotDigitSpec(slot);
-      if (specMatch) {
-        if (specMatch.mode === 'digits') {
-          requiredToolActions.push(`- Before asking: Invoke \`set_capture_mode(keep_buffer: true, mode: "digits", field: "${slot}", expected_digits: ${specMatch.expectedDigits})\` in the SAME turn you ask for ${slot}.`);
-          requiredToolActions.push(`- On response: Call \`validate_digit_input(field: "${slot}", expected_digits: ${specMatch.expectedDigits}, user_text: caller_utterance, previously_collected: all_digits_collected_so_far)\` to verify and accumulate digits. If \`is_valid: false\`, speak the prompt returned by the tool or ask specifically for remaining digits. Retry up to 3 times.`);
-          requiredToolActions.push(`- On completion: Call \`set_capture_mode(keep_buffer: false)\` before proceeding to the next step.`);
-        } else if (specMatch.mode === 'email') {
-          const emailToolName = spec?.tools?.find((t: any) => t?.name?.startsWith("format_email_"))?.name || "format_email_for_voice";
-          requiredToolActions.push(`- Before asking: Invoke \`set_capture_mode(keep_buffer: true, mode: "email", field: "${slot}")\` in the SAME turn you ask for ${slot}.`);
-          requiredToolActions.push(`- On response: Call \`${emailToolName}(email_text: caller_utterance)\` and read back \`spoken_email\` exactly for confirmation.`);
-          requiredToolActions.push(`- On completion: Call \`set_capture_mode(keep_buffer: false)\` before proceeding to the next step.`);
-        }
+      const specMatch = resolveSlotDigitSpec(slot, region);
+      if (!specMatch) return;
+
+      if (specMatch.mode === 'digits') {
+        // expected_digits is only asserted when the region makes it knowable —
+        // otherwise omit it rather than force a wrong length onto the validator.
+        const digits = specMatch.expectedDigits;
+        const open = invoke('set_capture_mode', digits !== undefined
+          ? { keep_buffer: true, mode: 'digits', field: slot, expected_digits: digits }
+          : { keep_buffer: true, mode: 'digits', field: slot });
+        const validate = invoke('validate_digit_input', {
+          field: slot,
+          ...(digits !== undefined ? { expected_digits: digits } : {}),
+          user_text: { raw: 'caller_utterance' },
+          previously_collected: { raw: 'all_digits_collected_so_far' },
+        });
+        const close = invoke('set_capture_mode', { keep_buffer: false });
+        if (open) requiredToolActions.push(`- Before asking: Invoke \`${open}\` in the SAME turn you ask for ${slot}.`);
+        if (validate) requiredToolActions.push(`- On response: Call \`${validate}\` to verify and accumulate digits. If \`is_valid: false\`, speak the prompt returned by the tool or ask specifically for remaining digits. Retry up to 3 times.`);
+        if (close) requiredToolActions.push(`- On completion: Call \`${close}\` before proceeding to the next state.`);
+      } else if (specMatch.mode === 'email') {
+        const emailToolName = registeredTools.find((t: any) => t?.name?.startsWith("format_email_"))?.name;
+        const open = invoke('set_capture_mode', { keep_buffer: true, mode: 'email', field: slot });
+        const format = emailToolName ? invoke(emailToolName, { email_text: { raw: 'caller_utterance' } }) : null;
+        const close = invoke('set_capture_mode', { keep_buffer: false });
+        if (open) requiredToolActions.push(`- Before asking: Invoke \`${open}\` in the SAME turn you ask for ${slot}.`);
+        if (format) requiredToolActions.push(`- On response: Call \`${format}\` and read back \`spoken_email\` exactly for confirmation.`);
+        if (close) requiredToolActions.push(`- On completion: Call \`${close}\` before proceeding to the next state.`);
       }
     });
 
@@ -316,29 +367,34 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     const hasConditionalEndCall = Array.isArray(s?.branchingConditions) && s.branchingConditions.some((b: any) => b?.goToStep === 'end_call' || b?.action === 'end_call');
 
     if (isUnconditionalTerminal) {
-      requiredToolActions.push(`- Call Termination: Invoke \`end_call(reason: "${s?.stateId === "resolution" ? "closing_complete" : "flow_terminal"}")\` synchronously in the exact same turn as your closing sentence.`);
+      const call = invoke('end_call', { reason: s?.stateId === "resolution" ? "closing_complete" : "flow_terminal" });
+      if (call) requiredToolActions.push(`- Call Termination: Invoke \`${call}\` synchronously in the exact same turn as your closing sentence.`);
     } else if (hasConditionalEndCall) {
       const termBranches = (s.branchingConditions as any[] || []).filter(b => b?.goToStep === 'end_call' || b?.action === 'end_call');
       termBranches.forEach(tb => {
-        const reason = tb?.reason || tb?.condition || "flow_terminal";
-        requiredToolActions.push(`- Conditional Call Termination: IF caller triggers condition "${tb?.condition}", speak your closing line and invoke \`end_call(reason: "${reason}")\` synchronously in that same turn.`);
+        const call = invoke('end_call', { reason: tb?.reason || tb?.condition || "flow_terminal" });
+        if (call) requiredToolActions.push(`- Conditional Call Termination: IF caller triggers condition "${tb?.condition}", speak your closing line and invoke \`${call}\` synchronously in that same turn.`);
       });
     } else if (Array.isArray(s?.invokesTools) && s.invokesTools.includes("end_call")) {
-      requiredToolActions.push(`- Conditional Call Termination: If caller asks to disconnect or terminate during this step, speak your closing response and invoke \`end_call(reason: "flow_terminal")\` in that same turn.`);
+      const call = invoke('end_call', { reason: "flow_terminal" });
+      if (call) requiredToolActions.push(`- Conditional Call Termination: If caller asks to disconnect or terminate during this state, speak your closing response and invoke \`${call}\` in that same turn.`);
     }
 
     if (Array.isArray(s?.invokesTools)) {
       s.invokesTools.forEach((tName: string) => {
-        if (tName !== "set_capture_mode" && tName !== "validate_digit_input" && !tName.startsWith("format_email_") && tName !== "end_call") {
-          const toolDef = Array.isArray(spec?.tools) ? spec!.tools.find((t: any) => t?.name === tName) : null;
-          const paramsObj = toolDef?.parameters?.properties || {};
-          const paramKeys = Object.keys(paramsObj);
-          const argsStr = paramKeys.length > 0
-            ? paramKeys.map(k => `${k}: <${k}_value>`).join(", ")
-            : "";
-          const descStr = toolDef?.description ? ` — ${toolDef.description}` : "";
-          requiredToolActions.push(`- Domain Tool: Invoke \`${tName}(${argsStr})\`${descStr} when condition for ${s?.stateId || "this step"} is met.`);
+        if (tName === "set_capture_mode" || tName === "validate_digit_input" || tName.startsWith("format_email_") || tName === "end_call") return;
+        // Only tools the platform actually registered may be instructed. Anything the
+        // planner invented (e.g. transfer_call) is dropped rather than emitted as a
+        // bare, unusable `tool()` call.
+        const toolDef = registeredTools.find((t: any) => t?.name === tName) as any;
+        if (!toolDef) {
+          logger.warn("PromptAssembler: dropping unregistered tool from call flow", { tool: tName, stateId: s?.stateId });
+          return;
         }
+        const paramKeys = Object.keys(toolDef?.parameters?.properties || {});
+        const args = Object.fromEntries(paramKeys.map(k => [k, { raw: `<${k}>` } as ToolArgValue]));
+        const call = buildToolInvocation(tName, args, registeredTools as any);
+        if (call) requiredToolActions.push(`- Domain Tool: Invoke \`${call}\` when the condition for ${s?.stateId || "this state"} is met.`);
       });
     }
 
@@ -352,6 +408,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
       stateName: s?.stateName || s?.label || `Step ${idx + 1}`,
       objective: s?.objective || s?.stateName || s?.label || `Step ${idx + 1}`,
       scriptDirective: directive,
+      behaviorDirective: s?.behaviorDirective,
       slotsToCollect,
       branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
       fallbackBehavior: s?.fallbackBehavior || "",
@@ -443,9 +500,11 @@ Key Rules
 - When resuming after an audio check, briefly re-anchor the user: "Great, so as I was saying..." and resume from where you left off.`.trim();
 
   // 3. SCOPE & REFUSAL BEHAVIOR
-  const prohibitionsList = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
-  const customProhibitions = prohibitionsList.length > 0
-    ? '\n' + prohibitionsList.map((p: any) => `- ${String(p)}`).join('\n')
+  const specProhibitions = Array.isArray(spec?.guardrails?.prohibitions) ? spec.guardrails.prohibitions : [];
+  const draftProhibitions = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
+  const allProhibitions = Array.from(new Set([...specProhibitions, ...draftProhibitions])).filter(Boolean);
+  const customProhibitions = allProhibitions.length > 0
+    ? '\n' + allProhibitions.map((p: any) => `- ${String(p)}`).join('\n')
     : "";
   const scopeAndRefusals = `### SCOPE & REFUSAL BEHAVIOR
 CORE TASK & BOUNDARIES
@@ -458,12 +517,16 @@ CORE TASK & BOUNDARIES
 - If you don’t know something, say: “I don’t have that information.”
 - Never explain restricted or unsafe topics. Never redirect to alternative topics or suggestions.${customProhibitions}
 
+VOICE RULES & TOOL SILENCE
+- Never speak tool names, internal function names, or variable keys out loud to the caller.
+- When executing a tool (such as checking a calendar or validating input), do not narrate the tool execution (e.g., never say "I am calling the check_calendar tool"). Simply speak naturally or pause while checking.
+
 OFF-TOPIC REFUSAL PROTOCOL
 - If the user asks anything unrelated (for example: food, cooking, recipes, weapons, bombs, hacking, personal advice, general knowledge), say one of the two based on the context: “I might be missing something, how does this relate to what we’re discussing.” or "I might be missing something, can you please repeat yourself?"
 - If the user repeats or persists with off-topic or refused requests more than two times, politely end the call.`.trim();
 
   // 4. SAFETY-CRITICAL OVERRIDES
-  const safetyOverrides = buildDefaultSafetySection(guardrailsContent);
+  const safetyOverrides = buildDefaultSafetySection(guardrailsContent, region);
 
   // 5. BUSINESS CONTEXT & STATIC FACTS
   const servicesList = Array.isArray(spec?.businessSnapshot?.servicesOffered) ? spec.businessSnapshot.servicesOffered : [];
@@ -531,7 +594,8 @@ OFF-TOPIC REFUSAL PROTOCOL
   let dynamicVariables = "";
   if (infields.length > 0) {
     const infieldNames = allSlots.filter(s => !isOutfield(s));
-    dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (e.g., {{first_name}}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
+    const exampleInfield = nameInfieldKey ? `{{${nameInfieldKey}}}` : (infieldNames.length > 0 ? `{{${infieldNames[0]}}}` : "the provided pre-call context");
+    dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (such as ${exampleInfield}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
   }
 
   // 8. CALL FLOW / STATE MACHINE
@@ -576,10 +640,13 @@ OFF-TOPIC REFUSAL PROTOCOL
         const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
         const branchText = branches.length > 0
           ? branches.map((b: any) => {
+              // A 'transfer' branch has no backing tool (transfer_call is not registered),
+              // so route it through the human-handoff path instead of naming a tool the
+              // platform cannot execute.
               const dest = (b.goToStep === 'end_call' || b.action === 'end_call')
-                ? `Trigger end_call(reason: "${b.reason || 'completed'}")`
+                ? `Trigger ${buildToolInvocation('end_call', { reason: b.reason || 'completed' }, (spec?.tools || []) as any) || 'call termination'}`
                 : (b.goToStep === 'transfer' || b.action === 'transfer')
-                ? 'Trigger transfer_call()'
+                ? 'Hand off to a human per the ESCALATION & ROUTING MAP'
                 : resolveStateRef(b.goToStep);
               return `  * If ${b.condition} -> ${dest}`;
             }).join('\n')
@@ -591,6 +658,15 @@ OFF-TOPIC REFUSAL PROTOCOL
         const lines: string[] = [];
         lines.push(`STATE: [${step?.stateId}] (${step?.stateName})`);
         lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute state [${step?.stateId}]`}`);
+        if (Array.isArray(step?.slotsToCollect) && step.slotsToCollect.length > 0) {
+          const extractions = step.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
+          lines.push(`* **Required Extractions:** Extract and record ${extractions} from the caller's response.`);
+        }
+        // Non-spoken handling notes. Kept distinct from the Dialogue Directive so the
+        // agent never reads an instruction aloud.
+        if (step?.behaviorDirective) {
+          lines.push(`* **Handling (do not say aloud):** ${step.behaviorDirective}`);
+        }
         lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
         lines.push(`* **Routing & Branches:**\n${branchText}`);
         if (step?.fallbackBehavior) {
@@ -629,13 +705,13 @@ OFF-TOPIC REFUSAL PROTOCOL
   const objectionHandling = `### OBJECTION HANDLING\nHandle pushback with judgment, not a script: (1) acknowledge the concern warmly, (2) address it in one line using a relevant fact or benefit from your context, (3) steer back toward ${primaryGoal}. Keep it to 1-2 sentences, never argue, and respect a firm "no" by closing politely.${knownConcerns}`;
 
   // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
-  const runtimeToolsProtocol = buildRuntimeToolsSection(spec?.tools);
-
+  // NOTE: tool *definitions* are intentionally absent — they are registered with the
+  // platform from ToolPlanner (see draft.suggestedFunctions -> PlatformAdapter).
+  // The prompt only carries usage, inline per state under "Required Tool Actions".
   const sections = [
     identity,
     languageHandling,
     outputMechanics,
-    runtimeToolsProtocol,
     scopeAndRefusals,
     safetyOverrides,
     businessContext,

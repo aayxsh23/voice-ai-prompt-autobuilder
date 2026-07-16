@@ -8,7 +8,9 @@ export function validateCoherence(
 ): ValidationResult {
   const errors: string[] = [];
 
-  const goal = draft?.primaryGoal || ir?.mission?.goal || ir?.meta?.role || "";
+  // `ir` is a BusinessSpecification, whose goal lives at meta.primaryGoal — without
+  // that fallback, callers passing only a spec resolved to "" and skipped the check.
+  const goal = draft?.primaryGoal || ir?.meta?.primaryGoal || ir?.mission?.goal || ir?.meta?.role || "";
   if (goal && goal !== "Automated Voice Assistant") {
     // Check key words of goal appear somewhere in prompt
     const words = goal.split(/\s+/).filter((w: string) => w.length > 5);

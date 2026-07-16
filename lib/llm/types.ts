@@ -125,6 +125,10 @@ export interface SuggestedFunctionSpec {
   requiredInputs: string[];
   expectedOutputs: string[];
   enabled: boolean;
+  /** Full JSON Schema for the tool's arguments, as produced by ToolPlanner. This is
+   *  what gets registered with the telephony platform, so the prompt does not need
+   *  to redeclare tool definitions. */
+  parameters?: Record<string, unknown>;
 }
 
 export interface QualityReview {
@@ -228,12 +232,28 @@ export interface BlueprintJson {
   overrides?: SchemaOverrides;
 }
 
+export interface GenerateRawOptions {
+  /**
+   * Force JSON response mode (sets `response_format` and a JSON-oriented system
+   * prompt). When omitted, JSON mode is inferred from the prompt text for backward
+   * compatibility — that inference is unreliable, so any caller that needs JSON
+   * should set this explicitly rather than relying on phrasing.
+   */
+  json?: boolean;
+  /**
+   * Replaces the default system prompt. Required for tasks that are not "author a new
+   * voice-agent prompt" (e.g. judging or editing), since the default instructs the
+   * model to emit a full prompt with a fixed section list.
+   */
+  systemInstruction?: string;
+}
+
 export interface LlmService {
   generateConversationDesign(input: { template: string; business: BusinessSnapshot; mission: CallMission }): Promise<ConversationDesign>;
   runGapAudit(input: { business: BusinessSnapshot; mission: CallMission; conversation: ConversationDesign; personality: VoicePersonality }): Promise<GapAuditResult>;
   generateReviewDraft(input: BlueprintJson): Promise<PromptPackageDraft>;
   generateWithCoT?(input: BlueprintJson): Promise<PromptPackageDraft>;
-  generateRaw?(prompt: string, temperature?: number): Promise<string>;
+  generateRaw?(prompt: string, temperature?: number, options?: GenerateRawOptions): Promise<string>;
   generateAgentPrompt(input: BlueprintJson): Promise<string>;
   generateSystemPrompt(input: BlueprintJson): Promise<string>;
   extractDynamicVariables(input: BlueprintJson): Promise<DynamicVariableSpec[]>;
@@ -322,6 +342,12 @@ export interface BusinessSpecification {
     voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
     scopeExclusions?: string[];
     terminalStates?: Array<{ stateId: string; label?: string; closingScript?: string }>;
+    /**
+     * ISO 3166-1 alpha-2 deployment region (e.g. "QA", "IN"). Gates every
+     * region-specific fact (emergency numbers, phone length, currency). When absent
+     * the compiler must stay generic rather than assume a default country.
+     */
+    region?: string;
   };
   businessSnapshot: {
     operatingHours: string | { standard?: string; exceptions?: string[] };
@@ -358,12 +384,28 @@ export interface BusinessSpecification {
     confirmationStyle?: string;
     dtmfFallback?: { enabled?: boolean; triggerAfterFailures?: number };
     closingScript?: string;
+    /** What to do once a slot hits its retry limit (e.g. wrap up vs transfer). */
+    retryExhaustion?: { afterRetries?: number; action?: string };
+    /**
+     * The ordered call-flow stages the USER described, extracted from the interview.
+     * The planner must produce a state per stage. Never synthesized — when the user
+     * described no stages this stays undefined, because a generic stage list would
+     * just be another hardcoded template.
+     */
+    requiredStages?: Array<{ id: string; label: string }>;
     steps: Array<{
       sequenceOrder: number;
       stateId: string;
       stateName: string;
       objective?: string;
+      /**
+       * LITERAL SPEECH ONLY — rendered into the prompt as the agent's spoken line.
+       * Never put builder instructions here; they get read aloud to the caller.
+       * Use `behaviorDirective` for anything the agent should do but not say.
+       */
       scriptDirective: string;
+      /** Non-spoken instructions for this state (routing intent, handling notes). */
+      behaviorDirective?: string;
       slotsToCollect: string[];
       branchingConditions?: Array<{ condition: string; goToStep: string | number | 'end_call' | 'transfer'; reason?: string }>;
       fallbackBehavior?: string;

@@ -348,4 +348,140 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
     // Draft preserves the best prompt so far (round 0 score 35)
     expect(draft.judgeReport?.score).toBe(35);
   });
+
+  describe('LLM call configuration (regression: silent judge failure)', () => {
+    const policy: LanguagePolicy = {
+      mode: 'english',
+      script: 'latin',
+      formality: 'aap',
+      targetTTS: 'ElevenLabs',
+      aiDisclosure: 'disclose',
+      agentGender: 'female',
+      isHindiOrHinglish: false,
+      mayUseHindi: false
+    };
+
+    // The judge asks for JSON, but the provider only infers JSON mode from the phrases
+    // "ONLY valid JSON"/"JSON matching". Without an explicit flag it ran with the
+    // prose-authoring system prompt ("No JSON wrapping...") and no response_format, so
+    // its reply never parsed and every audit silently fell back to pass/100/no-issues.
+    it('requests JSON mode explicitly and does not use the prompt-authoring system prompt', async () => {
+      const generateRaw = vi.fn().mockResolvedValue(JSON.stringify({ verdict: 'pass', score: 100, issues: [] }));
+      vi.spyOn(llmClientModule, 'getLlmClient').mockReturnValue({ generateRaw } as any);
+
+      await judgePrompt({
+        transcript: [{ role: 'user', content: 'English agent please.' }],
+        finalPrompt: cleanEnglishPrompt,
+        spec: baseSpec,
+        policy
+      });
+
+      expect(generateRaw).toHaveBeenCalledTimes(1);
+      const [, , options] = generateRaw.mock.calls[0];
+      expect(options?.json).toBe(true);
+      expect(options?.systemInstruction).toMatch(/quality-control judge/i);
+      expect(options?.systemInstruction).not.toMatch(/No JSON wrapping/i);
+    });
+
+    it('parses a real LLM judge payload into issues once JSON mode is on', async () => {
+      const generateRaw = vi.fn().mockResolvedValue(JSON.stringify({
+        verdict: 'fail',
+        score: 60,
+        issues: [{
+          severity: 'major',
+          category: 'missing',
+          description: 'User asked for a callback option but the prompt never offers one.',
+          evidenceFromConversation: 'User: always offer a callback if we are busy.',
+          whereInPrompt: 'absent',
+          suggestedFix: 'Add a callback offer to the closing state.'
+        }]
+      }));
+      vi.spyOn(llmClientModule, 'getLlmClient').mockReturnValue({ generateRaw } as any);
+
+      const report = await judgePrompt({
+        transcript: [{ role: 'user', content: 'Always offer a callback if we are busy.' }],
+        finalPrompt: cleanEnglishPrompt,
+        spec: baseSpec,
+        policy
+      });
+
+      expect(report.issues.some(i => i.category === 'missing' && /callback/i.test(i.description))).toBe(true);
+    });
+
+    // repairFromJudge is an edit pass; the authoring system prompt would tell it to
+    // re-author the prompt from a mandated section list instead of fixing only what
+    // was listed.
+    it('repairFromJudge uses the neutral editor system prompt, not JSON mode', async () => {
+      const generateRaw = vi.fn().mockResolvedValue('### AGENT IDENTITY & ROLE\nrepaired');
+      vi.spyOn(llmClientModule, 'getLlmClient').mockReturnValue({ generateRaw } as any);
+
+      await repairFromJudge({
+        finalPrompt: cleanEnglishPrompt,
+        report: {
+          verdict: 'fail',
+          score: 50,
+          blockingCount: 1,
+          issues: [{
+            severity: 'critical',
+            category: 'language',
+            description: 'Wrong language',
+            evidenceFromConversation: 'User asked for Hinglish',
+            whereInPrompt: 'Say lines',
+            suggestedFix: 'Translate to Hinglish'
+          }]
+        },
+        policy
+      });
+
+      expect(generateRaw).toHaveBeenCalledTimes(1);
+      const [, , options] = generateRaw.mock.calls[0];
+      expect(options?.json).toBe(false);
+      expect(options?.systemInstruction).toMatch(/precise editor/i);
+      expect(options?.systemInstruction).not.toMatch(/AGENT IDENTITY & PERSONA/);
+    });
+  });
+
+  // validateCoherence reads the goal from draft.primaryGoal / ir.meta.primaryGoal.
+  // The judge passed `{}` as the draft and a BusinessSpecification as `ir`, whose goal
+  // lives at meta.primaryGoal — so the goal resolved to "" and the check never ran.
+  describe('primary-goal coverage check (regression: dead code)', () => {
+    const policy: LanguagePolicy = {
+      mode: 'english',
+      script: 'latin',
+      formality: 'aap',
+      targetTTS: 'ElevenLabs',
+      aiDisclosure: 'disclose',
+      agentGender: 'female',
+      isHindiOrHinglish: false,
+      mayUseHindi: false
+    };
+
+    beforeEach(() => {
+      vi.spyOn(llmClientModule, 'getLlmClient').mockReturnValue({
+        generateRaw: vi.fn().mockResolvedValue(JSON.stringify({ verdict: 'pass', score: 100, issues: [] }))
+      } as any);
+    });
+
+    it('flags a prompt that does not reflect the primary goal', async () => {
+      const report = await judgePrompt({
+        transcript: [{ role: 'user', content: 'Schedule appointments for callers.' }],
+        finalPrompt: '### AGENT IDENTITY & ROLE\nYou sell umbrellas to passing pedestrians.',
+        spec: baseSpec,
+        policy
+      });
+
+      expect(report.issues.some(i => i.category === 'coverage')).toBe(true);
+    });
+
+    it('does not flag a prompt that reflects the primary goal', async () => {
+      const report = await judgePrompt({
+        transcript: [{ role: 'user', content: 'Schedule appointments for callers.' }],
+        finalPrompt: cleanEnglishPrompt,
+        spec: baseSpec,
+        policy
+      });
+
+      expect(report.issues.some(i => i.category === 'coverage')).toBe(false);
+    });
+  });
 });

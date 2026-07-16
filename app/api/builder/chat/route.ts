@@ -7,6 +7,68 @@ import { safeParseJson, BusinessSpecification } from '@/lib/llm/types';
 import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { detectAiDisclosure, detectAgentGender } from '@/lib/llm/language/personaExtract';
+import { isInstructionLike } from '@/lib/pipeline/dialogue/dialogueLint';
+
+type CallFlowPolicy = Partial<Pick<BusinessSpecification['callFlowPlan'],
+  'silenceHandling' | 'interruptionPolicy' | 'digressionPolicy' | 'confirmationStyle' |
+  'dtmfFallback' | 'closingScript' | 'retryExhaustion'>>;
+
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
+
+/**
+ * Accepts only the policy keys the extractor is allowed to set, and only when they
+ * carry a real value. `closingScript`/`openingPhrase` are additionally rejected when
+ * they hold a builder instruction rather than literal speech — otherwise the planner
+ * wraps them in `Say: "..."` and the agent recites "Accept immediately, apologize,
+ * and close" to the caller.
+ */
+function sanitizeCallFlowPolicy(raw: unknown): CallFlowPolicy {
+  const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
+  const out: CallFlowPolicy = {};
+
+  const silence = src.silenceHandling as { timeoutSeconds?: unknown; action?: unknown; maxReprompts?: unknown } | undefined;
+  if (silence && typeof silence === 'object') {
+    const s: NonNullable<CallFlowPolicy['silenceHandling']> = {};
+    if (typeof silence.timeoutSeconds === 'number') s.timeoutSeconds = silence.timeoutSeconds;
+    if (isNonEmptyString(silence.action)) s.action = silence.action.trim();
+    if (typeof silence.maxReprompts === 'number') s.maxReprompts = silence.maxReprompts;
+    if (Object.keys(s).length > 0) out.silenceHandling = s;
+  }
+  if (isNonEmptyString(src.interruptionPolicy)) out.interruptionPolicy = src.interruptionPolicy.trim();
+  if (isNonEmptyString(src.digressionPolicy)) out.digressionPolicy = src.digressionPolicy.trim();
+  if (isNonEmptyString(src.confirmationStyle)) out.confirmationStyle = src.confirmationStyle.trim();
+
+  const dtmf = src.dtmfFallback as { enabled?: unknown } | undefined;
+  if (dtmf && typeof dtmf === 'object' && typeof dtmf.enabled === 'boolean') {
+    out.dtmfFallback = { enabled: dtmf.enabled };
+  }
+
+  if (isNonEmptyString(src.closingScript) && !isInstructionLike(src.closingScript)) {
+    out.closingScript = src.closingScript.trim();
+  }
+
+  const retry = src.retryExhaustion as { afterRetries?: unknown; action?: unknown } | undefined;
+  if (retry && typeof retry === 'object') {
+    const r: NonNullable<CallFlowPolicy['retryExhaustion']> = {};
+    if (typeof retry.afterRetries === 'number') r.afterRetries = retry.afterRetries;
+    if (isNonEmptyString(retry.action)) r.action = retry.action.trim();
+    if (Object.keys(r).length > 0) out.retryExhaustion = r;
+  }
+  return out;
+}
+
+/** Ordered stages the user described. Never synthesized — an empty list stays empty. */
+function sanitizeRequiredStages(raw: unknown): Array<{ id: string; label: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((s) => {
+      const o = s as { id?: unknown; label?: unknown };
+      const id = isNonEmptyString(o?.id) ? o.id.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') : '';
+      if (!id) return null;
+      return { id, label: isNonEmptyString(o?.label) ? o.label.trim() : id.replace(/_/g, ' ') };
+    })
+    .filter((s): s is { id: string; label: string } => s !== null);
+}
 
 function dedupeBy<T>(arr: T[], keyFn: (item: T) => string): T[] {
   const seen = new Set<string>();
@@ -66,8 +128,19 @@ Output ONLY a JSON object with these top-level keys:
 - resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy', 'language_preference', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script')
 - capturedTopics (Array<{ topic: string, summary: string }>: detailed operational or call flow answers that do not fit standard fields, e.g. digression handling, silence handling, emergency triage)
 - dynamicVariables (Array<{ key: string, label: string, description: string, fieldDirection: 'infield' | 'outfield', required: boolean, source: string }>): extract any CRM/pre-call variables available before the call as 'infield' (source: 'crm') and any variables collected during the call as 'outfield' (source: 'extraction')
+- callFlowPolicy (object): ONLY the conversational policies the user explicitly stated. Omit any key they did not answer. Never invent values.
+  - silenceHandling: { timeoutSeconds: number, action: string (what the agent says/does), maxReprompts: number }
+  - interruptionPolicy: string (barge-in allowed or not)
+  - digressionPolicy: string (answer-then-return vs refuse; how many redirects)
+  - confirmationStyle: string (read-back style)
+  - dtmfFallback: { enabled: boolean }  — set enabled:false if the user said voice-only
+  - closingScript: string — ONLY if the user gave the exact words to speak. If they described what the closing should DO rather than the words, omit this.
+  - openingPhrase: string — ONLY if the user gave the exact words to speak.
+  - retryExhaustion: { afterRetries: number, action: string } (what happens once retries run out)
+- requiredStages (Array<{ id: string (snake_case), label: string }>): the ordered call-flow stages the user described (e.g. opening, cross_sell_pitch, offer_consultation, collect_booking, readback, close). Extract ONLY stages the user actually described, in the order they described them. If they described no stages, omit this key entirely. Do NOT invent a generic stage list.
 
-Do NOT include callFlowPlan, knowledgeBase, or tools in your output under any circumstances — those are generated later by a separate specialist process, not by you.
+Do NOT include callFlowPlan.steps, knowledgeBase, or tools in your output under any circumstances — those are generated later by a separate specialist process, not by you. (callFlowPolicy and requiredStages above ARE yours to extract — they capture what the user told you, not a designed flow.)
+For closingScript and openingPhrase, remember these are LITERAL SPOKEN WORDS. If the user said "read back the details and say goodbye", that is an instruction, not a script — omit the key rather than storing the instruction.
 Only include a field if the user has explicitly and specifically stated it. Do not infer, invent, guess, or generalize values the user did not say.
 For meta:
 - aiDisclosure: set to 'deny' if the user requests not revealing or disclosing that the agent is an AI/bot, or 'disclose' if they say to disclose it.
@@ -92,9 +165,17 @@ Ensure you return valid JSON with no markdown fences.`;
       });
       const patch = safeParseJson(llmResponse.text, {}) as Record<string, Record<string, unknown>>;
       if (patch && typeof patch === 'object') {
+        // The planner owns `steps`; the interview owns the policies around them.
+        // (Extracting policies here is what makes answers like "nudge after 10
+        //  seconds" or "voice only, no keypad" actually reach the prompt — they
+        //  previously survived only as prose in capturedTopics and were dropped.)
+        const patchPolicy = sanitizeCallFlowPolicy(patch.callFlowPolicy);
+        const patchStages = sanitizeRequiredStages(patch.requiredStages);
         delete patch.callFlowPlan;
         delete patch.knowledgeBase;
         delete patch.tools;
+        delete patch.callFlowPolicy;
+        delete patch.requiredStages;
 
         const existingFlow = existingSpec.callFlowPlan as BusinessSpecification['callFlowPlan'] | undefined;
         const patchFlow = patch.callFlowPlan as unknown as BusinessSpecification['callFlowPlan'] | undefined;
@@ -143,10 +224,16 @@ Ensure you return valid JSON with no markdown fences.`;
           },
           businessSnapshot: safePatch(existingSnap, patchSnap) as BusinessSpecification['businessSnapshot'],
           callFlowPlan: {
+            ...(existingFlow || {}),
             steps: dedupeBy(
               [...(existingFlow?.steps || []), ...(patchFlow?.steps || [])],
               (s) => s.stateId || s.stateName || ''
-            )
+            ),
+            // Policies accumulate across turns; a later answer supersedes an earlier one.
+            ...patchPolicy,
+            ...(patchStages.length > 0 || existingFlow?.requiredStages
+              ? { requiredStages: dedupeBy([...(existingFlow?.requiredStages || []), ...patchStages], (s) => s.id) }
+              : {}),
           },
           knowledgeBase: {
             faqs: dedupeBy(
@@ -218,6 +305,16 @@ Ensure you return valid JSON with no markdown fences.`;
     if (disclosurePref) updatedSpec.meta!.aiDisclosure = disclosurePref;
     const genderPref = detectAgentGender(allUserText);
     if (genderPref) updatedSpec.meta!.agentGender = genderPref;
+
+    // openingPhrase is spoken verbatim by the greeting state. If the user described
+    // what the opening should DO rather than what it should SAY, storing it would
+    // make the agent read the instruction aloud — drop it and let the planner write
+    // a real line instead.
+    const opening = updatedSpec.meta!.openingPhrase;
+    if (typeof opening === 'string' && isInstructionLike(opening)) {
+      console.warn('[builder/chat] discarding openingPhrase that is an instruction, not speech:', opening);
+      delete updatedSpec.meta!.openingPhrase;
+    }
 
     const coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
     // Language now comes from the chat itself (no pre-chat selector), so drive the

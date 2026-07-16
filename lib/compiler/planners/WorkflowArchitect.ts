@@ -4,7 +4,90 @@ import { safeParseJson } from "@/lib/llm/types";
 import { semanticDedupSlots, getSemanticCore } from "@/lib/compiler/assembler/PromptAssembler";
 import { hindiVerbForms } from "@/lib/llm/language/LanguagePolicy";
 import { isDerivedSlot } from "@/lib/compiler/constants/slotRegistry";
+import { SYSTEM_RUNTIME_TOOLS, getEmailTool } from "@/lib/compiler/constants/toolRegistry";
+import { isInstructionLike, lintDialogueLine } from "@/lib/pipeline/dialogue/dialogueLint";
+import { fewShotBlock } from "@/lib/llm/fewshot";
 import { logger } from "@/lib/logger";
+
+function buildNaturalReadback(slots: string[], isHindiOrHinglish: boolean): string {
+  if (!slots || slots.length === 0) {
+    return isHindiOrHinglish
+      ? `Say: "धन्यवाद। क्या अब तक दी गई सारी जानकारी सही है?"`
+      : `Say: "Thank you. Does everything sound correct so far?"`;
+  }
+  const placeholders = slots.map(s => `{{${s}}}`);
+  let woven = "";
+  if (placeholders.length === 1) {
+    woven = placeholders[0];
+  } else if (placeholders.length === 2) {
+    woven = isHindiOrHinglish ? `${placeholders[0]} और ${placeholders[1]}` : `${placeholders[0]} along with ${placeholders[1]}`;
+  } else {
+    const last = placeholders[placeholders.length - 1];
+    const initial = placeholders.slice(0, placeholders.length - 1).join(", ");
+    woven = isHindiOrHinglish ? `${initial}, और ${last}` : `${initial}, and ${last}`;
+  }
+  return isHindiOrHinglish
+    ? `Say: "धन्यवाद। एक बार पुष्टि कर लेते हैं: मैंने ${woven} नोट किया है। क्या यह सभी जानकारी सही है?"`
+    : `Say: "Thank you. Just to make sure I have everything right: ${woven}. Does that all look correct?"`;
+}
+
+function buildIntentDrivenAsk(slot: string, isHindiOrHinglish: boolean, isRetry = false): string {
+  const fName = slot.replace(/_/g, ' ');
+  if (isRetry) {
+    if (/date|day|time|when|schedule/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "ताकि हम आपके लिए सही समय तय कर सकें, कृपया बताएं आप किस दिन या समय बात करना चाहेंगे?"`
+        : `Say: "Just to make sure we secure the exact right slot for you, what day and time would you prefer?"`;
+    }
+    if (/name/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "ताकि हम आपका रिकॉर्ड सही से अपडेट कर सकें, कृपया अपना शुभ नाम बताएं?"`
+        : `Say: "So we have your details correctly on file, could you share your exact name?"`;
+    }
+    if (/phone|mobile|whatsapp|number/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "ताकि हम आपसे संपर्क कर सकें, कृपया अपना सही नंबर बताएं?"`
+        : `Say: "So our team can reach you without issues, what is the best phone number to use?"`;
+    }
+    if (/email/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "ताकि हम आपको पुष्टि भेज सकें, कृपया अपना ईमेल पता बताएं?"`
+        : `Say: "So we can send over the confirmation details, what is your best email address?"`;
+    }
+    return isHindiOrHinglish
+      ? `Say: "ताकि हम आपकी पूरी मदद कर सकें, कृपया अपना ${fName} स्पष्ट रूप से बताएं?"`
+      : `Say: "To make sure we assist you effectively, what is your ${fName}?"`;
+  } else {
+    if (/date|day|when|schedule/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "आप किस दिन या तारीख को आना पसंद करेंगे?"`
+        : `Say: "Which day or date suits you best for this?"`;
+    }
+    if (/time/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "किस समय बात करना या आना आपके लिए सबसे सुविधाजनक रहेगा?"`
+        : `Say: "What time of day works best for your schedule?"`;
+    }
+    if (/name/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "कृपया अपना शुभ नाम बताइएगा?"`
+        : `Say: "And whom do I have the pleasure of speaking with?"`;
+    }
+    if (/phone|mobile|whatsapp|number/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "आपसे संपर्क करने के लिए आपका नंबर क्या है?"`
+        : `Say: "What is the best contact number to reach you on?"`;
+    }
+    if (/email/i.test(slot)) {
+      return isHindiOrHinglish
+        ? `Say: "आपका ईमेल पता क्या है जहाँ हम विवरण भेज सकें?"`
+        : `Say: "What email address should we send those details to?"`;
+    }
+    return isHindiOrHinglish
+      ? `Say: "कृपया मुझे अपना ${fName} बताएं ताकि हम आगे बढ़ सकें।"`
+      : `Say: "To help us proceed, what is your ${fName}?"`;
+  }
+}
 
 export class WorkflowArchitect {
   public static async planWorkflow(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['callFlowPlan']['steps']> {
@@ -13,19 +96,22 @@ export class WorkflowArchitect {
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
     const capturedTopics = spec.capturedTopics || [];
     const resolvedTopics = spec.resolvedTopics || [];
-    // Primary output language is decided by the declared mode only — a multilingual /
-    // English-default agent must NOT be flipped to Hindi just because the discovery
-    // notes mention Hindi support.
+    const requiredStages = (spec.callFlowPlan as any)?.requiredStages || (meta as any)?._requiredStages || [];
     const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
     const primaryGoal = meta.primaryGoal || meta.description || "Assist callers professionally";
 
-    // Extract call direction (inbound vs outbound)
+    const toneListForTools = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
+    const registeredToolNames = Array.from(new Set<string>([
+      ...SYSTEM_RUNTIME_TOOLS.map(t => t.name),
+      getEmailTool(toneListForTools).name,
+      ...(Array.isArray(spec.tools) ? spec.tools.map((t: any) => t?.name).filter(Boolean) : []),
+    ]));
+
     const callDirection = (meta.callDirection || '').toLowerCase() || (
       /\b(inbound|customer support|helpline|receptionist|incoming|answer calls|handle queries|receive calls|support line)\b/i.test(`${primaryGoal} ${meta.agentName} ${meta.companyName}`) ? 'inbound' : 'outbound'
     );
     const isInbound = callDirection === 'inbound';
 
-    // Extract all known outfields from dynamicVariables + existing steps
     const existingSlots = new Set<string>();
     if (Array.isArray(spec.callFlowPlan?.steps)) {
       spec.callFlowPlan.steps.forEach((s: any) => {
@@ -36,9 +122,6 @@ export class WorkflowArchitect {
     const infieldsList = allDynamicVars.filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'));
     const outfieldsList = allDynamicVars.filter((v: any) => v && v.key && v.fieldDirection !== 'infield' && v.source !== 'crm' && v.source !== 'api');
     semanticDedupSlots(outfieldsList.map((o: any) => o.key)).forEach((key: string) => existingSlots.add(key));
-    // Derived/classification outfields (objection_type, intent_category, eligibility_status,
-    // detected_language, opt_out_*, …) are extracted silently from the conversation — they
-    // must NEVER become "please tell me your <x>" steps. Drop them from the collectable set.
     for (const s of Array.from(existingSlots)) {
       if (isDerivedSlot(s)) existingSlots.delete(s);
     }
@@ -53,124 +136,75 @@ export class WorkflowArchitect {
     const vf = hindiVerbForms(agentGender);
     const denyAiDisclosure = meta.aiDisclosure === 'deny';
 
-    // 1. Identity / Greeting Step (tailored for Outbound vs Inbound - Issue #8 & Inbound Review)
-    const formattedOpeningPhrase = meta.openingPhrase ? (meta.openingPhrase.startsWith("Say:") ? meta.openingPhrase : `Say: "${meta.openingPhrase}"`) : undefined;
-    const step1 = isHindiOrHinglish ? {
+    const step1 = {
       sequenceOrder: 1,
       stateId: "identity_gate",
-      stateName: isInbound ? "Inbound Greeting & Purpose" : "Identity Gate & Greeting",
-      objective: denyAiDisclosure ? (isInbound ? "Greet incoming caller warmly and ask how you can help." : "Verify identity of caller and introduce yourself.") : (isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity."),
-      scriptDirective: formattedOpeningPhrase || (denyAiDisclosure
-        ? (isInbound
-          ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr} बात कर ${vf.rahi} हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
-          : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr} बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`)
+      stateName: "Identity Gate & Greeting",
+      objective: isInbound
+        ? "Greet caller and establish identity / role clearly."
+        : "Verify right contact and state reason for call.",
+      scriptDirective: meta.openingPhrase
+        ? (meta.openingPhrase.startsWith("Say:") ? meta.openingPhrase : `Say: "${meta.openingPhrase}"`)
         : (isInbound
-          ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI voice assistant हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
-          : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI voice assistant बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`)),
+          ? (isHindiOrHinglish
+            ? (denyAiDisclosure
+              ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr} बात कर ${vf.rahi} हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
+              : `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI voice assistant हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`)
+            : (denyAiDisclosure
+              ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}. How can I help you today?"`
+              : `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}, your AI voice assistant. How can I help you today?"`))
+          : (isHindiOrHinglish
+            ? (denyAiDisclosure
+              ? `Say: "नमस्ते, मैं ${companyStr} से ${agentStr} बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`
+              : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI voice assistant बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`)
+            : (denyAiDisclosure
+              ? `Say: "Hello, I'm ${agentStr} calling from ${companyStr}. Am I speaking with ${greetingContactString}?"`
+              : `Say: "Hello, I'm ${agentStr}, an AI assistant calling on behalf of ${companyStr}. Am I speaking with ${greetingContactString}?"`))),
       slotsToCollect: [] as string[],
-      branchingConditions: isInbound ? [
-        { condition: "Caller states request or query", goToStep: 2 },
-        { condition: "Caller disconnects", goToStep: "end_call", reason: "caller_disconnected" }
-      ] : [
-        { condition: "Caller confirms identity", goToStep: 2 },
-        { condition: "Caller busy or not available", goToStep: "end_call", reason: "not_available" },
-        { condition: "Wrong number", goToStep: "end_call", reason: "wrong_number" }
+      branchingConditions: [
+        { condition: "Identity verified / ready to proceed", goToStep: 2 },
+        { condition: "Wrong number / caller busy", goToStep: "end_call", reason: "wrong_contact_or_busy" }
       ],
       fallbackBehavior: isHindiOrHinglish
-        ? (isInbound ? `Say: "कृपया बताएं आज मैं आपकी क्या मदद कर ${vf.sakti} हूँ?"` : `Say: "माफ़ कीजिएगा, क्या मेरी बात ${hindiContactString} से हो रही है?"`)
-        : `Say: "How can I assist you today?"`,
-      maxRetries: 3,
-      invokesTools: [] as string[],
-      isFallback: true
-    } : {
-      sequenceOrder: 1,
-      stateId: "identity_gate",
-      stateName: isInbound ? "Inbound Greeting & Purpose" : "Identity Gate & Greeting",
-      objective: denyAiDisclosure ? (isInbound ? "Greet incoming caller warmly and ask how you can help." : "Verify identity of caller and introduce yourself.") : (isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity."),
-      scriptDirective: formattedOpeningPhrase || (denyAiDisclosure
-        ? (isInbound
-          ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}. How can I help you today?"`
-          : `Say: "Hello, I'm ${agentStr} calling from ${companyStr}. Am I speaking with ${greetingContactString}?"`)
-        : (isInbound
-          ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}, your AI voice assistant. How can I help you today?"`
-          : `Say: "Hello, I'm ${agentStr}, an AI assistant calling on behalf of ${companyStr}. Am I speaking with ${greetingContactString}?"`)),
-      slotsToCollect: [] as string[],
-      branchingConditions: isInbound ? [
-        { condition: "Caller states request or query", goToStep: 2 },
-        { condition: "Caller disconnects", goToStep: "end_call", reason: "caller_disconnected" }
-      ] : [
-        { condition: "Caller confirms", goToStep: 2 },
-        { condition: "Busy or not available", goToStep: "end_call", reason: "not_available" },
-        { condition: "Wrong number", goToStep: "end_call", reason: "wrong_number" }
-      ],
-      fallbackBehavior: isInbound
-        ? `Say: "Could you please share what you would like assistance with today?"`
-        : `Say: "I understand you might be busy, is there a better time to reach you?"`,
+        ? `Say: "क्षमा करें, क्या मैं जान ${vf.sakta} हूँ कि मैं किससे बात कर ${vf.raha} हूँ?"`
+        : `Say: "Excuse me, may I verify whom I am speaking with?"`,
       maxRetries: 3,
       invokesTools: [] as string[],
       isFallback: true
     };
 
-    // 2. Build discrete slot collection steps (`Issue #3` & `Issue #7`)
     const slotSteps: any[] = [];
     const slotsArray = Array.from(existingSlots).filter(Boolean);
-    if (slotsArray.length === 0) {
+    slotsArray.forEach((slot, idx) => {
+      const stepNum = idx + 2;
+      const formattedName = slot.replace(/_/g, ' ');
       slotSteps.push({
-        sequenceOrder: 2,
-        stateId: "requirement_collection",
-        stateName: "Requirement & Data Collection",
-        objective: `Collect details for: ${primaryGoal}`,
-        scriptDirective: isHindiOrHinglish
-          ? `Say: "मैं आपके requirements समझने के लिए कॉल कर रही हूँ। आप मुख्य रूप से किस चीज़ में सहायता चाहते हैं?"`
-          : `Say: "I'd love to quickly understand your requirements so our team can assist you effectively. What is your primary goal right now?"`,
-        slotsToCollect: ["caller_intent"],
+        sequenceOrder: stepNum,
+        stateId: `capture_${slot.toLowerCase()}`,
+        stateName: `Capture ${formattedName}`,
+        objective: `Ask specifically for and capture: ${slot}`,
+        scriptDirective: buildIntentDrivenAsk(slot, isHindiOrHinglish, false),
+        slotsToCollect: [slot],
         branchingConditions: [
-          { condition: "Information provided", goToStep: 3 },
+          { condition: `${formattedName} provided`, goToStep: stepNum + 1 },
           { condition: "Caller asks for callback", goToStep: "end_call", reason: "callback_requested" }
         ],
-        fallbackBehavior: isHindiOrHinglish ? `Say: "कृपया अपने मुख्य requirements संक्षेप में बताएं।"` : `Say: "Could you briefly share what you are looking to accomplish?"`,
+        fallbackBehavior: buildIntentDrivenAsk(slot, isHindiOrHinglish, true),
         maxRetries: 3,
         invokesTools: [],
         isFallback: true
       });
-    } else {
-      slotsArray.forEach((slot, idx) => {
-        const stepNum = idx + 2;
-        const formattedName = slot.replace(/_/g, ' ');
-        slotSteps.push({
-          sequenceOrder: stepNum,
-          stateId: `capture_${slot.toLowerCase()}`,
-          stateName: `Capture ${formattedName}`,
-          objective: `Ask specifically for and capture: ${slot}`,
-          scriptDirective: isHindiOrHinglish
-            ? `Say: "कृपया मुझे अपना ${formattedName} बताएं ताकि हम सही जानकारी नोट कर सकें।"`
-            : `Say: "Could you please share your ${formattedName}?"`,
-          slotsToCollect: [slot],
-          branchingConditions: [
-            { condition: `${formattedName} provided`, goToStep: stepNum + 1 },
-            { condition: "Caller asks for callback", goToStep: "end_call", reason: "callback_requested" }
-          ],
-          fallbackBehavior: isHindiOrHinglish ? `Say: "कृपया अपना ${formattedName} स्पष्ट रूप से बताएं।"` : `Say: "Please clearly state your ${formattedName}."`,
-          maxRetries: 3,
-          invokesTools: [],
-          isFallback: true
-        });
-      });
-    }
+    });
 
     const nextSeqAfterSlots = 2 + slotSteps.length;
     const allCollectedSlots = slotsArray.length > 0 ? slotsArray : ["caller_intent"];
-    const readbackStr = allCollectedSlots.map(s => `${s.replace(/_/g, ' ')}: [${s}]`).join(', ');
 
-    // 3. Dynamic Confirmation Readback Step (`Issue #5`)
     const confirmStep = {
       sequenceOrder: nextSeqAfterSlots,
       stateId: "confirmation_readback",
       stateName: "Confirmation Read-Back",
       objective: "Read back and confirm all collected details before closing.",
-      scriptDirective: isHindiOrHinglish
-        ? `Say: "धन्यवाद। एक बार मैं आपके दिए गए विवरण की पुष्टि कर लेती हूँ: ${readbackStr}। क्या यह सभी जानकारी सही है?"`
-        : `Say: "Thank you. Let me verify the details I've noted so far: ${readbackStr}. Does everything look correct?"`,
+      scriptDirective: buildNaturalReadback(allCollectedSlots, isHindiOrHinglish),
       slotsToCollect: [] as string[],
       branchingConditions: [
         { condition: "Caller confirms accuracy", goToStep: nextSeqAfterSlots + 1 },
@@ -182,16 +216,24 @@ export class WorkflowArchitect {
       isFallback: true
     };
 
-    // 4. Resolution & Terminal Close (`Issue #4`)
     const terminalStepsArray: any[] = [];
     if (meta.terminalStates && Array.isArray(meta.terminalStates) && meta.terminalStates.length > 0) {
+      const defaultClose = isHindiOrHinglish
+        ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
+        : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`;
       meta.terminalStates.forEach((ts: any, tIdx: number) => {
+        const raw = typeof ts.closingScript === 'string' ? ts.closingScript.trim() : '';
+        const isSpeech = !!raw && !isInstructionLike(raw);
+        if (raw && !isSpeech) {
+          logger.warn("WorkflowArchitect: terminalState closingScript is an instruction, not speech", { stateId: ts.stateId, closingScript: raw });
+        }
         terminalStepsArray.push({
           sequenceOrder: nextSeqAfterSlots + 1 + tIdx,
           stateId: ts.stateId || `terminal_${tIdx}`,
           stateName: ts.label || `Terminal Close ${tIdx + 1}`,
           objective: ts.label || "Cleanly end the call after final confirmation.",
-          scriptDirective: ts.closingScript ? (ts.closingScript.startsWith("Say:") ? ts.closingScript : `Say: "${ts.closingScript}"`) : (isHindiOrHinglish ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"` : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`),
+          behaviorDirective: isSpeech ? undefined : (raw || undefined),
+          scriptDirective: isSpeech ? (raw.startsWith("Say:") ? raw : `Say: "${raw}"`) : defaultClose,
           slotsToCollect: [] as string[],
           branchingConditions: [
             { condition: "Concluding call", goToStep: "end_call", reason: ts.stateId || "completed" }
@@ -224,7 +266,99 @@ export class WorkflowArchitect {
       });
     }
 
-    const fallbackSteps = [step1, ...slotSteps, confirmStep, ...terminalStepsArray];
+    let fallbackSteps: any[] = [];
+    if (requiredStages && Array.isArray(requiredStages) && requiredStages.length > 0) {
+      const stageSteps: any[] = [];
+      requiredStages.forEach((stage: any, sIdx: number) => {
+        const stId = String(stage.id || '').toLowerCase();
+        const stLabel = stage.label || stage.id || `Stage ${sIdx + 1}`;
+        if (sIdx === 0 || /opening|identity|greet/i.test(stId)) {
+          stageSteps.push({
+            ...step1,
+            stateId: stId === 'identity_gate' ? stId : (stage.id || step1.stateId),
+            stateName: stLabel,
+            sequenceOrder: stageSteps.length + 1
+          });
+        } else if (/confirm|readback/i.test(stId)) {
+          stageSteps.push({
+            ...confirmStep,
+            stateId: stage.id || confirmStep.stateId,
+            stateName: stLabel,
+            sequenceOrder: stageSteps.length + 1
+          });
+        } else if (/close|resolut|terminal|end/i.test(stId) || sIdx === requiredStages.length - 1) {
+          if (terminalStepsArray.length > 0 && stageSteps.length + terminalStepsArray.length >= requiredStages.length) {
+            terminalStepsArray.forEach(t => {
+              stageSteps.push({ ...t, sequenceOrder: stageSteps.length + 1 });
+            });
+          } else {
+            stageSteps.push({
+              ...terminalStepsArray[0],
+              stateId: stage.id || terminalStepsArray[0].stateId,
+              stateName: stLabel,
+              sequenceOrder: stageSteps.length + 1
+            });
+          }
+        } else if (/collect|capture|booking|qualif|requirement|detail/i.test(stId) || (slotsArray.length > 0 && !stageSteps.some(s => Array.isArray(s.slotsToCollect) && s.slotsToCollect.length > 0))) {
+          if (slotsArray.length > 0) {
+            slotSteps.forEach((slStep, slIdx) => {
+              stageSteps.push({
+                ...slStep,
+                stateId: slIdx === 0 ? (stage.id || slStep.stateId) : slStep.stateId,
+                stateName: slIdx === 0 ? stLabel : slStep.stateName,
+                sequenceOrder: stageSteps.length + 1
+              });
+            });
+          } else {
+            stageSteps.push({
+              sequenceOrder: stageSteps.length + 1,
+              stateId: stage.id,
+              stateName: stLabel,
+              objective: `Collect details for ${stLabel}`,
+              scriptDirective: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, false),
+              slotsToCollect: ["caller_intent"],
+              branchingConditions: [
+                { condition: "Details provided", goToStep: stageSteps.length + 2 },
+                { condition: "Caller declines", goToStep: "end_call", reason: "declined" }
+              ],
+              fallbackBehavior: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, true),
+              maxRetries: 3,
+              invokesTools: [],
+              isFallback: true
+            });
+          }
+        } else {
+          stageSteps.push({
+            sequenceOrder: stageSteps.length + 1,
+            stateId: stage.id,
+            stateName: stLabel,
+            objective: `Execute stage: ${stLabel}`,
+            scriptDirective: isHindiOrHinglish
+              ? `Say: "हम ${stLabel} के बारे में बात करते हैं। क्या हम आगे बढ़ सकते हैं?"`
+              : (stId === 'context_reminder' && nameInfield && existingSlots.has('last_purchase_or_service')
+                  ? `Say: "I'm calling regarding your recent {{last_purchase_or_service}} with us. How has that been?"`
+                  : stId === 'cross_sell_pitch' && infieldsList.some((v: any) => v.key === 'existing_segment')
+                  ? `Say: "Since you've been with us for {{existing_segment}}, I think our complementary category would suit you well. Can I share a quick overview?"`
+                  : `Say: "Let's move forward with ${stLabel}. Does that sound good?"`),
+            slotsToCollect: [] as string[],
+            branchingConditions: [
+              { condition: "Caller acknowledges or agrees", goToStep: stageSteps.length + 2 },
+              { condition: "Caller declines or disconnects", goToStep: "end_call", reason: "declined" }
+            ],
+            fallbackBehavior: isHindiOrHinglish
+              ? `Say: "कृपया बताएं क्या हम आगे बढ़ सकते हैं?"`
+              : `Say: "Just wanted to see if you'd like to hear more about ${stLabel}?"`,
+            maxRetries: 3,
+            invokesTools: [] as string[],
+            isFallback: true
+          });
+        }
+      });
+      fallbackSteps = stageSteps;
+      fallbackSteps.forEach((s, i) => { s.sequenceOrder = i + 1; });
+    } else {
+      fallbackSteps = [step1, ...slotSteps, confirmStep, ...terminalStepsArray];
+    }
 
     const genderDirective = isHindiOrHinglish
       ? `\nAGENT GENDER: The agent is ${agentGender}. Use ${agentGender === 'male' ? 'MASCULINE' : 'FEMININE'} verb inflections for the agent's own speech (e.g., "${agentGender === 'male' ? 'कर रहा हूँ, कर सकता हूँ' : 'कर रही हूँ, कर सकती हूँ'}"). Address the caller respectfully with "आप" and plural verbs.`
@@ -236,8 +370,10 @@ export class WorkflowArchitect {
       ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}'). EVERY SINGLE scriptDirective and fallbackBehavior across every step MUST be written in Devanagari script (देवनागरी), NOT Romanized English.\nENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"${genderDirective}${disclosureDirective}`
       : `${disclosureDirective}`;
 
+    const styleExemplars = fewShotBlock({ policy: { mode: languageMode as any } });
+
     const prompt = `You are a WorkflowArchitect specializing in designing deterministic voice AI call flow state machines.
-Given the following business goal, metadata, and operational topics, design a comprehensive, multi-step call flow state machine (typically 4 to 8 steps).${langDirective}
+Given the following business goal, metadata, and operational topics, design a comprehensive, multi-step call flow state machine.${langDirective}
 
 Primary Goal: ${primaryGoal}
 Company Name: ${meta.companyName || "Unknown"}
@@ -253,19 +389,34 @@ ${JSON.stringify(capturedTopics, null, 2)}
 ${resolvedTopics.length > 0 ? `\nResolved Topics:\n${JSON.stringify(resolvedTopics, null, 2)}` : ""}
 ${existingSlots.size > 0 ? `\nKnown Outfield Slots to Collect (MUST generate 1 step per slot):\n${JSON.stringify(Array.from(existingSlots))}` : ""}
 ${infieldsList.length > 0 ? `\nKnown Pre-Call CRM Infields (available before call starts):\n${JSON.stringify(infieldsList.map((v: any) => v.key))}` : ""}
+${requiredStages.length > 0 ? `\nMANDATORY REQUIRED STAGES (Extract exact states matching this workflow outline sequentially): ${JSON.stringify(requiredStages)}` : ""}
 
 MANDATORY STATE MACHINE DESIGN RULES:
 1. ONE QUESTION PER TURN: Ask exactly ONE question or prompt in each step. Never stack multiple questions in a single turn.
-2. DEDICATED SLOT STEPS: If multiple variables/outfields must be collected (e.g. fitness_goal, health_concerns, language_preference, callback_time), generate ONE dedicated state step for each slot! Never collect more than one slot in a single step.
-3. CALL DIRECTION & PROACTIVE AI DISCLOSURE:
+2. DEDICATED SLOT STEPS: If multiple variables/outfields must be collected (e.g. fitness_goal, health_concerns, language_preference, callback_time), generate ONE dedicated state step for each slot! Never collect more than one slot in a single step. Attach slots to collect INSIDE the appropriate collection stage.
+3. STAGE-DRIVEN FLOW: If MANDATORY REQUIRED STAGES are provided above, generate exactly one state per required stage in strict order.
+4. CALL DIRECTION & PROACTIVE AI DISCLOSURE:
    - If Call Direction is INBOUND: ${denyAiDisclosure ? `Step 1 (identity_gate) MUST greet the caller warmly and ask how you can help, presenting strictly as a human representative (${meta.agentName || 'Agent'}). Do NOT mention AI or assistant.${meta.openingPhrase ? ` Use exact openingPhrase: "${meta.openingPhrase}".` : ""}` : `Step 1 (identity_gate) MUST greet the caller warmly, proactively state upfront that you are an AI assistant for ${meta.companyName || 'Company'}, and ask how you can help (e.g., "Thank you for calling ${meta.companyName || 'Company'}. I'm ${meta.agentName || 'Assistant'}, your AI voice assistant. How can I help you today?").`} Do NOT ask "Am I speaking with..." on inbound calls!
-   - If Call Direction is OUTBOUND: ${denyAiDisclosure ? `Step 1 (identity_gate) MUST introduce yourself as a human representative (${meta.agentName || 'Agent'} from ${meta.companyName || 'Company'}) and verify the caller's identity. Do NOT mention AI.${meta.openingPhrase ? ` Use exact openingPhrase: "${meta.openingPhrase}".` : ""}` : `Step 1 (identity_gate) MUST state upfront that you are an AI assistant calling on behalf of ${meta.companyName || 'Company'}, and verify the caller's identity (using {{first_name}} or {{name}} if available).`}
-4. BRANCHING & ROUTING: Every step must include explicit 'branchingConditions' indicating transitions (e.g., if confirmed -> goToStep N; if busy/wrong number -> goToStep 'end_call' or 'transfer').
-5. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots explicitly (${readbackStr}) to verify accuracy.
-6. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
-7. SCOPE EXCLUSIONS & TERMINAL BRANCHES:
+   - If Call Direction is OUTBOUND: ${denyAiDisclosure ? `Step 1 (identity_gate) MUST introduce yourself as a human representative (${meta.agentName || 'Agent'} from ${meta.companyName || 'Company'}) and verify the caller's identity. Do NOT mention AI.${meta.openingPhrase ? ` Use exact openingPhrase: "${meta.openingPhrase}".` : ""}` : `Step 1 (identity_gate) MUST state upfront that you are an AI assistant calling on behalf of ${meta.companyName || 'Company'}, and verify the caller's identity (using the pre-call name variable if available).`}
+5. BRANCHING & ROUTING: Every step must include explicit 'branchingConditions' indicating transitions (e.g., if confirmed -> goToStep N; if busy/wrong number -> goToStep 'end_call'). Any state may branch on or tailor using pre-call infields (e.g., {{existing_segment}}).
+6. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent confirms all collected slots.
+7. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
+8. REGISTERED TOOLS ONLY: 'invokesTools' may ONLY contain names from this exact list: ${JSON.stringify(registeredToolNames)}. NEVER invent a tool — any name outside this list is discarded. If a human handoff is needed, express it as a branchingCondition routing to the escalation path, NOT as a tool.
+9. SCOPE EXCLUSIONS & TERMINAL BRANCHES:
    ${meta.scopeExclusions && meta.scopeExclusions.length > 0 ? `- OUT OF SCOPE TOPICS (DO NOT generate steps or tools for these): ${JSON.stringify(meta.scopeExclusions)}` : ""}
    ${meta.terminalStates && meta.terminalStates.length > 0 ? `- TERMINAL CLOSING BRANCHES (Must generate dedicated terminal steps with end_call for each of these possible outcomes): ${JSON.stringify(meta.terminalStates)}` : ""}
+
+### DIALOGUE STYLE CONTRACT (Strict Spoken Voice Standard)
+1. ACKNOWLEDGE → BRIDGE → ONE ASK: Every turn must follow a natural conversational rhythm: first briefly acknowledge the caller's last response, bridge to the next topic, and conclude with exactly ONE clear ask.
+2. USE CONTRACTIONS: Always use natural contractions (\`I'm\`, \`you're\`, \`we'll\`, \`can't\`, \`that's\`, \`let's\`) to sound warm and human. Never use stiff, robotic phrasing.
+3. INTENT-DRIVEN ASKS: Tailor your questions naturally to the intent and context of the slot being collected. Never use formulaic templates like \`Could you please share your [field name]?\`.
+4. NEVER NAME AN INTERNAL FIELD: Never speak internal variable names or technical slot keys aloud (\`booking_date\`, \`existing_segment\`, \`caller_name\`). Speak naturally about "the date that works best for you" or "your name".
+5. NATURAL READBACK: When confirming multiple pieces of information, weave placeholders seamlessly into a spoken sentence (e.g., \`Got it, so that's {{booking_date}} with {{doctor_name}}. Does that work?\`). Never recite a bulleted list or \`key: value\` pairs.
+6. REPHRASING RETRIES & REASON-WHY: For fallback or retry attempts (\`fallbackBehavior\`), never repeat the initial question verbatim. Rephrase the question using different wording and briefly explain the reason-why you need the information (e.g., \`I just want to make sure we book the exact right slot for you—what day would you prefer?\`).
+${styleExemplars}
+
+STYLE SEED & DIALOGUE GENERATION (Per-Business Custom Register):
+Before designing the steps, adopt a tailored tone specifically for ${meta.companyName || "this business"} (${meta.industry || "General"}, Tone: ${Array.isArray(meta.toneProfile) ? meta.toneProfile.join(', ') : (meta.toneProfile || 'Professional')}). Write all scriptDirective and fallbackBehavior lines adhering strictly to this business's custom voice and the DIALOGUE STYLE CONTRACT above.
 
 DENSITY: Keep every scriptDirective and fallbackBehavior to 1-2 short spoken sentences. No rationale or meta-commentary. State rules once; do not restate global policy inside steps.
 
@@ -275,10 +426,10 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       const userDefinedSteps = spec.callFlowPlan?.userDefinedSteps || [];
       const existingCustomSteps = (spec.callFlowPlan?.steps || []).filter((s: any) => !s.isFallback);
       if (userDefinedSteps.length > 0) {
-        return WorkflowArchitect.postProcessSteps(userDefinedSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
+        return WorkflowArchitect.postProcessSteps(userDefinedSteps, existingSlots, isInbound, meta, isHindiOrHinglish, requiredStages, infieldsList);
       }
       if (existingCustomSteps.length >= 2) {
-        return WorkflowArchitect.postProcessSteps(existingCustomSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
+        return WorkflowArchitect.postProcessSteps(existingCustomSteps, existingSlots, isInbound, meta, isHindiOrHinglish, requiredStages, infieldsList);
       }
 
       const response = await geminiClient.generate({
@@ -286,13 +437,36 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
         prompt,
         responseMimeType: "application/json"
       });
-      const parsed = safeParseJson(response.text, fallbackSteps);
+      let parsed = safeParseJson(response.text, fallbackSteps);
       let steps = Array.isArray(parsed) && parsed.length >= 3 ? parsed : fallbackSteps;
-      steps = WorkflowArchitect.postProcessSteps(steps, existingSlots, isInbound, meta, isHindiOrHinglish);
+
+      const hasHardFail = (stList: any[]) => stList.some((s: any) =>
+        lintDialogueLine(s.scriptDirective || '').some(f => f.severity === 'critical' || f.severity === 'major') ||
+        lintDialogueLine(s.fallbackBehavior || '').some(f => f.severity === 'critical' || f.severity === 'major')
+      );
+
+      if (Array.isArray(parsed) && parsed.length >= 3 && hasHardFail(parsed)) {
+        logger.info("WorkflowArchitect generation encountered critical/major dialogueLint issues. Regenerating...");
+        try {
+          const retryResponse = await geminiClient.generate({
+            systemInstruction: `You are a structured JSON workflow planning specialist. Return ONLY a valid JSON array of step objects. Ensure no internal field names appear in dialogue, ask exactly one question per turn, and never output builder instructions as spoken lines.`,
+            prompt: prompt + `\n\nCRITICAL LINT FIX REQUIRED: Your previous attempt produced dialogue with structural lint errors (such as naming internal variables directly, stacking multiple questions in one turn, or putting builder instructions inside Say: ""). Regenerate the steps adhering strictly to natural spoken dialogue and the DIALOGUE STYLE CONTRACT.`,
+            responseMimeType: "application/json"
+          });
+          const retryParsed = safeParseJson(retryResponse.text, steps);
+          if (Array.isArray(retryParsed) && retryParsed.length >= 3 && !hasHardFail(retryParsed)) {
+            steps = retryParsed;
+          }
+        } catch (retryErr) {
+          logger.warn("WorkflowArchitect regeneration failed", retryErr);
+        }
+      }
+
+      steps = WorkflowArchitect.postProcessSteps(steps, existingSlots, isInbound, meta, isHindiOrHinglish, requiredStages, infieldsList);
       return steps.length > 0 ? steps : fallbackSteps;
     } catch (err) {
       logger.warn("WorkflowArchitect fallback triggered", err);
-      return WorkflowArchitect.postProcessSteps(fallbackSteps, existingSlots, isInbound, meta, isHindiOrHinglish);
+      return WorkflowArchitect.postProcessSteps(fallbackSteps, existingSlots, isInbound, meta, isHindiOrHinglish, requiredStages, infieldsList);
     }
   }
 
@@ -301,7 +475,9 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     expectedOutfields: Set<string>,
     isInbound: boolean,
     meta: any,
-    isHindiOrHinglish: boolean
+    isHindiOrHinglish: boolean,
+    requiredStages: any[] = [],
+    infieldsList: any[] = []
   ): any[] {
     const refined: any[] = [];
     const collectedSoFar = new Set<string>();
@@ -310,7 +486,6 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     const denyAi = meta?.aiDisclosure === 'deny';
 
     steps.forEach((s: any, idx: number) => {
-      // Preserve user-elicited flags and branch policies
       const preservedProps = {
         onFailure: s.onFailure,
         confirmationRequired: s.confirmationRequired,
@@ -320,8 +495,6 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
         isTerminal: s.isTerminal
       };
 
-      // Ensure proactive AI disclosure on step 1 (`Issue #8`), UNLESS the deployment
-      // is configured to present as a human representative (aiDisclosure: 'deny').
       if (idx === 0 || s.stateId === 'identity_gate') {
         let directive = s.scriptDirective || "";
         if (meta?.openingPhrase) {
@@ -357,8 +530,6 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
         return;
       }
 
-      // Semantic deduplication against previously collected slots or within the step itself.
-      // Also drop derived/classification slots so they never become a caller question.
       const rawSlots = (Array.isArray(s.slotsToCollect) ? s.slotsToCollect.filter(Boolean) : []).filter((slot: string) => !isDerivedSlot(slot));
       const slots: string[] = [];
       rawSlots.forEach((singleSlot: string) => {
@@ -370,15 +541,20 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
         }
       });
 
-      // If after semantic deduplication, a capture step has no slots left because they were captured earlier, skip it completely
       if (rawSlots.length > 0 && slots.length === 0 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
         return;
       }
 
-      // If a step has multiple slots (`Issue #3`), split into discrete 1-slot steps
-      if (slots.length > 1 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution') {
+      if (slots.length > 1 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
         slots.forEach((singleSlot: string, sIdx: number) => {
           const fName = singleSlot.replace(/_/g, ' ');
+          const directive = (sIdx === 0 && s.scriptDirective && !isInstructionLike(s.scriptDirective))
+            ? s.scriptDirective
+            : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, false);
+          const fallback = (sIdx === 0 && s.fallbackBehavior && !isInstructionLike(s.fallbackBehavior))
+            ? s.fallbackBehavior
+            : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, true);
+
           refined.push({
             ...s,
             ...preservedProps,
@@ -386,9 +562,8 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
             stateId: sIdx === 0 ? s.stateId : `capture_${singleSlot.toLowerCase()}`,
             stateName: sIdx === 0 ? s.stateName : `Capture ${fName}`,
             objective: `Collect: ${singleSlot}`,
-            scriptDirective: isHindiOrHinglish
-              ? `Say: "कृपया मुझे अपना ${fName} बताएं ताकि हम सही जानकारी दर्ज कर सकें।"`
-              : `Say: "Could you please share your ${fName}?"`,
+            scriptDirective: directive,
+            fallbackBehavior: fallback,
             slotsToCollect: [singleSlot]
           });
         });
@@ -412,15 +587,24 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       }
     });
 
-    // Check if any expected outfield (`email`, `callback_time`, etc.) is missing (`Issue #7`)
     const missingOutfields = semanticDedupSlots(Array.from(expectedOutfields)).filter((o: string) => {
       const core = getSemanticCore(o);
       return !collectedCores.has(core) && !collectedSoFar.has(o) && o !== 'caller_intent';
     });
 
     if (missingOutfields.length > 0 && refined.length >= 2) {
-      let insertIdx = refined.findIndex((s: any) => s.stateId?.includes('confirm') || s.stateId?.includes('readback') || s.stateId?.includes('resolution') || s.isTerminal);
-      if (insertIdx === -1) insertIdx = refined.length;
+      let insertIdx = refined.findIndex((s: any) =>
+        /collect|capture|booking|qualif|requirement|detail/i.test(`${s.stateId || ''} ${s.stateName || ''}`) ||
+        (Array.isArray(s.slotsToCollect) && s.slotsToCollect.length > 0)
+      );
+      if (insertIdx === -1) {
+        insertIdx = refined.findIndex((s: any) => s.stateId?.includes('confirm') || s.stateId?.includes('readback') || s.stateId?.includes('resolution') || s.isTerminal);
+      } else {
+        while (insertIdx + 1 < refined.length && (Array.isArray(refined[insertIdx + 1].slotsToCollect) && refined[insertIdx + 1].slotsToCollect.length > 0)) {
+          insertIdx++;
+        }
+      }
+      if (insertIdx === -1) insertIdx = refined.length - 1;
 
       missingOutfields.forEach((slot: string) => {
         collectedSoFar.add(slot);
@@ -431,26 +615,90 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
           stateId: `capture_${slot.toLowerCase()}`,
           stateName: `Capture ${fName}`,
           objective: `Capture required field: ${slot}`,
-          scriptDirective: isHindiOrHinglish
-            ? `Say: "कृपया मुझे अपना ${fName} बताएं।"`
-            : `Say: "Could you please provide your ${fName}?"`,
+          scriptDirective: buildIntentDrivenAsk(slot, isHindiOrHinglish, false),
           slotsToCollect: [slot],
           branchingConditions: [
             { condition: `${fName} provided`, goToStep: insertIdx + 2 },
             { condition: "Caller asks for callback", goToStep: "end_call", reason: "callback_requested" }
           ],
-          fallbackBehavior: isHindiOrHinglish ? `Say: "कृपया अपना ${fName} स्पष्ट रूप से बताएं।"` : `Say: "Please clearly state your ${fName}."`,
+          fallbackBehavior: buildIntentDrivenAsk(slot, isHindiOrHinglish, true),
           maxRetries: 3,
           invokesTools: []
         };
-        refined.splice(insertIdx, 0, newStep);
+        refined.splice(insertIdx + 1, 0, newStep);
         insertIdx++;
       });
-
-      refined.forEach((st: any, index: number) => { st.sequenceOrder = index + 1; });
     }
 
-    // Ensure confirmation readback explicitly lists all collected outfields (`Issue #5`)
+    if (Array.isArray(requiredStages) && requiredStages.length > 0) {
+      const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const existingTokens = refined.map(s => norm(`${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''}`));
+      requiredStages.forEach((st: any, stIdx: number) => {
+        const t = norm(st.id || '');
+        if (t && !existingTokens.some(ex => ex.includes(t))) {
+          let insertPoint = refined.length - 1;
+          const confirmIdx = refined.findIndex(s => s.stateId?.includes('confirm') || s.stateId?.includes('readback'));
+          if (confirmIdx !== -1) insertPoint = confirmIdx;
+
+          const newStageStep = {
+            sequenceOrder: insertPoint + 1,
+            stateId: st.id,
+            stateName: st.label || st.id.replace(/_/g, ' '),
+            objective: st.label || `Execute required stage: ${st.id}`,
+            scriptDirective: isHindiOrHinglish
+              ? `Say: "हम ${st.label || st.id.replace(/_/g, ' ')} के बारे में बात करते हैं। क्या हम आगे बढ़ सकते हैं?"`
+              : (st.id === 'context_reminder'
+                  ? `Say: "I'm calling regarding your recent experience with us. How has that been?"`
+                  : st.id === 'cross_sell_pitch'
+                  ? `Say: "Based on what you've shared, I think our complementary category would suit you well. Can I share a quick overview?"`
+                  : `Say: "Let's move forward with ${st.label || st.id.replace(/_/g, ' ')}. Does that sound good?"`),
+            slotsToCollect: [] as string[],
+            branchingConditions: [
+              { condition: "Caller agrees/shows interest", goToStep: insertPoint + 2 },
+              { condition: "Caller declines", goToStep: "end_call", reason: "stage_declined" }
+            ],
+            fallbackBehavior: isHindiOrHinglish
+              ? `Say: "कृपया बताएं क्या हम आगे बढ़ सकते हैं?"`
+              : `Say: "Just wanted to see if you'd like to hear more about ${st.label || st.id.replace(/_/g, ' ')}?"`,
+            maxRetries: 3,
+            invokesTools: []
+          };
+          refined.splice(insertPoint, 0, newStageStep);
+          existingTokens.splice(insertPoint, 0, norm(`${newStageStep.stateId} ${newStageStep.stateName}`));
+        }
+      });
+    }
+
+    refined.forEach((st: any, index: number) => { st.sequenceOrder = index + 1; });
+
+    if (Array.isArray(infieldsList) && infieldsList.length > 0 && refined.length >= 2) {
+      infieldsList.forEach((infield: any) => {
+        const key = infield?.key;
+        if (!key || /first_name|caller_name|^name$/i.test(key)) return;
+        const alreadyUsed = refined.some(s =>
+          (s.scriptDirective || '').includes(`{{${key}}}`) ||
+          (s.objective || '').includes(`{{${key}}}`) ||
+          (Array.isArray(s.branchingConditions) && s.branchingConditions.some((b: any) => (b.condition || '').includes(`{{${key}}}`)))
+        );
+        if (!alreadyUsed) {
+          const targetStep = refined.find(s =>
+            s.stateId !== 'identity_gate' && s.stateId !== 'confirmation_readback' && !s.isTerminal &&
+            /pitch|offer|reminder|segment|context|qualif/i.test(`${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''}`)
+          ) || refined[1] || refined[0];
+
+          if (targetStep) {
+            targetStep.objective = `${targetStep.objective || ''} (Tailored by pre-call {{${key}}})`.trim();
+            if (Array.isArray(targetStep.branchingConditions) && targetStep.branchingConditions.length > 0) {
+              targetStep.branchingConditions.unshift({
+                condition: `If pre-call {{${key}}} indicates specific status or category`,
+                goToStep: targetStep.sequenceOrder + 1
+              });
+            }
+          }
+        }
+      });
+    }
+
     refined.forEach((st: any) => {
       if (st.stateId?.includes('confirm') || st.stateId?.includes('readback') || st.stateName?.toLowerCase().includes('confirm')) {
         const allSlotsToConfirm = semanticDedupSlots(Array.from(collectedSoFar)).filter(Boolean);
@@ -463,6 +711,27 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
           }
         }
       }
+    });
+
+    // Final guard: whatever the source (LLM, user-defined steps, terminalStates), a
+    // scriptDirective must be literal speech. Anything instruction-shaped would be
+    // read aloud to the caller, so demote it to behaviorDirective and substitute a
+    // real line. Applies to every domain — no per-case handling.
+    const genericClose = isHindiOrHinglish
+      ? `Say: "बात करने के लिए धन्यवाद। आपका दिन शुभ हो!"`
+      : `Say: "Thank you for your time today. Have a great day!"`;
+    const genericAsk = isHindiOrHinglish
+      ? `Say: "क्या आप मुझे इसके बारे में थोड़ा और बता सकते हैं?"`
+      : `Say: "Could you tell me a little more about that?"`;
+
+    refined.forEach((st: any) => {
+      if (!st?.scriptDirective || !isInstructionLike(st.scriptDirective)) return;
+      const original = String(st.scriptDirective).replace(/^Say:\s*"|"$/g, '').trim();
+      logger.warn("WorkflowArchitect: scriptDirective was an instruction, not speech — demoted", { stateId: st.stateId, directive: original });
+      st.behaviorDirective = st.behaviorDirective ? `${st.behaviorDirective} ${original}` : original;
+      st.scriptDirective = (st.isTerminal || /clos|resolution|end|not_interested|wrong_number|abusive|out_of_scope|retry/i.test(st.stateId || ''))
+        ? genericClose
+        : genericAsk;
     });
 
     return refined;

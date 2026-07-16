@@ -8,6 +8,14 @@ export interface PlatformFormattedPayload {
   configPayload: Record<string, any>;
 }
 
+const EMPTY_SCHEMA = { type: 'object', properties: {} };
+
+/** The tool's JSON Schema is the contract the platform registers. Falling back to an
+ *  empty schema would silently strip every argument, so prefer the real one. */
+function toolSchema(f: { parameters?: Record<string, unknown> }): Record<string, unknown> {
+  return f.parameters && Object.keys(f.parameters).length > 0 ? f.parameters : EMPTY_SCHEMA;
+}
+
 export class PlatformAdapter {
   formatForPlatform(draft: PromptPackageDraft, platform: TargetPlatform = 'generic'): PlatformFormattedPayload {
     const fullPrompt = draft.finalPrompt || '';
@@ -25,7 +33,7 @@ export class PlatformAdapter {
           tools: (draft.suggestedFunctions || []).map(f => ({
             name: f.name,
             description: f.description,
-            input_schema: f.requiredInputs || []
+            input_schema: toolSchema(f)
           }))
         }
       };
@@ -45,7 +53,8 @@ export class PlatformAdapter {
           general_tools: (draft.suggestedFunctions || []).map(f => ({
             type: "custom",
             name: f.name,
-            description: f.description
+            description: f.description,
+            parameters: toolSchema(f)
           }))
         }
       };
@@ -65,7 +74,7 @@ export class PlatformAdapter {
             functions: (draft.suggestedFunctions || []).map(f => ({
               name: f.name,
               description: f.description,
-              parameters: { type: "object", properties: {} }
+              parameters: toolSchema(f)
             }))
           }
         }

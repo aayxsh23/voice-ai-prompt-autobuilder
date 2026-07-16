@@ -3,6 +3,8 @@ import {
   getSemanticCore,
   semanticDedupSlots,
   assembleUnifiedPrompt,
+  resolveEmergencyGuidance,
+  resolveCurrencyGuidance,
 } from './PromptAssembler';
 import type { BusinessSpecification } from '@/lib/llm/types';
 
@@ -27,6 +29,23 @@ describe('semanticDedupSlots', () => {
 
   it('keeps genuinely distinct slots', () => {
     expect(semanticDedupSlots(['email', 'phone']).sort()).toEqual(['email', 'phone']);
+  });
+});
+
+describe('Regional Fail-Safes (Phase 4)', () => {
+  it('emits exact emergency numbers when region is established', () => {
+    expect(resolveEmergencyGuidance('IN')).toContain('call 112 for immediate physical danger');
+    expect(resolveEmergencyGuidance('US')).toContain('call 911 for immediate danger');
+  });
+
+  it('emits fail-safe guidance when region is undefined or unestablished', () => {
+    expect(resolveEmergencyGuidance(undefined)).toContain('Do NOT state a specific emergency number');
+    expect(resolveCurrencyGuidance(undefined)).toContain('Do NOT assume or state a specific currency');
+  });
+
+  it('emits regional currency formats when region is established', () => {
+    expect(resolveCurrencyGuidance('IN')).toContain('Indian Rupees (₹ / INR)');
+    expect(resolveCurrencyGuidance('US')).toContain('US Dollars ($ / USD)');
   });
 });
 
@@ -78,5 +97,45 @@ describe('assembleUnifiedPrompt', () => {
     const out = assembleUnifiedPrompt(spec, { dynamicVariables: [] });
     expect(out).toContain('Acme Dental');
     expect(out).toContain('Riya');
+  });
+
+  it('requires a tool signal before inferring slots (Phase 6)', () => {
+    const specWithNoToolSignal: BusinessSpecification = {
+      ...spec,
+      callFlowPlan: {
+        steps: [
+          {
+            sequenceOrder: 1,
+            stateId: 'ask_phone',
+            stateName: 'Ask Phone',
+            scriptDirective: 'Say: "What is your mobile phone number?"',
+            slotsToCollect: [],
+            branchingConditions: [],
+            invokesTools: [],
+          },
+        ],
+      },
+    };
+    const outNoSignal = assembleUnifiedPrompt(specWithNoToolSignal, { dynamicVariables: [] });
+    expect(outNoSignal).not.toContain('**Required Extractions:** Extract and record [phone_number]');
+
+    const specWithToolSignal: BusinessSpecification = {
+      ...spec,
+      callFlowPlan: {
+        steps: [
+          {
+            sequenceOrder: 1,
+            stateId: 'ask_phone',
+            stateName: 'Ask Phone',
+            scriptDirective: 'Say: "What is your mobile phone number?"',
+            slotsToCollect: [],
+            branchingConditions: [],
+            invokesTools: ['validate_digit_input'],
+          },
+        ],
+      },
+    };
+    const outWithSignal = assembleUnifiedPrompt(specWithToolSignal, { dynamicVariables: [] });
+    expect(outWithSignal).toContain('**Required Extractions:** Extract and record [phone_number]');
   });
 });
