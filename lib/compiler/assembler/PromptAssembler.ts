@@ -212,7 +212,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
 - अंक शब्दों में बोलें: कीमत/मात्रा हिंदी शब्दों में कहें (जैसे "पैंतालीस", "दो हज़ार")। बड़ी रकम लाख/करोड़ में बोलें (₹2,50,000 → "दो लाख पचास हज़ार रुपये")।
 - फ़ोन नंबर, OTP, पिन कोड एक-एक अंक करके हिंदी में बोलें (शून्य, एक, दो…); "शून्य" कहें, "ओ" नहीं।
 - तारीख़ और समय हिंदी में बोलें (जैसे "सोमवार, चौदह जुलाई", "शाम छह बजे") — कभी अंक-दर-अंक न पढ़ें।
-- English domain terms (जैसे "demo", "software", "email", "WhatsApp") Latin script में ही रखें; बाक़ी सब देवनागरी में।`
+- ENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"`
     : "";
 
   let allFaqCandidates = [
@@ -282,7 +282,18 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
         directive = directive.replace(/सही नंबर पर|सही व्यक्ति/gi, `{{${nameInfieldKey}}}`);
       }
     }
-    const slotsToCollect = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
+    let slotsToCollect = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
+    if (slotsToCollect.length === 0 || !slotsToCollect.some((slot: any) => resolveSlotDigitSpec(slot))) {
+      const stepText = `${s?.stateId || ''} ${s?.stateName || ''} ${s?.objective || ''} ${(s?.invokesTools || []).join(' ')}`;
+      if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText) || (Array.isArray(s?.invokesTools) && s.invokesTools.includes("validate_digit_input"))) {
+        const inferredSlot = /whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number";
+        if (!slotsToCollect.includes(inferredSlot)) slotsToCollect = [...slotsToCollect, inferredSlot];
+      } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
+        if (!slotsToCollect.includes("pin_code")) slotsToCollect = [...slotsToCollect, "pin_code"];
+      } else if (/email|mail/i.test(stepText)) {
+        if (!slotsToCollect.includes("email")) slotsToCollect = [...slotsToCollect, "email"];
+      }
+    }
 
     let requiredToolActions: string[] = [];
     slotsToCollect.forEach((slot: string) => {
@@ -319,7 +330,14 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     if (Array.isArray(s?.invokesTools)) {
       s.invokesTools.forEach((tName: string) => {
         if (tName !== "set_capture_mode" && tName !== "validate_digit_input" && !tName.startsWith("format_email_") && tName !== "end_call") {
-          requiredToolActions.push(`- Domain Tool: Invoke \`${tName}()\` when condition for ${s?.stateId || "this step"} is met.`);
+          const toolDef = Array.isArray(spec?.tools) ? spec!.tools.find((t: any) => t?.name === tName) : null;
+          const paramsObj = toolDef?.parameters?.properties || {};
+          const paramKeys = Object.keys(paramsObj);
+          const argsStr = paramKeys.length > 0
+            ? paramKeys.map(k => `${k}: <${k}_value>`).join(", ")
+            : "";
+          const descStr = toolDef?.description ? ` — ${toolDef.description}` : "";
+          requiredToolActions.push(`- Domain Tool: Invoke \`${tName}(${argsStr})\`${descStr} when condition for ${s?.stateId || "this step"} is met.`);
         }
       });
     }
@@ -453,8 +471,8 @@ OFF-TOPIC REFUSAL PROTOCOL
   const contextLines = [
     ...servicesList.map(s => `- Offered Service: ${String(s)}`),
     `- Operating Hours: ${formatOperatingHours(spec?.businessSnapshot?.operatingHours)}`,
-    `- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "Standard cancellation policy applies.")}`,
-    `- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "Standard refund policy applies.")}`
+    `- Cancellation Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.cancellation, "None — not specified")}`,
+    `- Refund Policy: ${formatPolicyString(spec?.businessSnapshot?.policies?.refunds, "None — not specified")}`
   ];
   if (capturedTopics.length > 0) {
     contextLines.push('', 'Operational Protocols:', ...capturedTopics.map((c: any) => `- Topic: ${c?.topic || ''}\n  Protocol: ${c?.summary || ''}`));
@@ -656,8 +674,8 @@ export class PromptAssembler {
         operatingHours: existingSnap?.operatingHours || "Standard Business Hours",
         servicesOffered: existingSnap?.servicesOffered || [],
         policies: {
-          cancellation: existingPolicies?.cancellation || "Standard cancellation policy applies.",
-          refunds: existingPolicies?.refunds || "Standard refund policy applies.",
+          cancellation: existingPolicies?.cancellation || "None — not specified",
+          refunds: existingPolicies?.refunds || "None — not specified",
           escalationNumbers: existingPolicies?.escalationNumbers || []
         }
       },

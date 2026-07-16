@@ -133,9 +133,14 @@ const COVERAGE_RULES: CoverageRule[] = [
   {
     id: "infields", label: "Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)", group: "services",
     missing: (c) => !(
-      /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call)\b/i.test(c.fullUserText) ||
-      c.resolved.some(t => t.toLowerCase().includes("infield") || t.toLowerCase().includes("pre-call") || t.toLowerCase().includes("crm")) ||
-      c.captured.some(cc => cc.topic.toLowerCase().includes("infield") || cc.topic.toLowerCase().includes("pre-call") || cc.topic.toLowerCase().includes("crm"))
+      (!!c.spec?.dynamicVariables && c.spec.dynamicVariables.length > 0) ||
+      /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
+      c.resolved.some(t => t.toLowerCase().includes("infield") || t.toLowerCase().includes("pre-call") || t.toLowerCase().includes("pre_call") || t.toLowerCase().includes("crm") || t.toLowerCase().includes("variable") || t.toLowerCase().includes("dynamic")) ||
+      c.captured.some(cc => cc.topic.toLowerCase().includes("infield") || cc.topic.toLowerCase().includes("pre-call") || cc.topic.toLowerCase().includes("pre_call") || cc.topic.toLowerCase().includes("crm") || cc.topic.toLowerCase().includes("variable") || cc.topic.toLowerCase().includes("dynamic")) ||
+      /* General check: if the user answered any question bounding what variables/infields are passed ("only X", "just Y", "no other", "nothing else", "none") */
+      (c.fullUserText.toLowerCase().includes("only ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
+      (c.fullUserText.toLowerCase().includes("just ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
+      /\b(no just|only just|nothing else|no other|that's all|only [a-z0-9_]+|just [a-z0-9_]+)\b/i.test(c.fullUserText)
     ),
   },
   {

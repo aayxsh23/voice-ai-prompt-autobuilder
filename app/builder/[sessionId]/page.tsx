@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, User, Send, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play } from 'lucide-react';
+import { Bot, User, Send, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play, RefreshCw } from 'lucide-react';
 import { PromptPackageDraft, BusinessSnapshot, CallMission, ConversationDesign, VoicePersonality, SchemaOverrides } from '@/lib/llm/types';
 
 interface Message {
@@ -33,10 +33,10 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   const CATEGORY_LABELS: Record<string, string> = {
     request_types: 'Request Types & Sub-flows',
     caller_segmentation: 'Caller Segmentation',
-    operational_context: 'Operational Context',
-    data_collection: 'Data Collection Slots',
-    escalation_triggers: 'Escalation & Transfer',
-    forbidden_actions: 'Forbidden Actions',
+    operational_context: 'Operational Context & Rules',
+    data_collection: 'Required Data Collection Items',
+    escalation_triggers: 'Escalation & Hand-off Rules',
+    forbidden_actions: 'Strict Guardrails & Forbidden Actions',
     faq_content: 'FAQ Content',
     post_call_action: 'Post-Call Outcome'
   };
@@ -64,6 +64,8 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
   });
   const [isOverridePanelOpen, setIsOverridePanelOpen] = useState(false);
   const [activeOverrideTab, setActiveOverrideTab] = useState<'faq' | 'transfer' | 'verbatim'>('faq');
+  const [auditFixInputs, setAuditFixInputs] = useState<Record<number, string>>({});
+  const [isSubmittingFixes, setIsSubmittingFixes] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -179,14 +181,14 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     }
   };
 
-  const handleGeneratePromptPackage = async (customBlueprint?: any, customOverrides?: any) => {
+  const handleGeneratePromptPackage = async (customBlueprint?: any, customOverrides?: any, customTranscript?: Message[]) => {
     setGeneratingDraft(true);
     try {
       const payload = {
         ...(customBlueprint || blueprint),
         languageMode: customBlueprint?.languageMode || blueprint?.languageMode || 'english',
         overrides: customOverrides || overrides,
-        transcript: messages,
+        transcript: customTranscript || messages,
         sessionId
       };
       const res = await fetch('/api/builder/generate-review', {
@@ -202,6 +204,79 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
       alert('Failed to generate prompt draft. Please try again.');
     } finally {
       setGeneratingDraft(false);
+    }
+  };
+
+  const handleSubmitAuditFixes = async () => {
+    if (!draft?.judgeReport?.issues || Object.keys(auditFixInputs).length === 0) {
+      alert("Please enter or select at least one fix for the audit findings before submitting.");
+      return;
+    }
+
+    const fixLines = Object.entries(auditFixInputs)
+      .filter(([_, text]) => text && text.trim())
+      .map(([idxStr, text]) => {
+        const idx = Number(idxStr);
+        const issue = draft.judgeReport?.issues?.[idx];
+        if (!issue) return null;
+        return `- [${issue.severity.toUpperCase()} - ${issue.category}] (${issue.description}): ${text.trim()}`;
+      })
+      .filter(Boolean);
+
+    if (fixLines.length === 0) {
+      alert("Please enter or select at least one fix for the audit findings before submitting.");
+      return;
+    }
+
+    setIsSubmittingFixes(true);
+    const fixMessage = `AUDIT FIX REQUEST:\n${fixLines.join('\n')}`;
+    const newMessages: Message[] = [...messages, { role: 'user', content: fixMessage }];
+    setMessages(newMessages);
+    setChatLoading(true);
+
+    try {
+      const res = await fetch('/api/builder/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, sessionId })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Failed to process audit fixes");
+      }
+      if (data) {
+        const updatedMessages: Message[] = [...newMessages, { role: 'assistant', content: data.reply || "Got it! I have processed your audit fixes and am re-compiling the prompt package right now..." }];
+        setMessages(updatedMessages);
+        
+        let mergedBlueprint = { ...blueprint };
+        let mergedOverrides = { ...overrides };
+        if (data.extractedBlueprint) {
+          mergedBlueprint = {
+            ...blueprint,
+            ...data.extractedBlueprint,
+            business: { ...blueprint.business, ...(data.extractedBlueprint.business || {}) },
+            mission: { ...blueprint.mission, ...(data.extractedBlueprint.mission || {}) },
+            conversation: { ...blueprint.conversation, ...(data.extractedBlueprint.conversation || {}) }
+          };
+          setBlueprint(mergedBlueprint);
+          if (data.extractedBlueprint.overrides) {
+            mergedOverrides = {
+              ...overrides,
+              ...(data.extractedBlueprint.overrides || {})
+            };
+            setOverrides(mergedOverrides);
+          }
+        }
+
+        setAuditFixInputs({});
+        await handleGeneratePromptPackage(mergedBlueprint, mergedOverrides, updatedMessages);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error submitting audit fixes. Please try again.');
+    } finally {
+      setIsSubmittingFixes(false);
+      setChatLoading(false);
     }
   };
 
@@ -462,15 +537,18 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                     </div>
                   )}
 
-                  {/* Remaining issues or suggestions */}
+                  {/* Remaining issues or suggestions (Interactive Audit Fix UI) */}
                   {draft.judgeReport.issues && draft.judgeReport.issues.length > 0 && (
-                    <div className="text-xs mt-1">
-                      <span className="font-semibold text-[#ffb8b8]">Active Audit Findings:</span>
-                      <ul className="list-disc ml-4 mt-1 space-y-1.5">
+                    <div className="text-xs mt-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[#ffb8b8]">Active Audit Findings — Review & Fix:</span>
+                        <span className="text-[11px] text-[#909090]">Provide instructions or accept suggested fixes to re-compile</span>
+                      </div>
+                      <div className="space-y-2.5">
                         {draft.judgeReport.issues.map((issue, idx) => (
-                          <li key={`active-${idx}`} className="flex flex-col gap-0.5">
+                          <div key={`active-${idx}`} className="p-2.5 rounded-[8px] bg-[#0c0c0c]/80 border border-[#2e2e2e] flex flex-col gap-2">
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <span className="font-medium text-[#f3f3f3]">
+                              <span className="font-medium text-[#f3f3f3] text-xs">
                                 [{issue.severity.toUpperCase()} - {issue.category}] {issue.description}
                               </span>
                               <span className={`shrink-0 px-1.5 py-0.5 rounded font-semibold text-[10px] ${
@@ -482,13 +560,50 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
                               </span>
                             </div>
                             {issue.suggestedFix && (
-                              <span className="text-[11px] text-[#909090] italic">
-                                Suggested fix: {issue.suggestedFix}
-                              </span>
+                              <div className="flex items-center justify-between gap-2 bg-[#171717] px-2.5 py-1.5 rounded-[6px] border border-[#252525]">
+                                <span className="text-[11px] text-[#b0b0b0] italic flex-1">
+                                  Suggested fix: {issue.suggestedFix}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setAuditFixInputs(prev => ({ ...prev, [idx]: issue.suggestedFix || '' }))}
+                                  className="shrink-0 px-2 py-1 rounded-[4px] bg-[#ff6c02]/20 hover:bg-[#ff6c02]/30 text-[#ff8025] font-semibold text-[10px] transition-colors cursor-pointer"
+                                >
+                                  Use Suggested Fix
+                                </button>
+                              </div>
                             )}
-                          </li>
+                            <textarea
+                              rows={2}
+                              placeholder={`Type how to resolve this issue (e.g. "Keep English words in English script", "Remove fee quote", "Set cancellation to 48 hours")...`}
+                              value={auditFixInputs[idx] || ''}
+                              onChange={(e) => setAuditFixInputs(prev => ({ ...prev, [idx]: e.target.value }))}
+                              disabled={isSubmittingFixes || generatingDraft}
+                              className="w-full bg-[#121212] border border-[#2a2a2a] rounded-[6px] px-2.5 py-1.5 text-xs text-[#f3f3f3] placeholder-[#646464] focus:outline-none focus:border-[#ff6c02] resize-y"
+                            />
+                          </div>
                         ))}
-                      </ul>
+                      </div>
+                      <div className="flex items-center justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleSubmitAuditFixes}
+                          disabled={isSubmittingFixes || generatingDraft || Object.values(auditFixInputs).every(v => !v || !v.trim())}
+                          className="px-3.5 py-2 rounded-[8px] bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-40 text-[#040404] font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
+                        >
+                          {isSubmittingFixes ? (
+                            <>
+                              <div className="w-3.5 h-3.5 rounded-full border-2 border-[#040404] border-t-transparent animate-spin" />
+                              <span>Submitting Fixes & Re-compiling...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5" />
+                              <span>Submit Fixes to Re-Compile</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>

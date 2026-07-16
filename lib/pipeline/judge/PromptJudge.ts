@@ -157,7 +157,7 @@ Compare the conversation history below with the generated voice-agent prompt.
 Identify:
 1. Every requirement the user expressed that the prompt fails to honor (missing, wrong, or contradicted).
 2. Anything present in the prompt that the user never asked for or that is contradicted/ungrounded by the stated business context.
-3. Any language/script mismatches (e.g., if user asked for Hinglish or Hindi but dialogue is pure English or romanized instead of Devanagari).
+3. Any language/script mismatches (e.g., if user asked for Hinglish or Hindi but dialogue is pure English or romanized instead of Devanagari, OR if English words originating from English like WhatsApp, registered, training, billing, software, demo, email, phone are transliterated to Devanagari instead of remaining in Roman/English script).
 
 For each issue, assign:
 - severity: 'critical' (wrong language/script like Hinglish->English or pure Latin instead of target script, primary goal absent, safety/guardrail section dropped, AI disclosure inverted), 'major' (prohibition ignored like quoting fees when told not to, required FAQ/fact missing, ungrounded/invented address or policy), or 'minor' (phrasing, ordering, or tone nits).
@@ -264,7 +264,7 @@ ${issueListFormatted}
 
 Strict Instructions:
 1. Fix every listed issue completely and precisely.
-2. If there is a language or script issue (e.g. Hinglish or Hindi requested but pure English found, or romanized Hindi instead of Devanagari): TRANSLATE all spoken dialogue (Say: lines, agent responses, opening lines) into the target language/script (${a.policy.mode} in ${a.policy.script} script). Do NOT just transliterate English; translate the conversational meaning into natural spoken ${a.policy.mode}. Keep English domain terms (demo, software, email, WhatsApp, coach, dashboard, etc.) in Latin/English script.
+2. If there is a language or script issue (e.g. Hinglish or Hindi requested but pure English found, or romanized Hindi instead of Devanagari): TRANSLATE all spoken dialogue (Say: lines, agent responses, opening lines) into the target language/script (${a.policy.mode} in ${a.policy.script} script). Do NOT just transliterate English; translate the conversational meaning into natural spoken ${a.policy.mode}. ENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Latin/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"
 3. If there is an agent gender verb inflection issue, ensure all agent self-referencing verbs agree with ${a.agentGender || a.policy.agentGender || 'female'} (${(a.agentGender === 'male' || a.policy.agentGender === 'male') ? 'masculine, e.g. कर रहा हूँ / कर सकता हूँ' : 'feminine, e.g. कर रही हूँ / कर सकती हूँ'}).
 4. Do NOT drop, rename, or reorder section headers (lines starting with ###).
 5. Do NOT remove any placeholders ({{...}} or [...]).

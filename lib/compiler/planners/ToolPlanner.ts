@@ -81,49 +81,12 @@ export class ToolPlanner {
     const emailTool = getEmailTool(toneList);
     const immutableSystemTools = [...SYSTEM_RUNTIME_TOOLS, emailTool];
 
-    const steps = spec.callFlowPlan?.steps || [];
-    const fallbackTools = [
-      {
-        name: "transfer_call",
-        description: "Transfers the caller to a human representative or specialist.",
-        parameters: {
-          type: "object",
-          properties: {
-            reason: { type: "string", description: "Reason for call escalation" },
-            department: { type: "string", description: "Target department for transfer" }
-          },
-          required: ["reason"]
-        },
-        associatedStateId: steps.length > 0 ? steps[steps.length - 1].stateId : "resolution"
-      }
-    ];
+    // Only return already available/configured tools; never generate new tools via LLM
+    // or inject hardcoded fallbacks like transfer_call.
+    const existingTools = Array.isArray(spec.tools)
+      ? spec.tools.filter(t => t && t.name && !immutableSystemTools.some(s => s.name === t.name))
+      : [];
 
-    const prompt = `You are a ToolPlanner specializing in determining required API tools and structuring their schemas for Voice AI agents.
-Given the following business specification and call flow steps, determine what domain-specific business tools (e.g., calendar booking, SMS sending, lookup, transfer) are needed. Do NOT return system tools like end_call or validate_digit_input.
-
-Business Spec:
-${JSON.stringify({ meta, steps }, null, 2)}
-
-Return a JSON array of tool objects with:
-- name (string identifier)
-- description (clear explanation of when to call the tool)
-- parameters (JSON Schema object defining properties and required parameters)
-- associatedStateId (the stateId from call flow steps where this tool should be triggered)`;
-
-    try {
-      const response = await geminiClient.generate({
-        systemInstruction: "You are a tool definition architect. Return ONLY a valid JSON array of tool objects.",
-        prompt,
-        responseMimeType: "application/json"
-      });
-      const parsed = safeParseJson(response.text, fallbackTools);
-      const rawDomainTools = Array.isArray(parsed) ? parsed : (parsed && Array.isArray((parsed as any).tools) ? (parsed as any).tools : fallbackTools);
-      const domainTools = rawDomainTools.filter((t: any) => t && t.name && !immutableSystemTools.some(s => s.name === t.name));
-
-      return [...immutableSystemTools, ...domainTools];
-    } catch (err) {
-      logger.warn("ToolPlanner fallback triggered", err);
-      return [...immutableSystemTools, ...fallbackTools];
-    }
+    return [...immutableSystemTools, ...existingTools];
   }
 }

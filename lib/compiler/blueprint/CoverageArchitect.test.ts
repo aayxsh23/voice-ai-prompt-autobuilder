@@ -48,4 +48,22 @@ describe('CoverageArchitect behavior (characterization)', () => {
       report.missingFields.some((f) => f.includes('interview in progress')),
     ).toBe(true);
   });
+
+  it('marks infields as covered when user specifies only Company Name or any variable bound', () => {
+    const report = CoverageArchitect.evaluate({}, [
+      { role: 'user', content: 'only Company Name' },
+    ]);
+    expect(
+      report.missingFields.some((f) => f.includes('Infields & Pre-Call CRM Context Variables')),
+    ).toBe(false);
+  });
+
+  it('marks infields as covered when dynamicVariables is populated in spec', () => {
+    const report = CoverageArchitect.evaluate({
+      dynamicVariables: [{ key: 'custom_var', label: 'Custom Var', type: 'business', fieldDirection: 'infield', required: true, defaultValue: '', source: 'crm', description: 'test' }]
+    }, []);
+    expect(
+      report.missingFields.some((f) => f.includes('Infields & Pre-Call CRM Context Variables')),
+    ).toBe(false);
+  });
 });

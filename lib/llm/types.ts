@@ -320,6 +320,8 @@ export interface BusinessSpecification {
     aiDisclosure?: 'disclose' | 'deny';
     targetTTS?: string;
     voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
+    scopeExclusions?: string[];
+    terminalStates?: Array<{ stateId: string; label?: string; closingScript?: string }>;
   };
   businessSnapshot: {
     operatingHours: string | { standard?: string; exceptions?: string[] };

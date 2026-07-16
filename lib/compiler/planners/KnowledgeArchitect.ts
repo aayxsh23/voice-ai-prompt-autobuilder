@@ -60,14 +60,18 @@ export class KnowledgeArchitect {
     };
 
     const langDirective = isHindiOrHinglish
-      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}' / operational protocols). EVERY SINGLE FAQ answer (answer) and objection handling response (response) MUST be written in Devanagari script (देवनागरी), NOT English/Roman script. ONLY specific English domain/business terms (like 'online demo', 'software', 'team', 'ERP') can be written in English letters. NEVER generate Hindi sentences using Romanized English script.`
+      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}' / operational protocols). EVERY SINGLE FAQ answer (answer) and objection handling response (response) MUST be written in Devanagari script (देवनागरी), NOT English/Roman script.\nENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "हमारा registered office Delhi में है।" NOT "हमारा रजिस्टर्ड ऑफिस दिल्ली में है।"`
       : "";
 
     const prompt = `You are a KnowledgeArchitect specializing in creating structured FAQs and objection handlers for Voice AI agents.
 Given the following business context, expand the details into a strict JSON object containing faqs and objections.${langDirective}
 
 Business Context:
-${JSON.stringify({ meta, snap, capturedTopics: spec.capturedTopics || [], resolvedTopics: spec.resolvedTopics || [] }, null, 2)}
+${JSON.stringify({ meta, snap, capturedTopics: spec.capturedTopics || [], resolvedTopics: spec.resolvedTopics || [], scopeExclusions: meta?.scopeExclusions || [] }, null, 2)}
+
+MANDATORY RULES:
+1. If any policy value in the business snapshot is 'None — confirmed by business', 'None — not specified', 'Standard cancellation policy applies.', or 'Standard refund policy applies.', do NOT generate FAQ entries about that topic! Only generate FAQs for topics where real, custom details were explicitly provided by the user.
+2. If any topic is listed in 'scopeExclusions' (${meta?.scopeExclusions && meta.scopeExclusions.length > 0 ? JSON.stringify(meta.scopeExclusions) : "[]"}), strictly skip it and do NOT generate FAQs or objection handlers for it.
 
 Return a JSON object with:
 - faqs: array of { question: string, answer: string (in exact target language) }
@@ -75,7 +79,7 @@ Return a JSON object with:
 
     try {
       const response = await geminiClient.generate({
-        systemInstruction: `You are a knowledge base curation specialist. Return ONLY valid JSON.${isHindiOrHinglish ? " All FAQ answers and objection responses MUST be written in Devanagari script (देवनागरी). Only specific technical/business terms can remain in English." : ""}`,
+        systemInstruction: `You are a knowledge base curation specialist. Return ONLY valid JSON.${isHindiOrHinglish ? " All FAQ answers and objection responses MUST be written in Devanagari script (देवनागरी). ENGLISH WORDS RULE: Any word originating from English (WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, etc.) MUST remain in Roman/English script inside the Devanagari sentence. NEVER transliterate English words to Devanagari." : ""}`,
         prompt,
         responseMimeType: "application/json"
       });

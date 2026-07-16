@@ -8,6 +8,7 @@ import { WorkflowArchitect } from '@/lib/compiler/planners/WorkflowArchitect';
 import { KnowledgeArchitect } from '@/lib/compiler/planners/KnowledgeArchitect';
 import { ToolPlanner } from '@/lib/compiler/planners/ToolPlanner';
 import { llmClient as qwenLlmClient } from '@/lib/llm/qwenProvider';
+import { prisma } from '@/lib/db';
 
 describe('PromptJudge & Transcript-Aware Compilation Pipeline', () => {
   const baseSpec: BusinessSpecification = {
@@ -64,6 +65,7 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
       objections: []
     });
     vi.spyOn(ToolPlanner, 'planTools').mockResolvedValue([]);
+    vi.spyOn(prisma.promptRule, 'findMany').mockResolvedValue([]);
   });
 
   afterEach(() => {

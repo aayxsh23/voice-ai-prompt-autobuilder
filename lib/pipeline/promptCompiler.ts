@@ -38,7 +38,7 @@ async function repairPromptLanguage(prompt: string, agentGender: string): Promis
   if (!llm.generateRaw) return prompt;
   const repairPrompt = `You are correcting a voice-agent system prompt for a Hindi/Hinglish deployment.
 Fix ONLY these two issues, changing nothing else:
-1. Any Hindi written in Roman/Latin letters -> rewrite it in Devanagari (देवनागरी). Keep genuine English domain terms (software, demo, email, WhatsApp, coach, etc.) in Latin script.
+1. Any Hindi written in Roman/Latin letters -> rewrite it in Devanagari (देवनागरी). ENGLISH WORDS RULE: Keep all words originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) strictly in Latin/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"
 2. Make the agent's own verb inflections agree with the agent's gender: ${agentGender} (${agentGender === 'male' ? 'masculine, e.g. कर रहा हूँ / कर सकता हूँ' : 'feminine, e.g. कर रही हूँ / कर सकती हूँ'}).
 Do NOT change section headers (lines starting with ###), placeholders ({{...}} or [ ... ]), overall structure, English sentences, or meaning.
 Return ONLY the full corrected prompt text, starting directly with the first section header.
@@ -171,7 +171,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     // Deep-clone so we never mutate the caller's input object in place.
     spec = structuredClone(input.businessSpec);
   } else {
-    const biz = (input.business || {}) as BusinessSnapshot & { agentName?: string };
+    const biz = (input.business || {}) as any;
     const mission = (input.mission || {}) as CallMission;
     const tone = input.personality?.tone ? [input.personality.tone] : ["Professional", "Helpful"];
     spec = {
@@ -185,12 +185,12 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
         languageMode: input.languageMode || input.business?.languageMode || "english"
       },
       businessSnapshot: {
-        operatingHours: "Standard Business Hours",
-        servicesOffered: [],
+        operatingHours: biz.operatingHours || "Standard Business Hours",
+        servicesOffered: biz.servicesOffered || [],
         policies: {
-          cancellation: "Standard cancellation policy applies.",
-          refunds: "Standard refund policy applies.",
-          escalationNumbers: []
+          cancellation: biz.policies?.cancellation || "None — not specified",
+          refunds: biz.policies?.refunds || "None — not specified",
+          escalationNumbers: biz.policies?.escalationNumbers || []
         }
       },
       callFlowPlan: { steps: [] },
@@ -332,11 +332,11 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     const start = Date.now();
 
     while (
-      best.report.blockingCount > 0 &&
+      (best.report.blockingCount > 0 || best.report.issues.some(i => i.severity === 'major')) &&
       round < JUDGE_MAX_ROUNDS &&
       Date.now() - start < JUDGE_TIME_BUDGET_MS
     ) {
-      logger.info(`compilePromptPackage: Judge loop round ${round + 1}/${JUDGE_MAX_ROUNDS}, blockingCount=${best.report.blockingCount}, score=${best.report.score}`);
+      logger.info(`compilePromptPackage: Judge loop round ${round + 1}/${JUDGE_MAX_ROUNDS}, blockingCount=${best.report.blockingCount}, majorCount=${best.report.issues.filter(i => i.severity === 'major').length}, score=${best.report.score}`);
       try {
         const repaired = await repairFromJudge({
           finalPrompt: best.prompt,

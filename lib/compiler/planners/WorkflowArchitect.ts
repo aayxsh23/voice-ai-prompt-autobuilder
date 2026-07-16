@@ -54,14 +54,19 @@ export class WorkflowArchitect {
     const denyAiDisclosure = meta.aiDisclosure === 'deny';
 
     // 1. Identity / Greeting Step (tailored for Outbound vs Inbound - Issue #8 & Inbound Review)
+    const formattedOpeningPhrase = meta.openingPhrase ? (meta.openingPhrase.startsWith("Say:") ? meta.openingPhrase : `Say: "${meta.openingPhrase}"`) : undefined;
     const step1 = isHindiOrHinglish ? {
       sequenceOrder: 1,
       stateId: "identity_gate",
       stateName: isInbound ? "Inbound Greeting & Purpose" : "Identity Gate & Greeting",
-      objective: isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity.",
-      scriptDirective: isInbound
-        ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
-        : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI असिस्टेंट बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`,
+      objective: denyAiDisclosure ? (isInbound ? "Greet incoming caller warmly and ask how you can help." : "Verify identity of caller and introduce yourself.") : (isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity."),
+      scriptDirective: formattedOpeningPhrase || (denyAiDisclosure
+        ? (isInbound
+          ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr} बात कर ${vf.rahi} हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
+          : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr} बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`)
+        : (isInbound
+          ? `Say: "नमस्ते, ${companyStr} में कॉल करने के लिए धन्यवाद। मैं ${agentStr}, आपकी AI voice assistant हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
+          : `Say: "नमस्ते, मैं ${companyStr} से ${agentStr}, एक AI voice assistant बात कर ${vf.rahi} हूँ। क्या मेरी बात ${hindiContactString} से हो रही है?"`)),
       slotsToCollect: [] as string[],
       branchingConditions: isInbound ? [
         { condition: "Caller states request or query", goToStep: 2 },
@@ -81,10 +86,14 @@ export class WorkflowArchitect {
       sequenceOrder: 1,
       stateId: "identity_gate",
       stateName: isInbound ? "Inbound Greeting & Purpose" : "Identity Gate & Greeting",
-      objective: isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity.",
-      scriptDirective: isInbound
-        ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}, your AI voice assistant. How can I help you today?"`
-        : `Say: "Hello, I'm ${agentStr}, an AI assistant calling on behalf of ${companyStr}. Am I speaking with ${greetingContactString}?"`,
+      objective: denyAiDisclosure ? (isInbound ? "Greet incoming caller warmly and ask how you can help." : "Verify identity of caller and introduce yourself.") : (isInbound ? "Greet incoming caller warmly, proactively disclose AI assistant identity, and ask how you can help." : "Verify identity of caller and proactively disclose AI assistant identity."),
+      scriptDirective: formattedOpeningPhrase || (denyAiDisclosure
+        ? (isInbound
+          ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}. How can I help you today?"`
+          : `Say: "Hello, I'm ${agentStr} calling from ${companyStr}. Am I speaking with ${greetingContactString}?"`)
+        : (isInbound
+          ? `Say: "Thank you for calling ${companyStr}. My name is ${agentStr}, your AI voice assistant. How can I help you today?"`
+          : `Say: "Hello, I'm ${agentStr}, an AI assistant calling on behalf of ${companyStr}. Am I speaking with ${greetingContactString}?"`)),
       slotsToCollect: [] as string[],
       branchingConditions: isInbound ? [
         { condition: "Caller states request or query", goToStep: 2 },
@@ -174,35 +183,57 @@ export class WorkflowArchitect {
     };
 
     // 4. Resolution & Terminal Close (`Issue #4`)
-    const terminalStep = {
-      sequenceOrder: nextSeqAfterSlots + 1,
-      stateId: "resolution",
-      stateName: "Resolution & Terminal Close",
-      objective: "Cleanly end the call after final confirmation.",
-      scriptDirective: isHindiOrHinglish
-        ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
-        : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`,
-      slotsToCollect: [] as string[],
-      branchingConditions: [
-        { condition: "Concluding call", goToStep: "end_call", reason: "completed" }
-      ],
-      fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
-      maxRetries: 1,
-      invokesTools: ["end_call"],
-      isFallback: true,
-      isTerminal: true
-    };
+    const terminalStepsArray: any[] = [];
+    if (meta.terminalStates && Array.isArray(meta.terminalStates) && meta.terminalStates.length > 0) {
+      meta.terminalStates.forEach((ts: any, tIdx: number) => {
+        terminalStepsArray.push({
+          sequenceOrder: nextSeqAfterSlots + 1 + tIdx,
+          stateId: ts.stateId || `terminal_${tIdx}`,
+          stateName: ts.label || `Terminal Close ${tIdx + 1}`,
+          objective: ts.label || "Cleanly end the call after final confirmation.",
+          scriptDirective: ts.closingScript ? (ts.closingScript.startsWith("Say:") ? ts.closingScript : `Say: "${ts.closingScript}"`) : (isHindiOrHinglish ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"` : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`),
+          slotsToCollect: [] as string[],
+          branchingConditions: [
+            { condition: "Concluding call", goToStep: "end_call", reason: ts.stateId || "completed" }
+          ],
+          fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
+          maxRetries: 1,
+          invokesTools: ["end_call"],
+          isFallback: true,
+          isTerminal: true
+        });
+      });
+    } else {
+      terminalStepsArray.push({
+        sequenceOrder: nextSeqAfterSlots + 1,
+        stateId: "resolution",
+        stateName: "Resolution & Terminal Close",
+        objective: "Cleanly end the call after final confirmation.",
+        scriptDirective: isHindiOrHinglish
+          ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
+          : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`,
+        slotsToCollect: [] as string[],
+        branchingConditions: [
+          { condition: "Concluding call", goToStep: "end_call", reason: "completed" }
+        ],
+        fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
+        maxRetries: 1,
+        invokesTools: ["end_call"],
+        isFallback: true,
+        isTerminal: true
+      });
+    }
 
-    const fallbackSteps = [step1, ...slotSteps, confirmStep, terminalStep];
+    const fallbackSteps = [step1, ...slotSteps, confirmStep, ...terminalStepsArray];
 
     const genderDirective = isHindiOrHinglish
       ? `\nAGENT GENDER: The agent is ${agentGender}. Use ${agentGender === 'male' ? 'MASCULINE' : 'FEMININE'} verb inflections for the agent's own speech (e.g., "${agentGender === 'male' ? 'कर रहा हूँ, कर सकता हूँ' : 'कर रही हूँ, कर सकती हूँ'}"). Address the caller respectfully with "आप" and plural verbs.`
       : "";
     const disclosureDirective = denyAiDisclosure
-      ? `\nAI DISCLOSURE: DO NOT disclose or hint that the agent is an AI. The identity/greeting step must present the agent as a human representative of the company; never say "AI assistant".`
+      ? `\nAI DISCLOSURE (STRICT USER REQUIREMENT): DO NOT disclose or hint that the agent is an AI. The identity/greeting step must present the agent strictly as a human representative of the company; never say "AI assistant" or "AI voice assistant".${meta.openingPhrase ? ` Use exact openingPhrase verbatim: "${meta.openingPhrase}".` : ""}`
       : `\nAI DISCLOSURE: The identity/greeting step MUST proactively state that the agent is an AI assistant for the company.`;
     const langDirective = isHindiOrHinglish
-      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}'). EVERY SINGLE scriptDirective and fallbackBehavior across every step MUST be written in Devanagari script (देवनागरी), NOT Romanized English. ONLY specific domain keywords can remain in English letters.${genderDirective}${disclosureDirective}`
+      ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}'). EVERY SINGLE scriptDirective and fallbackBehavior across every step MUST be written in Devanagari script (देवनागरी), NOT Romanized English.\nENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"${genderDirective}${disclosureDirective}`
       : `${disclosureDirective}`;
 
     const prompt = `You are a WorkflowArchitect specializing in designing deterministic voice AI call flow state machines.
@@ -227,11 +258,14 @@ MANDATORY STATE MACHINE DESIGN RULES:
 1. ONE QUESTION PER TURN: Ask exactly ONE question or prompt in each step. Never stack multiple questions in a single turn.
 2. DEDICATED SLOT STEPS: If multiple variables/outfields must be collected (e.g. fitness_goal, health_concerns, language_preference, callback_time), generate ONE dedicated state step for each slot! Never collect more than one slot in a single step.
 3. CALL DIRECTION & PROACTIVE AI DISCLOSURE:
-   - If Call Direction is INBOUND: Step 1 (identity_gate) MUST greet the caller warmly, proactively state upfront that you are an AI assistant for ${meta.companyName || 'Company'}, and ask how you can help (e.g., "Thank you for calling ${meta.companyName || 'Company'}. I'm ${meta.agentName || 'Assistant'}, your AI voice assistant. How can I help you today?"). Do NOT ask "Am I speaking with..." on inbound calls!
-   - If Call Direction is OUTBOUND: Step 1 (identity_gate) MUST state upfront that you are an AI assistant calling on behalf of ${meta.companyName || 'Company'}, and verify the caller's identity (using {{first_name}} or {{name}} if available).
+   - If Call Direction is INBOUND: ${denyAiDisclosure ? `Step 1 (identity_gate) MUST greet the caller warmly and ask how you can help, presenting strictly as a human representative (${meta.agentName || 'Agent'}). Do NOT mention AI or assistant.${meta.openingPhrase ? ` Use exact openingPhrase: "${meta.openingPhrase}".` : ""}` : `Step 1 (identity_gate) MUST greet the caller warmly, proactively state upfront that you are an AI assistant for ${meta.companyName || 'Company'}, and ask how you can help (e.g., "Thank you for calling ${meta.companyName || 'Company'}. I'm ${meta.agentName || 'Assistant'}, your AI voice assistant. How can I help you today?").`} Do NOT ask "Am I speaking with..." on inbound calls!
+   - If Call Direction is OUTBOUND: ${denyAiDisclosure ? `Step 1 (identity_gate) MUST introduce yourself as a human representative (${meta.agentName || 'Agent'} from ${meta.companyName || 'Company'}) and verify the caller's identity. Do NOT mention AI.${meta.openingPhrase ? ` Use exact openingPhrase: "${meta.openingPhrase}".` : ""}` : `Step 1 (identity_gate) MUST state upfront that you are an AI assistant calling on behalf of ${meta.companyName || 'Company'}, and verify the caller's identity (using {{first_name}} or {{name}} if available).`}
 4. BRANCHING & ROUTING: Every step must include explicit 'branchingConditions' indicating transitions (e.g., if confirmed -> goToStep N; if busy/wrong number -> goToStep 'end_call' or 'transfer').
 5. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots explicitly (${readbackStr}) to verify accuracy.
 6. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
+7. SCOPE EXCLUSIONS & TERMINAL BRANCHES:
+   ${meta.scopeExclusions && meta.scopeExclusions.length > 0 ? `- OUT OF SCOPE TOPICS (DO NOT generate steps or tools for these): ${JSON.stringify(meta.scopeExclusions)}` : ""}
+   ${meta.terminalStates && meta.terminalStates.length > 0 ? `- TERMINAL CLOSING BRANCHES (Must generate dedicated terminal steps with end_call for each of these possible outcomes): ${JSON.stringify(meta.terminalStates)}` : ""}
 
 DENSITY: Keep every scriptDirective and fallbackBehavior to 1-2 short spoken sentences. No rationale or meta-commentary. State rules once; do not restate global policy inside steps.
 
@@ -248,7 +282,7 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       }
 
       const response = await geminiClient.generate({
-        systemInstruction: `You are a structured JSON workflow planning specialist. Return ONLY a valid JSON array of step objects.${isHindiOrHinglish ? " All Say: dialogue inside scriptDirective MUST be written in Devanagari script (देवनागरी)." : ""}`,
+        systemInstruction: `You are a structured JSON workflow planning specialist. Return ONLY a valid JSON array of step objects.${isHindiOrHinglish ? " All Say: dialogue inside scriptDirective MUST be written in Devanagari script (देवनागरी). ENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, etc.) MUST remain in Roman/English script inside the Devanagari sentence. NEVER transliterate English words to Devanagari." : ""}`,
         prompt,
         responseMimeType: "application/json"
       });
@@ -290,26 +324,33 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       // is configured to present as a human representative (aiDisclosure: 'deny').
       if (idx === 0 || s.stateId === 'identity_gate') {
         let directive = s.scriptDirective || "";
-        const hasDisclosure = /ai assistant|ai voice|ai असिस्टेंट/i.test(directive);
-        if (!denyAi && !hasDisclosure) {
-          if (isInbound) {
-            directive = isHindiOrHinglish
-              ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। मैं ${meta?.agentName || 'असिस्टेंट'}, आपकी AI वॉयस असिस्टेंट हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
-              : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. My name is ${meta?.agentName || 'Agent'}, your AI voice assistant. How can I help you today?"`;
-          } else {
-            const contactTarget = /{{[a-zA-Z0-9_]+}}/.exec(directive)?.[0] || (isHindiOrHinglish ? "सही नंबर पर" : "the right contact today");
-            directive = isHindiOrHinglish
-              ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'}, एक AI असिस्टेंट बात कर ${vf.rahi} हूँ। क्या मेरी बात ${contactTarget} से हो रही है?"`
-              : `Say: "Hello, I'm ${meta?.agentName || 'Agent'}, an AI assistant calling on behalf of ${meta?.companyName || 'our team'}. Am I speaking with ${contactTarget}?"`;
+        if (meta?.openingPhrase) {
+          directive = meta.openingPhrase.startsWith("Say:") ? meta.openingPhrase : `Say: "${meta.openingPhrase}"`;
+        } else {
+          const hasDisclosure = /ai assistant|ai voice|ai असिस्टेंट/i.test(directive);
+          if (!denyAi && !hasDisclosure) {
+            if (isInbound) {
+              directive = isHindiOrHinglish
+                ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। मैं ${meta?.agentName || 'असिस्टेंट'}, आपकी AI voice assistant हूँ। आज मैं आपकी क्या सहायता कर ${vf.sakti} हूँ?"`
+                : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. My name is ${meta?.agentName || 'Agent'}, your AI voice assistant. How can I help you today?"`;
+            } else {
+              const contactTarget = /{{[a-zA-Z0-9_]+}}/.exec(directive)?.[0] || (isHindiOrHinglish ? "सही नंबर पर" : "the right contact today");
+              directive = isHindiOrHinglish
+                ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'}, एक AI voice assistant बात कर ${vf.rahi} हूँ। क्या मेरी बात ${contactTarget} से हो रही है?"`
+                : `Say: "Hello, I'm ${meta?.agentName || 'Agent'}, an AI assistant calling on behalf of ${meta?.companyName || 'our team'}. Am I speaking with ${contactTarget}?"`;
+            }
+          } else if (denyAi && (hasDisclosure || !directive)) {
+            if (isInbound) {
+              directive = isHindiOrHinglish
+                ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। मैं ${meta?.agentName || 'असिस्टेंट'} बात कर ${vf.rahi} हूँ। आज मैं आपकी क्या मदद कर ${vf.sakti} हूँ?"`
+                : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. My name is ${meta?.agentName || 'Agent'}. How can I help you today?"`;
+            } else {
+              const contactTarget = /{{[a-zA-Z0-9_]+}}/.exec(directive)?.[0] || (isHindiOrHinglish ? "सही नंबर पर" : "the right contact today");
+              directive = isHindiOrHinglish
+                ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'} बात कर ${vf.rahi} हूँ। क्या मेरी बात ${contactTarget} से हो रही है?"`
+                : `Say: "Hello, I'm ${meta?.agentName || 'Agent'} calling from ${meta?.companyName || 'our team'}. Am I speaking with ${contactTarget}?"`;
+            }
           }
-        } else if (denyAi && !directive) {
-          directive = isInbound
-            ? (isHindiOrHinglish
-                ? `Say: "नमस्ते, ${meta?.companyName || 'कंपनी'} में कॉल करने के लिए धन्यवाद। आज मैं आपकी क्या मदद कर ${vf.sakti} हूँ?"`
-                : `Say: "Thank you for calling ${meta?.companyName || 'our team'}. How can I help you today?"`)
-            : (isHindiOrHinglish
-                ? `Say: "नमस्ते, मैं ${meta?.companyName || 'कंपनी'} से ${meta?.agentName || 'एजेंट'} बात कर ${vf.rahi} हूँ।"`
-                : `Say: "Hello, I'm ${meta?.agentName || 'Agent'} from ${meta?.companyName || 'our team'}."`);
         }
         s.scriptDirective = directive;
         refined.push({ ...s, ...preservedProps, sequenceOrder: 1 });
@@ -352,7 +393,20 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
           });
         });
       } else {
-        if (slots.length > 0) s.slotsToCollect = slots;
+        if (slots.length > 0) {
+          s.slotsToCollect = slots;
+        } else {
+          const stepText = `${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''} ${(preservedProps.invokesTools || []).join(' ')}`;
+          if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText)) {
+            s.slotsToCollect = [/whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number"];
+            if (!preservedProps.invokesTools.includes("validate_digit_input")) preservedProps.invokesTools.push("validate_digit_input");
+            if (!preservedProps.invokesTools.includes("set_capture_mode")) preservedProps.invokesTools.push("set_capture_mode");
+          } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
+            s.slotsToCollect = ["pin_code"];
+            if (!preservedProps.invokesTools.includes("validate_digit_input")) preservedProps.invokesTools.push("validate_digit_input");
+            if (!preservedProps.invokesTools.includes("set_capture_mode")) preservedProps.invokesTools.push("set_capture_mode");
+          }
+        }
         s.sequenceOrder = refined.length + 1;
         refined.push({ ...s, ...preservedProps });
       }
