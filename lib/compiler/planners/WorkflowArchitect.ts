@@ -424,6 +424,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 9. SCOPE EXCLUSIONS & TERMINAL BRANCHES:
    ${meta.scopeExclusions && meta.scopeExclusions.length > 0 ? `- OUT OF SCOPE TOPICS (DO NOT generate steps or tools for these): ${JSON.stringify(meta.scopeExclusions)}` : ""}
    ${meta.terminalStates && meta.terminalStates.length > 0 ? `- TERMINAL CLOSING BRANCHES (Must generate dedicated terminal steps with end_call for each of these possible outcomes): ${JSON.stringify(meta.terminalStates)}` : ""}
+10. STRICT 2-WORD VARIABLE & SLOT NAMING RULE: All variable keys, slot names in 'slotsToCollect', or custom fields MUST be under 2 words max (separated by single underscores, e.g. 'phone_number', 'booking_date', 'caller_name', 'first_name', 'order_id'). Names with 3 or more words like 'customer_phone_number', 'preferred_appointment_time', or 'current_day_current_date_current_time' are strictly forbidden and NOT allowed! Always use concise 1-2 word names.
 
 ### DIALOGUE STYLE CONTRACT (Strict Spoken Voice Standard)
 1. ACKNOWLEDGE → BRIDGE → ONE ASK: Every turn must follow a natural conversational rhythm: first briefly acknowledge the caller's last response, bridge to the next topic, and conclude with exactly ONE clear ask.

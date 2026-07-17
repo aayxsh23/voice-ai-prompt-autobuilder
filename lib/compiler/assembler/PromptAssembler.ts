@@ -83,19 +83,36 @@ export function getSemanticCore(slot: string): string {
     .replace(/_+/g, '_');
 }
 
+export function shortenToMaxTwoWords(slot: string): string {
+  if (!slot) return '';
+  const trimmed = slot.trim().replace(/_+/g, '_').replace(/^_|_$/g, '');
+  const parts = trimmed.split('_');
+  if (parts.length <= 2) return trimmed;
+  
+  let reduced = trimmed
+    .replace(/^(preferred|caller|user|customer|client|primary|app|selected|expected|target|desired|requested|current|existing|provided|dynamic)_+/i, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  
+  let reducedParts = reduced.split('_');
+  if (reducedParts.length <= 2) return reduced;
+  
+  return reducedParts.slice(-2).join('_');
+}
+
 export function semanticDedupSlots(slots: string[]): string[] {
   const uniqueList: string[] = [];
   const seenCores = new Set<string>();
 
-  const sorted = [...slots].sort((a, b) => {
+  const sorted = [...slots].map(s => shortenToMaxTwoWords(s)).filter(Boolean).sort((a, b) => {
     const aCore = getSemanticCore(a);
     const bCore = getSemanticCore(b);
     return a.length - b.length;
   });
 
-  for (const rawSlot of sorted) {
-    if (!rawSlot) continue;
-    const core = getSemanticCore(rawSlot);
+  for (const shortSlot of sorted) {
+    if (!shortSlot) continue;
+    const core = getSemanticCore(shortSlot);
     let isDuplicate = false;
     for (const existingCore of seenCores) {
       if (existingCore === core || core.endsWith(`_${existingCore}`) || existingCore.endsWith(`_${core}`)) {
@@ -105,7 +122,7 @@ export function semanticDedupSlots(slots: string[]): string[] {
     }
     if (!isDuplicate) {
       seenCores.add(core);
-      uniqueList.push(rawSlot);
+      uniqueList.push(shortSlot);
     }
   }
   return uniqueList;
@@ -171,7 +188,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
   logger.debug("assembleUnifiedPrompt()", { specFaqsCount: specFaqs.length, draftFaqsCount: draftFaqs.length });
 
-  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const draftVars: any[] = (Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : []).map((v: any) => ({
+    ...v,
+    key: v?.key ? shortenToMaxTwoWords(v.key) : v?.key
+  }));
   const draftVarsMap = new Map<string, any>();
   draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
 
@@ -179,7 +199,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     ? spec!.callFlowPlan!.steps
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
   const rawCollectedSlots = new Set<string>(
-    rawStepsForCheck.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []))
+    rawStepsForCheck.flatMap((s: any) => {
+      const slots = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
+      return slots.map((sl: string) => shortenToMaxTwoWords(sl));
+    })
   );
 
   const isOutfieldPreCheck = (slot: string): boolean => {
@@ -559,12 +582,12 @@ OFF-TOPIC REFUSAL PROTOCOL
   // 7. DYNAMIC VARIABLES
 
   const stepCollectedSlots = new Set<string>(
-    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
+    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect.map((slot: string) => shortenToMaxTwoWords(slot)) : [])
   );
 
   const allSlots = Array.from(new Set<string>([
     ...Array.from(stepCollectedSlots),
-    ...draftVars.map(v => v.key)
+    ...draftVars.map(v => shortenToMaxTwoWords(v.key))
   ])).filter(Boolean);
 
   const isOutfield = (slot: string): boolean => {

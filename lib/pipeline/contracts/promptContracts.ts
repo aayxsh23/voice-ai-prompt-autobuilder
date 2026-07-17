@@ -472,6 +472,38 @@ const sensitiveCaptureProhibited: Contract = {
   },
 };
 
+/** Enforces that every slot / variable name is under 2 words max (<= 2 words separated by underscores). */
+const variableNameLengthHonoured: Contract = {
+  id: 'variable_name_length_honoured',
+  description: 'All variable keys and slot names must be at most 2 words.',
+  check: ({ spec }) => {
+    const violations: ContractViolation[] = [];
+    const checkSlot = (slot: string, source: string) => {
+      if (!slot) return;
+      const trimmed = String(slot).trim().replace(/_+/g, '_').replace(/^_|_$/g, '');
+      const parts = trimmed.split('_').filter(Boolean);
+      if (parts.length > 2) {
+        violations.push({
+          contract: 'variable_name_length_honoured',
+          severity: 'major',
+          category: 'incorrect',
+          description: `Variable/slot "${slot}" has ${parts.length} words, but variables must be under 2 words max (e.g. "${parts.slice(-2).join('_')}").`,
+          evidence: 'Strict 2-word variable naming rule',
+          whereInPrompt: source,
+          suggestedFix: `Shorten variable "${slot}" to at most 2 words (e.g. "${parts.slice(-2).join('_')}").`
+        });
+      }
+    };
+
+    (spec.dynamicVariables || []).forEach(v => { if (v?.key) checkSlot(v.key, 'dynamicVariables'); });
+    (spec.callFlowPlan?.steps || []).forEach(s => {
+      (Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []).forEach(sl => checkSlot(sl, `state [${s?.stateId}]`));
+    });
+
+    return violations;
+  },
+};
+
 export const PROMPT_CONTRACTS: Contract[] = [
   stageCoverage,
   dialogueQuality,
@@ -487,6 +519,7 @@ export const PROMPT_CONTRACTS: Contract[] = [
   agentGenderAgrees,
   pricingProhibitionHonoured,
   sensitiveCaptureProhibited,
+  variableNameLengthHonoured,
 ];
 
 /** Runs every contract. Pure, deterministic, no LLM, no network. */
