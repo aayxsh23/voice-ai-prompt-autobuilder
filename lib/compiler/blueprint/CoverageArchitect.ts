@@ -53,8 +53,6 @@ interface CoverageContext {
   cancelStr: string;
   refundStr: string;
   callFlowSteps: any[];
-  /** Checks whether the assistant already asked a question about this rule ID and received a user response afterward, preventing infinite question loops. */
-  isTopicAskedAndAnswered: (ruleId: string) => boolean;
 }
 
 interface CoverageRule {
@@ -96,11 +94,11 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) =>
       (!c.snap.servicesOffered || !Array.isArray(c.snap.servicesOffered) || c.snap.servicesOffered.length === 0) &&
       !(
-        /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation|slimming|beauty|wellness|weight loss|laser|facial)\b/i.test(c.fullUserText) ||
+        /\b(cleanings|x-rays|fillings|crowns|services|preventative|orthodontics|procedures|courses|classes|preparation|demo|software|offerings|products|modules|erp|neet|jee|foundation)\b/i.test(c.fullUserText) ||
         c.containsAny(['सेवा', 'सर्विस', 'कोर्स', 'क्लास', 'डेमो', 'सॉफ्टवेयर', 'प्रोडक्ट', 'इलाज', 'उत्पाद']) ||
         (!!c.spec?.extractedEntities?.servicesOrOfferings && c.spec.extractedEntities.servicesOrOfferings.length > 0) ||
-        c.resolvedHas("service", "offering", "course", "product", "module", "slimming", "beauty") ||
-        c.capturedHas("service", "offering", "course", "product", "module", "slimming", "beauty")
+        c.resolvedHas("service", "offering", "course", "product", "module") ||
+        c.capturedHas("service", "offering", "course", "product", "module")
       ),
   },
   {
@@ -117,7 +115,7 @@ const COVERAGE_RULES: CoverageRule[] = [
   {
     id: "location", label: "Physical Location & Contact Info (address, phone number, or website)", group: "identity",
     missing: (c) => !(
-      /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact|doha|qatar|villa|najma|c-ring|waab|khatiyya|rayyan)\b/i.test(c.fullUserText) ||
+      /\b(located|street|address|maple|avenue|suite|city|zip|website|online|digital|remote|kundanahalli|varthur|bengaluru|bangalore|phone|contact)\b/i.test(c.fullUserText) ||
       c.containsAny(['पता', 'गली', 'शहर', 'वेबसाइट', 'ऑनलाइन', 'फोन', 'फ़ोन', 'संपर्क', 'रोड', 'नगर', 'दुकान', 'ऑफिस', 'ऑफ़िस']) ||
       c.resolvedHas("location", "address", "contact", "website") ||
       c.capturedHas("location", "address", "contact", "website")
@@ -141,14 +139,14 @@ const COVERAGE_RULES: CoverageRule[] = [
       const hasResolvedPolicy =
         c.resolvedHas("cancellation", "refund", "policy", "fee") ||
         c.capturedHas("cancellation", "refund", "policy", "fee") ||
-        /\b(policy|policies|cancellation|refund|fee|fees|discount|scholarship|terms|rules|no policy|does not need to mention|not required|none|no payment|never taken on this call|booking fees|payment terms)\b/i.test(c.fullUserText);
+        /\b(policy|policies|cancellation|refund|fee|fees|discount|scholarship|terms|rules|no policy|does not need to mention|not required|none|no payment|booking fees|payment terms)\b/i.test(c.fullUserText);
       return !hasCancellation && !hasRefunds && !hasResolvedPolicy;
     },
   },
   {
     id: "intake", label: "Intake & Qualification Requirements (required caller info, insurance verification, or new patient prerequisites)", group: "services",
     missing: (c) => !(
-      /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify|qualification|qualify|qualifying|class|exam|goal|preparation|pincode|pin code|preference|requirements|screening|question|questions|existing_segment|slimming or beauty)\b/i.test(c.fullUserText) ||
+      /\b(intake|insurance|ppo|hmo|medicaid|first time|new patient|id card|bring|verify|qualification|qualify|qualifying|class|exam|goal|preparation|pincode|pin code|preference|requirements|screening|question|questions)\b/i.test(c.fullUserText) ||
       c.resolvedHas("intake", "insurance", "qualification", "screening") ||
       c.capturedHas("intake", "qualification")
     ),
@@ -157,7 +155,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "infields", label: "Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)", group: "services",
     missing: (c) => !(
       (!!c.spec?.dynamicVariables && c.spec.dynamicVariables.length > 0) ||
-      /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|customer_name|customer_phone_number|existing_segment|last_purchase_or_service|nearest_center|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
+      /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
       c.resolvedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
       c.capturedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
       /* General check: if the user answered any question bounding what variables/infields are passed ("only X", "just Y", "no other", "nothing else", "none") */
@@ -180,7 +178,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     missing: (c) => !(
       c.resolvedHas("routing", "transfer", "escalat", "after_hours") ||
       c.capturedHas("routing", "transfer", "escalat", "after_hours") ||
-      /\b(route|routing|transfer|transferred|escalate|escalated|escalation|connect with|route to|senior counselor|support team|follow-up|callback|call back|schedule callback|no such agent doesnt perform any transfers|no transfers|does not perform any transfers|doesn't perform any transfers|our team will follow up|no transfers of call)\b/i.test(c.fullUserText)
+      /\b(route|routing|transfer|transferred|escalate|escalated|escalation|connect with|route to|senior counselor|support team|follow-up|callback|call back|schedule callback|no transfers|does not perform any transfers|doesn't perform any transfers)\b/i.test(c.fullUserText)
     ),
   },
   {
@@ -189,14 +187,14 @@ const COVERAGE_RULES: CoverageRule[] = [
       c.resolvedHas("objection", "edge_case", "pushback", "emergency") ||
       c.capturedHas("objection", "edge_case", "pushback", "emergency") ||
       (!!c.spec?.knowledgeBase?.objections && c.spec.knowledgeBase.objections.length >= 1) ||
-      /\b(objection|objections|busy|not interested|fees|already enrolled|pushback|concern|concerns|reject|rejection|upset|confused|edge case|wants more of what they already have|redirect once)\b/i.test(c.fullUserText)
+      /\b(objection|objections|busy|not interested|fees|already enrolled|pushback|concern|concerns|reject|rejection|upset|confused|edge case)\b/i.test(c.fullUserText)
     ),
   },
   {
     id: "call_flow_skeleton", label: "Call Flow Skeleton (greeting, step sequence, branches, or template selection)", group: "callflow",
     missing: (c) => !(
       c.callFlowSteps.length > 0 ||
-      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined|five-step template|opening \+ permission|warm context reminder|cross-sell pitch|collect booking details)\b/i.test(c.fullUserText) ||
+      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
       c.resolvedHas("flow", "skeleton", "template", "steps") ||
       c.capturedHas("flow", "skeleton", "template", "steps")
     ),
@@ -205,7 +203,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "opening_phrase", label: "Opening Line / Greeting Script (exact opening phrasing)", group: "callflow",
     missing: (c) => !(
       !!c.meta.openingPhrase ||
-      /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with|option 1|option 2|option 3|this is sara calling from vlcc)\b/i.test(c.fullUserText) ||
+      /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with)\b/i.test(c.fullUserText) ||
       c.resolvedHas("opening", "greeting", "start") ||
       c.capturedHas("opening", "greeting", "start")
     ),
@@ -214,7 +212,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "closing_script", label: "Closing Line / Call Wrap-up Script (exact closing phrasing or N/A)", group: "callflow",
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.closingScript ||
-      /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a|option 1|option 2|option 3|thank you so much for your time today)\b/i.test(c.fullUserText) ||
+      /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a)\b/i.test(c.fullUserText) ||
       c.resolvedHas("closing", "wrap", "goodbye", "end_call") ||
       c.capturedHas("closing", "wrap", "goodbye", "end_call")
     ),
@@ -347,31 +345,6 @@ function tagsMatch(tags: string[], needles: string[]): boolean {
   });
 }
 
-const TOPIC_PROMPT_PATTERNS: Record<string, RegExp> = {
-  company_name: /\b(clinic\/business name|company name|business name|official clinic|name of your company|name of the company|what is the name|vlcc qatar)\b/i,
-  primary_goal: /\b(primary goal|use case|main purpose|outbound or inbound|goal of the agent|cross-sell)\b/i,
-  language: /\b(language and dialect|language or dialect|speak on calls|which language|what language)\b/i,
-  services: /\b(services offered|core offerings|what services|what procedures|what packages|slimming or beauty packages)\b/i,
-  operating_hours: /\b(operating days|operating hours|days\/hours|schedule|timings|when are you open|business hours|when the centers are actually open)\b/i,
-  location: /\b(physical location|contact info|address|where is your|phone number, website|qatar center locations)\b/i,
-  staff: /\b(staff\/practitioner roster|names of doctors|specialists, or department|department roster|coordinators|lead therapists|department heads|team routing|internal team structure|specialist titles|beauty coordinator|slimming specialist|specific vlcc specialists)\b/i,
-  policies: /\b(cancellation, fee, or refund|business policies|cancellation policy|refund policy|booking fees|payment terms)\b/i,
-  intake: /\b(intake requirements|insurance verification|new patient prerequisites|qualification requirements|caller intake)\b/i,
-  infields: /\b(infields|pre-call crm|crm context variables|dynamic variables|data provided to the agent before|pull up automatically|customer data or crm fields)\b/i,
-  faqs: /\b(common caller faqs|frequently asked|common questions|faqs)\b/i,
-  routing: /\b(call transfer|escalation protocol|transfer numbers|after-hours rules|route the call|transfer them to instead)\b/i,
-  edge_cases: /\b(edge case|objection handling|pushback or confusion|not interested|outside those standard packages)\b/i,
-  call_flow_skeleton: /\b(call flow skeleton|standard industry 5-step template|five-step template|step-by-step sequence|branching logic)\b/i,
-  opening_phrase: /\b(opening phrase|greeting script|opening line|start by saying|open with|opening options)\b/i,
-  closing_script: /\b(closing line|call wrap-up|closing script|goodbye script|wrap up the call|closing options)\b/i,
-  silence: /\b(silence handling|no-input|when silent|goes quiet or doesn't respond|timeout hits)\b/i,
-  interruption: /\b(interruption|barge-in|jumps in while the agent is speaking|talk over)\b/i,
-  dtmf: /\b(dtmf|keypad input|touch tone|keypad entry)\b/i,
-  holiday_hours: /\b(holiday|holidays|exception hours|special closures|public holidays|seasonal closures)\b/i,
-  entry_routing: /\b(entry routing|multi-request branching|branching from opening)\b/i,
-  injection: /\b(prompt injection|override resistance|tries to override the agent|bypass the no-payment rule|ignore its role)\b/i,
-};
-
 function buildContext(
   spec: Partial<BusinessSpecification>,
   chatHistory: Array<{ role: string; content: string }>,
@@ -402,25 +375,6 @@ function buildContext(
     cancelStr: toStr(snap.policies?.cancellation),
     refundStr: toStr(snap.policies?.refunds),
     callFlowSteps: spec?.callFlowPlan?.userDefinedSteps || spec?.callFlowPlan?.steps || [],
-    isTopicAskedAndAnswered: (ruleId: string) => {
-      if (!chatHistory || chatHistory.length === 0) return false;
-      const pattern = TOPIC_PROMPT_PATTERNS[ruleId];
-      if (!pattern) return false;
-      let askCount = 0;
-      let askedAndHasFollowup = false;
-      for (let i = 0; i < chatHistory.length; i++) {
-        const msg = chatHistory[i];
-        if (msg && (msg.role.toLowerCase() === 'assistant' || msg.role.toLowerCase() === 'model')) {
-          if (pattern.test(msg.content || '')) {
-            askCount++;
-            if (i < chatHistory.length - 1 && chatHistory.slice(i + 1).some(m => m && m.role.toLowerCase() === 'user' && (m.content || '').trim().length > 0)) {
-              askedAndHasFollowup = true;
-            }
-          }
-        }
-      }
-      return askedAndHasFollowup || askCount >= 2;
-    },
   };
 }
 
@@ -437,11 +391,7 @@ export class CoverageArchitect {
     const applicable = notApplicable.size === 0
       ? COVERAGE_RULES
       : COVERAGE_RULES.filter(rule => ALWAYS_ASK.has(rule.id) || !notApplicable.has(rule.id));
-    const missingFields = applicable.filter(rule => {
-      if (!rule.missing(ctx)) return false;
-      if (ctx.isTopicAskedAndAnswered(rule.id)) return false;
-      return true;
-    }).map(rule => rule.label);
+    const missingFields = applicable.filter(rule => rule.missing(ctx)).map(rule => rule.label);
 
     const userTurnCount = chatHistory.filter(m => m.role.toLowerCase() === "user").length;
     if (missingFields.length > 0 && userTurnCount < 5) {

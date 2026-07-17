@@ -28,31 +28,6 @@ import { ToolPlanner } from "../compiler/planners/ToolPlanner";
 import { judgePrompt, repairFromJudge } from "./judge/PromptJudge";
 import { JUDGE_ENABLED, JUDGE_MAX_ROUNDS, JUDGE_TIME_BUDGET_MS, JUDGE_HARD_GATE } from "@/lib/config";
 
-/**
- * Bounded LLM repair pass for Devanagari deployments: rewrites ONLY romanized
- * Hindi into Devanagari and fixes agent verb-gender, leaving structure, headers,
- * placeholders, and English terms untouched. Caller decides whether to accept
- * the result (see the "accept only if better" guard in compilePromptPackage).
- */
-async function repairPromptLanguage(prompt: string, agentGender: string): Promise<string> {
-  const llm = getLlmClient();
-  if (!llm.generateRaw) return prompt;
-  const repairPrompt = `You are correcting a voice-agent system prompt for a Hindi/Hinglish deployment.
-Fix ONLY these two issues, changing nothing else:
-1. Any Hindi written in Roman/Latin letters -> rewrite it in Devanagari (देवनागरी). ENGLISH WORDS RULE: Keep all words originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) strictly in Latin/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"
-2. Make the agent's own verb inflections agree with the agent's gender: ${agentGender} (${agentGender === 'male' ? 'masculine, e.g. कर रहा हूँ / कर सकता हूँ' : 'feminine, e.g. कर रही हूँ / कर सकती हूँ'}).
-Do NOT change section headers (lines starting with ###), placeholders ({{...}} or [ ... ]), overall structure, English sentences, or meaning.
-Return ONLY the full corrected prompt text, starting directly with the first section header.
-
-${prompt}`;
-  // Edit pass — see PROMPT_EDITOR_INSTRUCTION. The default system prompt would ask the
-  // model to re-author the prompt from a mandated section list instead of correcting it.
-  const out = await llm.generateRaw(repairPrompt, 0.1, {
-    json: false,
-    systemInstruction: PROMPT_EDITOR_INSTRUCTION,
-  });
-  return (out || '').trim() || prompt;
-}
 
 function structurePreserved(newPrompt: string, oldPrompt: string): boolean {
   if (!newPrompt || !oldPrompt) return false;
@@ -435,20 +410,6 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     finalPrompt = best.prompt;
     draft.judgeReport = best.report;
     langQuality = validateLanguageQuality(finalPrompt, policy);
-  } else if (policy.script === 'devanagari' && langQuality.warnings && langQuality.warnings.length > 0) {
-    try {
-      const repaired = await repairPromptLanguage(finalPrompt, policy.agentGender);
-      const repairedQuality = validateLanguageQuality(repaired, policy);
-      if (
-        repaired.trim().length >= finalPrompt.length * 0.7 &&
-        (repairedQuality.warnings?.length ?? 0) < (langQuality.warnings?.length ?? 0)
-      ) {
-        finalPrompt = repaired;
-        langQuality = repairedQuality;
-      }
-    } catch (err) {
-      logger.warn("compilePromptPackage: language repair pass failed", err);
-    }
   }
 
   draft.finalPrompt = finalPrompt;

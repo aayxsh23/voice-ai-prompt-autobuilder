@@ -10,8 +10,7 @@ const runLlm = process.env.RUN_LLM_TESTS === '1';
 
 describe('MultiDomainTestHarness (Tier 2 — quality scorecard)', () => {
   it('covers every domain fixture, across languages and both call directions', () => {
-    const scenarios = MultiDomainTestHarness.getCanonicalScenarios();
-    expect(scenarios).toBe(DOMAIN_FIXTURES);
+    const scenarios = DOMAIN_FIXTURES;
     expect(scenarios.length).toBeGreaterThanOrEqual(8);
     expect(scenarios.every(s => s.id && s.spec && s.transcript.length > 0)).toBe(true);
 

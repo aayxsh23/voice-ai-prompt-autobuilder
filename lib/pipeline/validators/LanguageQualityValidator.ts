@@ -10,7 +10,8 @@ const DEVANAGARI = /[ऀ-ॿ]/;
 
 // Distinctive romanized Hindi function words that should NOT appear in a
 // Devanagari deployment (English domain terms are intentionally excluded).
-const ROMANIZED_HINDI = /\b(hai|hain|kya|aap|kar|rahi|raha|hoon|hun|nahi|haan|namaste|kaise|kripya|dhanyavaad|bataye|bataiye|kijiye|karein|chahiye|milega|milenge|sakti|sakta|acha|accha|theek)\b/i;
+/** Shared with promptContracts — one list, not two that drift apart. */
+export const ROMANIZED_HINDI = /\b(hai|hain|kya|aap|kar|rahi|raha|hoon|hun|nahi|haan|namaste|kaise|kripya|dhanyavaad|bataye|bataiye|kijiye|karein|chahiye|milega|milenge|sakti|sakta|acha|accha|theek)\b/i;
 
 // Agent self-reference verb endings (…रही/रहा/सकती/सकता/करती/करता/लेती/लेता हूँ)
 const FEMININE_SELF = /(रही|सकती|करती|लेती|गई)\s*हूँ/;

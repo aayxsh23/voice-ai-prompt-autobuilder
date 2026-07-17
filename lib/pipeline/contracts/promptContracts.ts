@@ -17,7 +17,7 @@
 import type { BusinessSpecification, ChatMessage } from "@/lib/llm/types";
 import { lintPrompt, extractSpokenLines, type LintFinding } from "@/lib/pipeline/dialogue/dialogueLint";
 import { containsDevanagari, type LanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
-import { validateLanguageQuality } from "@/lib/pipeline/validators/LanguageQualityValidator";
+import { validateLanguageQuality, ROMANIZED_HINDI } from "@/lib/pipeline/validators/LanguageQualityValidator";
 
 export type ContractSeverity = 'critical' | 'major' | 'minor';
 
@@ -249,8 +249,7 @@ const infieldsReferenced: Contract = {
 };
 
 /**
- * Every prohibition we know about: those extracted into the spec, plus any the user
- * stated in the transcript that extraction may have missed.
+ * Prohibitions the extractor captured into the spec.
  */
 export function collectProhibitions(
   spec: Partial<BusinessSpecification>,
@@ -259,6 +258,10 @@ export function collectProhibitions(
   const fromSpec = Array.isArray((spec.guardrails as { prohibitions?: string[] } | undefined)?.prohibitions)
     ? (spec.guardrails as { prohibitions: string[] }).prohibitions.map(String)
     : [];
+  // ponytail: transcript scraping is load-bearing — the chat extractor does not yet
+  // capture prohibitions into spec.guardrails, so this is the only path that catches
+  // one the user stated. It over-captures ("no keypad" from "voice only, no keypad").
+  // Delete this half once the extractor emits guardrails.prohibitions.
   const fromTranscript: string[] = [];
   if (transcript?.length) {
     const userText = transcript.filter(m => m.role.toLowerCase() === 'user').map(m => m.content).join(' ');
@@ -327,7 +330,6 @@ const safetyBlockPresent: Contract = {
   },
 };
 
-const ROMANIZED_HINDI = /\b(hai|hain|kya|aap|kar|rahi|raha|hoon|hun|nahi|haan|namaste|kaise|kripya|dhanyavaad|bataye|bataiye|kijiye|karein|chahiye|milega|milenge|sakti|sakta|acha|accha|theek|madad)\b/i;
 
 /** The declared language must actually be the language of the dialogue. */
 const languageHonoured: Contract = {
@@ -472,37 +474,6 @@ const sensitiveCaptureProhibited: Contract = {
   },
 };
 
-/** Enforces that every slot / variable name is under 2 words max (<= 2 words separated by underscores). */
-const variableNameLengthHonoured: Contract = {
-  id: 'variable_name_length_honoured',
-  description: 'All variable keys and slot names must be at most 2 words.',
-  check: ({ spec }) => {
-    const violations: ContractViolation[] = [];
-    const checkSlot = (slot: string, source: string) => {
-      if (!slot) return;
-      const trimmed = String(slot).trim().replace(/_+/g, '_').replace(/^_|_$/g, '');
-      const parts = trimmed.split('_').filter(Boolean);
-      if (parts.length > 2) {
-        violations.push({
-          contract: 'variable_name_length_honoured',
-          severity: 'major',
-          category: 'incorrect',
-          description: `Variable/slot "${slot}" has ${parts.length} words, but variables must be under 2 words max (e.g. "${parts.slice(-2).join('_')}").`,
-          evidence: 'Strict 2-word variable naming rule',
-          whereInPrompt: source,
-          suggestedFix: `Shorten variable "${slot}" to at most 2 words (e.g. "${parts.slice(-2).join('_')}").`
-        });
-      }
-    };
-
-    (spec.dynamicVariables || []).forEach(v => { if (v?.key) checkSlot(v.key, 'dynamicVariables'); });
-    (spec.callFlowPlan?.steps || []).forEach(s => {
-      (Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []).forEach(sl => checkSlot(sl, `state [${s?.stateId}]`));
-    });
-
-    return violations;
-  },
-};
 
 export const PROMPT_CONTRACTS: Contract[] = [
   stageCoverage,
@@ -519,7 +490,6 @@ export const PROMPT_CONTRACTS: Contract[] = [
   agentGenderAgrees,
   pricingProhibitionHonoured,
   sensitiveCaptureProhibited,
-  variableNameLengthHonoured,
 ];
 
 /** Runs every contract. Pure, deterministic, no LLM, no network. */

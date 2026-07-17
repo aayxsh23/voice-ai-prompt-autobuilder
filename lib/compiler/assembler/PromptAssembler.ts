@@ -83,28 +83,11 @@ export function getSemanticCore(slot: string): string {
     .replace(/_+/g, '_');
 }
 
-export function shortenToMaxTwoWords(slot: string): string {
-  if (!slot) return '';
-  const trimmed = slot.trim().replace(/_+/g, '_').replace(/^_|_$/g, '');
-  const parts = trimmed.split('_');
-  if (parts.length <= 2) return trimmed;
-  
-  let reduced = trimmed
-    .replace(/^(preferred|caller|user|customer|client|primary|app|selected|expected|target|desired|requested|current|existing|provided|dynamic)_+/i, '')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
-  
-  let reducedParts = reduced.split('_');
-  if (reducedParts.length <= 2) return reduced;
-  
-  return reducedParts.slice(-2).join('_');
-}
-
 export function semanticDedupSlots(slots: string[]): string[] {
   const uniqueList: string[] = [];
   const seenCores = new Set<string>();
 
-  const sorted = [...slots].map(s => shortenToMaxTwoWords(s)).filter(Boolean).sort((a, b) => {
+  const sorted = [...slots].filter(Boolean).sort((a, b) => {
     const aCore = getSemanticCore(a);
     const bCore = getSemanticCore(b);
     return a.length - b.length;
@@ -188,10 +171,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
   logger.debug("assembleUnifiedPrompt()", { specFaqsCount: specFaqs.length, draftFaqsCount: draftFaqs.length });
 
-  const draftVars: any[] = (Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : []).map((v: any) => ({
-    ...v,
-    key: v?.key ? shortenToMaxTwoWords(v.key) : v?.key
-  }));
+  const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
   const draftVarsMap = new Map<string, any>();
   draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
 
@@ -199,10 +179,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     ? spec!.callFlowPlan!.steps
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
   const rawCollectedSlots = new Set<string>(
-    rawStepsForCheck.flatMap((s: any) => {
-      const slots = Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []);
-      return slots.map((sl: string) => shortenToMaxTwoWords(sl));
-    })
+    rawStepsForCheck.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : []))
   );
 
   const isOutfieldPreCheck = (slot: string): boolean => {
@@ -582,12 +559,12 @@ OFF-TOPIC REFUSAL PROTOCOL
   // 7. DYNAMIC VARIABLES
 
   const stepCollectedSlots = new Set<string>(
-    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect.map((slot: string) => shortenToMaxTwoWords(slot)) : [])
+    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
   );
 
   const allSlots = Array.from(new Set<string>([
     ...Array.from(stepCollectedSlots),
-    ...draftVars.map(v => shortenToMaxTwoWords(v.key))
+    ...draftVars.map(v => v.key)
   ])).filter(Boolean);
 
   const isOutfield = (slot: string): boolean => {
@@ -616,7 +593,10 @@ OFF-TOPIC REFUSAL PROTOCOL
 
   let dynamicVariables = "";
   if (infields.length > 0) {
-    const infieldNames = allSlots.filter(s => !isOutfield(s));
+    // Must use the SAME deduped list the displayed INFIELDS block uses. Reading
+    // allSlots here meant the usage sentence referenced variables the block never
+    // declared (e.g. {{current_day_current_date_current_time}}).
+    const infieldNames = dedupedSlots.filter(s => !isOutfield(s));
     const exampleInfield = nameInfieldKey ? `{{${nameInfieldKey}}}` : (infieldNames.length > 0 ? `{{${infieldNames[0]}}}` : "the provided pre-call context");
     dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (such as ${exampleInfield}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
   }

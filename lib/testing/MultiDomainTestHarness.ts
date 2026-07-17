@@ -50,11 +50,6 @@ export interface TestHarnessSummary {
 const PASS_CONTRACT_SCORE = 70;
 
 export class MultiDomainTestHarness {
-  /** Kept for backwards compatibility with callers expecting scenario metadata. */
-  public static getCanonicalScenarios(): DomainFixture[] {
-    return DOMAIN_FIXTURES;
-  }
-
   private async runScenario(fixture: DomainFixture): Promise<DomainScorecard> {
     const base: DomainScorecard = {
       id: fixture.id, name: fixture.name,
