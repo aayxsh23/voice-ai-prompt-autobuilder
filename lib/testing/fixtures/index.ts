@@ -45,6 +45,54 @@ function term(order: number, stateId: string, stateName: string, objective: stri
 }
 
 /**
+ * Compact builder for the straightforward domains. Each `stage` becomes both a
+ * requiredStage and the state that satisfies it, so stage_coverage is exercised on
+ * every fixture rather than only on the hand-written ones.
+ */
+function makeFixture(cfg: {
+  id: string; name: string;
+  company: string; agent: string; industry: string; goal: string;
+  direction: 'inbound' | 'outbound';
+  region?: string;
+  languageMode?: string;
+  hours: string; services: string[];
+  infields?: Array<{ key: string; label: string }>;
+  stages: Array<{ id: string; label: string; say: string; slots?: string[] }>;
+  transcript: string[];
+  expect?: DomainFixture['expect'];
+}): DomainFixture {
+  const steps = cfg.stages.map((s, i) =>
+    i === cfg.stages.length - 1
+      ? term(i + 1, s.id, s.label, s.label, s.say)
+      : st(i + 1, s.id, s.label, s.label, s.say, s.slots || [], i + 2));
+  return {
+    id: cfg.id,
+    name: cfg.name,
+    spec: {
+      meta: {
+        companyName: cfg.company, agentName: cfg.agent, industry: cfg.industry,
+        isRegulated: false, toneProfile: ['Professional'], primaryGoal: cfg.goal,
+        languageMode: cfg.languageMode || 'english', callDirection: cfg.direction,
+        aiDisclosure: 'disclose', agentGender: 'female', region: cfg.region,
+      },
+      businessSnapshot: {
+        operatingHours: cfg.hours, servicesOffered: cfg.services,
+        policies: { cancellation: 'None — not specified', refunds: 'None — not specified', escalationNumbers: [] },
+      },
+      callFlowPlan: {
+        requiredStages: cfg.stages.map(s => ({ id: s.id, label: s.label })),
+        steps,
+      },
+      knowledgeBase: emptyKb,
+      tools: [],
+      dynamicVariables: (cfg.infields || []).map(v => ({ ...v, fieldDirection: 'infield', source: 'crm' })),
+    } as unknown as BusinessSpecification,
+    transcript: cfg.transcript.map(content => ({ role: 'user', content })),
+    expect: cfg.expect || { mustContain: [cfg.company] },
+  };
+}
+
+/**
  * Outbound cross-sell, Qatar, English-only. Reproduces the real brief that exposed
  * the missing-pitch, US-911-in-Qatar, and instruction-as-speech failures.
  */
@@ -207,4 +255,95 @@ const dentalInbound: DomainFixture = {
   expect: { mustContain: ['Apex Dental Studio'] },
 };
 
-export const DOMAIN_FIXTURES: DomainFixture[] = [vlccQatar, margErpHinglish, dentalInbound];
+/** Inbound emergency dispatch — urgency register, safety-adjacent. */
+const hvacEmergency = makeFixture({
+  id: 'hvac_emergency', name: 'HVAC Emergency Dispatch (Inbound)',
+  company: 'QuickCool HVAC', agent: 'Alex', industry: 'Field Services',
+  goal: 'Schedule emergency dispatch or routine maintenance',
+  direction: 'inbound', region: 'US',
+  hours: '24/7', services: ['Emergency dispatch', 'Routine maintenance'],
+  stages: [
+    { id: 'greeting', label: 'Greeting', say: `Say: "QuickCool HVAC, this is Alex. Are you having a heating or cooling emergency right now?"` },
+    { id: 'triage', label: 'Triage', say: `Say: "Understood. Is anyone in the home at risk from the temperature?"`, slots: ['urgency_level'] },
+    { id: 'collect_address', label: 'Collect address', say: `Say: "Which address should we send the technician to?"`, slots: ['service_address'] },
+    { id: 'close', label: 'Close', say: `Say: "A technician is on the way. Thanks for calling, and stay safe!"` },
+  ],
+  transcript: ['Inbound 24/7 HVAC line for emergency dispatch and maintenance booking. English.'],
+});
+
+/** Outbound B2B qualification — the opposite register to a support line. */
+const saasSdrOutbound = makeFixture({
+  id: 'saas_sdr_outbound', name: 'SaaS SDR Lead Qualification (Outbound)',
+  company: 'CloudScale Software', agent: 'Alex', industry: 'Technology',
+  goal: 'Qualify a lead and book a discovery demo with an account executive',
+  direction: 'outbound', region: 'US',
+  hours: 'Mon-Fri 9 to 6', services: ['Dev platform', 'Discovery demo'],
+  infields: [{ key: 'lead_name', label: 'Lead name' }],
+  stages: [
+    { id: 'opening', label: 'Opening', say: `Say: "Hi {{lead_name}}, this is Alex from CloudScale. Do you have two minutes?"` },
+    { id: 'qualify', label: 'Qualify', say: `Say: "How does your team handle deployments today?"`, slots: ['current_workflow'] },
+    { id: 'book_demo', label: 'Book demo', say: `Say: "Would a short walkthrough next week be useful?"`, slots: ['preferred_slot'] },
+    { id: 'close', label: 'Close', say: `Say: "Great, I will send an invite over. Thanks for your time!"` },
+  ],
+  transcript: ['Outbound SDR agent for CloudScale Software to qualify leads and book demos. English.'],
+});
+
+/** Inbound support — order lookup and returns. */
+const ecommerceReturns = makeFixture({
+  id: 'ecommerce_returns', name: 'E-Commerce Order Support (Inbound)',
+  company: 'Luxe Apparel Co', agent: 'Alex', industry: 'Retail',
+  goal: 'Locate order status and process return requests',
+  direction: 'inbound', region: 'US',
+  hours: 'Mon-Sun 8 to 8', services: ['Order tracking', 'Returns'],
+  stages: [
+    { id: 'greeting', label: 'Greeting', say: `Say: "Welcome to Luxe Apparel support. How can I help today?"` },
+    { id: 'identify_order', label: 'Identify order', say: `Say: "Could you read me the reference from your confirmation email?"`, slots: ['order_reference'] },
+    { id: 'resolve', label: 'Resolve', say: `Say: "Thanks. Would you prefer a refund or a replacement?"`, slots: ['resolution_preference'] },
+    { id: 'close', label: 'Close', say: `Say: "All sorted. Thanks for shopping with us!"` },
+  ],
+  transcript: ['Inbound support agent for Luxe Apparel Co handling order tracking and returns. English.'],
+});
+
+/** Inbound intake — regulated-adjacent, discreet register. */
+const legalIntake = makeFixture({
+  id: 'legal_intake', name: 'Law Firm Intake (Inbound)',
+  company: 'Vanguard Legal Partners', agent: 'Alex', industry: 'Legal',
+  goal: 'Screen potential client case details and schedule an attorney consultation',
+  direction: 'inbound', region: 'US',
+  hours: 'Mon-Fri 9 to 5', services: ['Case intake', 'Attorney consultation'],
+  stages: [
+    { id: 'greeting', label: 'Greeting', say: `Say: "Vanguard Legal Partners, this is Alex. What brings you to us today?"` },
+    { id: 'screen_case', label: 'Screen case', say: `Say: "When did the incident take place?"`, slots: ['incident_date'] },
+    { id: 'collect_contact', label: 'Collect contact', say: `Say: "What is the best number to reach you on?"`, slots: ['contact_phone'] },
+    { id: 'close', label: 'Close', say: `Say: "Thank you. An attorney will follow up shortly. Take care!"` },
+  ],
+  transcript: ['Inbound intake line for Vanguard Legal Partners to screen cases and book consultations. English.'],
+});
+
+/** Outbound care follow-up — empathetic register, health context. */
+const patientMonitoring = makeFixture({
+  id: 'patient_monitoring', name: 'Post-Op Patient Monitoring (Outbound)',
+  company: 'St Jude Recovery Care', agent: 'Alex', industry: 'Healthcare',
+  goal: 'Collect daily recovery vitals and symptom checklists',
+  direction: 'outbound', region: 'US',
+  hours: 'Mon-Sun 9 to 6', services: ['Post-surgery follow-up'],
+  infields: [{ key: 'patient_name', label: 'Patient name' }],
+  stages: [
+    { id: 'opening', label: 'Opening', say: `Say: "Hello {{patient_name}}, this is Alex from St Jude Recovery Care. How are you feeling today?"` },
+    { id: 'vitals_check', label: 'Vitals check', say: `Say: "Have you managed to take your temperature this morning?"`, slots: ['temperature_reading'] },
+    { id: 'symptom_report', label: 'Symptom report', say: `Say: "Any new pain or swelling since we last spoke?"`, slots: ['symptoms'] },
+    { id: 'close', label: 'Close', say: `Say: "Thank you for the update. Rest well!"` },
+  ],
+  transcript: ['Outbound post-op follow-up agent for St Jude Recovery Care collecting vitals and symptoms. English.'],
+});
+
+export const DOMAIN_FIXTURES: DomainFixture[] = [
+  vlccQatar,
+  margErpHinglish,
+  dentalInbound,
+  hvacEmergency,
+  saasSdrOutbound,
+  ecommerceReturns,
+  legalIntake,
+  patientMonitoring,
+];

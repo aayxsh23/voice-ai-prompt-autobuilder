@@ -9,6 +9,7 @@ import { KnowledgeArchitect } from '@/lib/compiler/planners/KnowledgeArchitect';
 import { ToolPlanner } from '@/lib/compiler/planners/ToolPlanner';
 import { llmClient as qwenLlmClient } from '@/lib/llm/qwenProvider';
 import { prisma } from '@/lib/db';
+import { JUDGE_MAX_ROUNDS } from '@/lib/config';
 
 describe('PromptJudge & Transcript-Aware Compilation Pipeline', () => {
   const baseSpec: BusinessSpecification = {
@@ -42,8 +43,13 @@ describe('PromptJudge & Transcript-Aware Compilation Pipeline', () => {
     tools: []
   };
 
+  // Includes the safety section because every assembled prompt has one — the
+  // safety_block_present contract correctly rejects a prompt without it.
   const cleanEnglishPrompt = `### AGENT IDENTITY & ROLE
 You are an AI assistant for TestCorp. Your primary goal is to assist callers and schedule appointments.
+
+### MANDATORY EMERGENCY & SAFETY OVERRIDES
+- Always direct the user to their local emergency services.
 
 ### CALL FLOW
 #### GREETING
@@ -216,7 +222,7 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
     expect(report.blockingCount).toBe(0);
   });
 
-  it('5. Loop caps at JUDGE_MAX_ROUNDS (3): force a judge that never passes -> stops after 3 rounds, keeps best-so-far, sets requiresHumanReview = true', async () => {
+  it('5. Loop caps at JUDGE_MAX_ROUNDS: force a judge that never passes -> stops at the cap, keeps best-so-far, sets requiresHumanReview = true', async () => {
     let judgeCallCount = 0;
     let repairCallCount = 0;
 
@@ -274,9 +280,11 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
 
     const draft = await compilePromptPackage(input as any);
 
-    // Initial judge pass (round 0) + 3 repair loops = 4 judge calls total, 3 repair calls
-    expect(judgeCallCount).toBe(4);
-    expect(repairCallCount).toBe(3);
+    // Initial judge pass (round 0) + one judge per repair round. Asserted against the
+    // configured cap rather than a literal, so tuning JUDGE_MAX_ROUNDS cannot silently
+    // break the "never gets stuck" guarantee this test exists to protect.
+    expect(judgeCallCount).toBe(JUDGE_MAX_ROUNDS + 1);
+    expect(repairCallCount).toBe(JUDGE_MAX_ROUNDS);
     expect(draft.judgeReport?.blockingCount).toBeGreaterThan(0);
     expect(draft.requiresHumanReview).toBe(true);
     expect(draft.validationErrors?.some(e => e.includes('[Judge - CRITICAL]'))).toBe(true);
@@ -462,26 +470,96 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
       } as any);
     });
 
-    it('flags a prompt that does not reflect the primary goal', async () => {
+    // The old keyword-based goal check was removed: the assembler always renders
+    // "- Primary Goal: <goal>" verbatim, so it could never fail on a real prompt.
+    // stage_coverage is its replacement and CAN detect a goal the flow never
+    // implements — the VLCC missing-pitch bug.
+    it('flags a required stage the flow never implements', async () => {
+      const spec = {
+        ...baseSpec,
+        callFlowPlan: {
+          steps: [{ sequenceOrder: 1, stateId: 'opening', stateName: 'Opening', scriptDirective: 'Say: "Hi"', slotsToCollect: [] }],
+          requiredStages: [{ id: 'opening', label: 'Opening' }, { id: 'cross_sell_pitch', label: 'Cross-sell pitch' }],
+        },
+      } as unknown as BusinessSpecification;
+
       const report = await judgePrompt({
-        transcript: [{ role: 'user', content: 'Schedule appointments for callers.' }],
-        finalPrompt: '### AGENT IDENTITY & ROLE\nYou sell umbrellas to passing pedestrians.',
-        spec: baseSpec,
+        transcript: [{ role: 'user', content: 'Pitch Beauty to Slimming customers.' }],
+        finalPrompt: cleanEnglishPrompt + '\nSTATE: [opening] (Opening)',
+        spec,
         policy
       });
 
-      expect(report.issues.some(i => i.category === 'coverage')).toBe(true);
+      const gap = report.issues.find(i => i.category === 'coverage' && /Cross-sell pitch/.test(i.description));
+      expect(gap).toBeDefined();
+      expect(gap?.severity).toBe('critical');
     });
 
-    it('does not flag a prompt that reflects the primary goal', async () => {
+    it('does not flag coverage when every required stage has a state', async () => {
+      const spec = {
+        ...baseSpec,
+        callFlowPlan: {
+          steps: [
+            { sequenceOrder: 1, stateId: 'opening', stateName: 'Opening', scriptDirective: 'Say: "Hi"', slotsToCollect: [] },
+            { sequenceOrder: 2, stateId: 'cross_sell_pitch', stateName: 'Pitch', scriptDirective: 'Say: "May I share something?"', slotsToCollect: [] },
+          ],
+          requiredStages: [{ id: 'opening', label: 'Opening' }, { id: 'cross_sell_pitch', label: 'Cross-sell pitch' }],
+        },
+      } as unknown as BusinessSpecification;
+
       const report = await judgePrompt({
-        transcript: [{ role: 'user', content: 'Schedule appointments for callers.' }],
-        finalPrompt: cleanEnglishPrompt,
-        spec: baseSpec,
+        transcript: [{ role: 'user', content: 'Pitch Beauty to Slimming customers.' }],
+        finalPrompt: cleanEnglishPrompt + '\nSTATE: [opening] (Opening)\nSTATE: [cross_sell_pitch] (Pitch)',
+        spec,
         policy
       });
 
       expect(report.issues.some(i => i.category === 'coverage')).toBe(false);
+    });
+
+    // A missing stage cannot be fixed by editing prompt text — the flow is generated
+    // from spec.callFlowPlan.steps, so a text edit would desync spec and prompt. This
+    // is why a dropped stage previously had to be patched by hand.
+    it('repairs a missing stage structurally by re-planning the flow', async () => {
+      vi.spyOn(llmClientModule, 'getLlmClient').mockReturnValue({
+        generateRaw: vi.fn().mockResolvedValue(JSON.stringify({ verdict: 'pass', score: 100, issues: [] })),
+        generateReviewDraft: vi.fn().mockResolvedValue({
+          callFlowSteps: [], faqCards: [], objectionCards: [], dynamicVariables: [],
+        }),
+      } as any);
+
+      vi.spyOn(WorkflowArchitect, 'planWorkflow').mockResolvedValue([
+        { sequenceOrder: 1, stateId: 'opening', stateName: 'Opening', objective: 'Greet', scriptDirective: 'Say: "Hi there, is now a good time?"', slotsToCollect: [] },
+        { sequenceOrder: 2, stateId: 'cross_sell_pitch', stateName: 'Cross-sell pitch', objective: 'Pitch', scriptDirective: 'Say: "May I share something that might suit you?"', slotsToCollect: [] },
+      ] as any);
+
+      const input = {
+        businessSpec: {
+          ...baseSpec,
+          callFlowPlan: {
+            steps: [],
+            requiredStages: [{ id: 'opening', label: 'Opening' }, { id: 'cross_sell_pitch', label: 'Cross-sell pitch' }],
+          },
+        },
+        transcript: [{ role: 'user', content: 'Pitch Beauty to Slimming customers.' }],
+      };
+
+      const draft = await compilePromptPackage(input as any);
+      const states = (draft.businessSpec?.callFlowPlan?.steps || []).map(s => s.stateId);
+      expect(states).toContain('cross_sell_pitch');
+      expect(draft.finalPrompt).toContain('cross_sell_pitch');
+    });
+
+    // Regression: the judge used to carry its own copy of these rules, so a contract
+    // added for CI never protected production.
+    it('runs the shared contracts (locale) in production, not just in CI', async () => {
+      const report = await judgePrompt({
+        transcript: [],
+        finalPrompt: cleanEnglishPrompt + '\n- call 911 for immediate danger',
+        spec: baseSpec,
+        policy
+      });
+      expect(report.issues.some(i => i.category === 'locale' && i.severity === 'critical')).toBe(true);
     });
   });
 });

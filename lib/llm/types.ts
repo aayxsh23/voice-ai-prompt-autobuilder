@@ -348,6 +348,13 @@ export interface BusinessSpecification {
      * the compiler must stay generic rather than assume a default country.
      */
     region?: string;
+    /**
+     * Coverage-rule ids the interview established are irrelevant to THIS agent (e.g.
+     * keypad fallback for a voice-only line). Lets the discovery questions adapt to
+     * the use case instead of asking a fixed checklist of everyone. A mandatory floor
+     * (language, safety, disclosure, goal) is never skippable — see ALWAYS_ASK.
+     */
+    notApplicableTopics?: string[];
   };
   businessSnapshot: {
     operatingHours: string | { standard?: string; exceptions?: string[] };

@@ -33,7 +33,13 @@ export const llmConfig = llmConfigSchema.parse({
 export type LlmConfig = typeof llmConfig;
 
 export const JUDGE_ENABLED = process.env.JUDGE_ENABLED !== 'false';
-export const JUDGE_MAX_ROUNDS = Number(process.env.JUDGE_MAX_ROUNDS) || 3;
-export const JUDGE_TIME_BUDGET_MS = Number(process.env.JUDGE_TIME_BUDGET_MS) || 90_000;
+/**
+ * Repair attempts before delivering the best-scoring prompt. Kept low deliberately:
+ * the loop only runs on CRITICAL issues, and the accept-only-if-better guard means a
+ * second round rarely helps — the cost is user-visible latency.
+ */
+export const JUDGE_MAX_ROUNDS = Number(process.env.JUDGE_MAX_ROUNDS) || 2;
+/** Hard wall-clock stop so generation can never hang on the judge. */
+export const JUDGE_TIME_BUDGET_MS = Number(process.env.JUDGE_TIME_BUDGET_MS) || 60_000;
 export const JUDGE_HARD_GATE = process.env.JUDGE_HARD_GATE === 'true';
 

@@ -1,161 +1,143 @@
 import { compilePromptPackage } from "@/lib/pipeline/promptCompiler";
-import { validateVariableConsistency } from "@/lib/pipeline/validators/VariableConsistencyValidator";
-import { validateFallbackDialogue } from "@/lib/pipeline/validators/FallbackDialogueValidator";
-import { validateCoherence } from "@/lib/pipeline/validators/CoherenceValidator";
-import { validateFlowCompleteness } from "@/lib/pipeline/validators/FlowCompletenessValidator";
-import { BlueprintJson } from "@/lib/llm/types";
+import { checkContracts, contractScore } from "@/lib/pipeline/contracts/promptContracts";
+import { lintPrompt, dialogueScore } from "@/lib/pipeline/dialogue/dialogueLint";
+import { validatePromptBudget } from "@/lib/pipeline/validators/PromptBudgetValidator";
+import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
+import { DOMAIN_FIXTURES, type DomainFixture } from "./fixtures";
+import type { BusinessSpecification } from "@/lib/llm/types";
 
-export interface DomainTestScenario {
-  domainId: string;
-  domainName: string;
-  blueprint: BlueprintJson;
-}
-
-export interface DomainTestResult {
-  domainId: string;
-  domainName: string;
+/**
+ * Tier 2 — the quality harness.
+ *
+ * Runs the REAL pipeline (planners, CoT draft, judge loop) over every domain fixture
+ * and reports a scorecard. Unlike Tier 1 (MultiDomainTestHarness.contract.test.ts)
+ * this makes many live LLM calls, so it cannot gate every commit — it is a trend
+ * line you run deliberately.
+ *
+ * It shares the fixtures and contracts with Tier 1 on purpose: the two tiers differ
+ * only in whether the flow is generated or pre-supplied, never in what "good" means.
+ */
+export interface DomainScorecard {
+  id: string;
+  name: string;
+  /** 0-100 against the universal contracts. */
+  contractScore: number;
+  /** 0-100 for how human the spoken lines read. */
+  dialogueScore: number;
+  /** 0-100 from the judge (deterministic contracts + LLM rubric). */
+  judgeScore: number | null;
+  criticalCount: number;
+  majorCount: number;
+  estimatedTokens: number;
+  /** e.g. "7/7" — how many required stages the planner actually produced. */
+  stageCoverage: string;
+  /** Contract + expectation failures, most severe first. */
+  violations: string[];
   passed: boolean;
-  errors: string[];
-  warnings: string[];
-  promptLength: number;
+  error?: string;
 }
 
 export interface TestHarnessSummary {
   totalScenarios: number;
   passedCount: number;
   failedCount: number;
-  results: DomainTestResult[];
+  averageContractScore: number;
+  averageDialogueScore: number;
+  results: DomainScorecard[];
 }
 
+/** A scenario is "passing" when nothing critical survived and quality holds up. */
+const PASS_CONTRACT_SCORE = 70;
+
 export class MultiDomainTestHarness {
-  public static getCanonicalScenarios(): DomainTestScenario[] {
-    return [
-      {
-        domainId: "dental",
-        domainName: "Dental Clinic Receptionist",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Professional", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "Inbound clinic booking",
-          business: { businessName: "Apex Dental Studio", industry: "Healthcare", description: "Family and cosmetic dental practice" },
-          mission: { primaryGoal: "Book patient appointments and answer general clinic FAQs", supportedIntents: ["book_appointment", "reschedule", "faq"] },
-          conversation: { opening: "Thank you for calling Apex Dental Studio. How may I assist your smile today?" }
-        }
-      },
-      {
-        domainId: "hvac",
-        domainName: "HVAC Field Tech Scheduling",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Urgent & Professional", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "Emergency dispatch and scheduling",
-          business: { businessName: "QuickCool HVAC", industry: "Field Services", description: "24/7 heating and cooling service" },
-          mission: { primaryGoal: "Schedule emergency dispatch or routine maintenance", supportedIntents: ["emergency_dispatch", "maintenance"] },
-          conversation: { opening: "Hello, you've reached QuickCool HVAC. Are you experiencing a heating or cooling emergency right now?" }
-        }
-      },
-      {
-        domainId: "saas_sdr",
-        domainName: "SaaS Sales SDR (Outbound)",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Engaging & Concise", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "Outbound lead qualification",
-          business: { businessName: "CloudScale Software", industry: "Technology", description: "AI-powered dev platform" },
-          mission: { primaryGoal: "Qualify lead and book a discovery demo with an account executive", supportedIntents: ["qualify_lead", "book_demo"] },
-          conversation: { opening: "Hi, this is Alex calling from CloudScale Software. Do you have two minutes to chat about dev workflow automation?" }
-        }
-      },
-      {
-        domainId: "ecommerce",
-        domainName: "E-Commerce Order Support",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Helpful & Empathetic", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "Order tracking and returns",
-          business: { businessName: "Luxe Apparel Co", industry: "Retail", description: "Premium online clothing retailer" },
-          mission: { primaryGoal: "Locate order status and process return requests", supportedIntents: ["order_status", "return_request"] },
-          conversation: { opening: "Welcome to Luxe Apparel Customer Support. Could I please get your order number?" }
-        }
-      },
-      {
-        domainId: "legal_intake",
-        domainName: "Law Firm Intake",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Authoritative & Discreet", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "New client qualification",
-          business: { businessName: "Vanguard Legal Partners", industry: "Legal", description: "Personal injury and corporate counsel" },
-          mission: { primaryGoal: "Screen potential client case details and schedule attorney consultation", supportedIntents: ["case_intake", "consultation"] },
-          conversation: { opening: "Good day, Vanguard Legal Partners intake line. How can our legal team assist you today?" }
-        }
-      },
-      {
-        domainId: "patient_monitor",
-        domainName: "Healthcare Patient Monitoring",
-        blueprint: {
-          selectedTemplate: "Custom Agent",
-          personality: { tone: "Caring & Attentive", languageVariant: "English" },
-          followupAnswers: {},
-          useCase: "Post-op checkup call",
-          business: { businessName: "St. Jude Recovery Care", industry: "Healthcare", description: "Post-surgery recovery follow-up" },
-          mission: { primaryGoal: "Collect daily recovery vitals and symptom checklists", supportedIntents: ["vitals_check", "symptom_report"] },
-          conversation: { opening: "Hello, this is St. Jude Recovery Care following up on your recent discharge. How are you feeling today?" }
-        }
+  /** Kept for backwards compatibility with callers expecting scenario metadata. */
+  public static getCanonicalScenarios(): DomainFixture[] {
+    return DOMAIN_FIXTURES;
+  }
+
+  private async runScenario(fixture: DomainFixture): Promise<DomainScorecard> {
+    const base: DomainScorecard = {
+      id: fixture.id, name: fixture.name,
+      contractScore: 0, dialogueScore: 0, judgeScore: null,
+      criticalCount: 0, majorCount: 0, estimatedTokens: 0,
+      stageCoverage: '0/0', violations: [], passed: false,
+    };
+
+    try {
+      // Clear the steps so the planner has to build the flow — that is the thing
+      // Tier 2 exists to measure. Tier 1 supplies steps and tests the assembler.
+      const spec = {
+        ...fixture.spec,
+        callFlowPlan: { ...fixture.spec.callFlowPlan, steps: [] },
+      } as BusinessSpecification;
+
+      const draft = await compilePromptPackage({
+        businessSpec: spec,
+        transcript: fixture.transcript,
+      } as Parameters<typeof compilePromptPackage>[0]);
+
+      const prompt = draft.finalPrompt || '';
+      const finalSpec = draft.businessSpec || spec;
+      const policy = resolveLanguagePolicy(finalSpec, draft);
+
+      const violations = checkContracts({ prompt, spec: finalSpec, transcript: fixture.transcript, policy });
+      const lint = lintPrompt(prompt);
+
+      const required = finalSpec.callFlowPlan?.requiredStages || [];
+      const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+      const stateTokens = (finalSpec.callFlowPlan?.steps || []).map(s => norm(`${s.stateId} ${s.stateName}`));
+      const covered = required.filter(r => stateTokens.some(t => t.includes(norm(r.id)))).length;
+
+      const expectationFailures: string[] = [];
+      for (const needle of fixture.expect.mustContain || []) {
+        if (!prompt.includes(needle)) expectationFailures.push(`expected prompt to contain "${needle}"`);
       }
-    ];
+      for (const pattern of fixture.expect.mustNotContain || []) {
+        if (pattern.test(prompt)) expectationFailures.push(`expected prompt NOT to match ${pattern}`);
+      }
+
+      const criticalCount = violations.filter(v => v.severity === 'critical').length;
+      const majorCount = violations.filter(v => v.severity === 'major').length;
+      const cScore = contractScore(violations);
+
+      return {
+        ...base,
+        contractScore: cScore,
+        dialogueScore: dialogueScore(lint),
+        judgeScore: draft.judgeReport?.score ?? null,
+        criticalCount,
+        majorCount,
+        estimatedTokens: validatePromptBudget(prompt).score ?? 0,
+        stageCoverage: `${covered}/${required.length}`,
+        violations: [
+          ...violations
+            .sort((a, b) => (a.severity === 'critical' ? -1 : 1))
+            .map(v => `[${v.severity}] ${v.contract}: ${v.description}`),
+          ...expectationFailures.map(e => `[expectation] ${e}`),
+        ],
+        passed: criticalCount === 0 && cScore >= PASS_CONTRACT_SCORE && expectationFailures.length === 0,
+      };
+    } catch (err) {
+      return { ...base, error: `Compilation threw: ${(err as Error)?.message || String(err)}` };
+    }
   }
 
   async runAllScenarios(): Promise<TestHarnessSummary> {
-    const scenarios = MultiDomainTestHarness.getCanonicalScenarios();
-    const results: DomainTestResult[] = [];
-
-    for (const sc of scenarios) {
-      const errors: string[] = [];
-      const warnings: string[] = [];
-      let fullPrompt = "";
-
-      try {
-        const draft = await compilePromptPackage(sc.blueprint);
-        fullPrompt = draft.finalPrompt || '';
-
-        const varCheck = validateVariableConsistency(fullPrompt, draft.dynamicVariables || []);
-        if (!varCheck.isValid) errors.push(...varCheck.errors);
-
-        const fbCheck = validateFallbackDialogue(fullPrompt);
-        if (!fbCheck.isValid) errors.push(...fbCheck.errors);
-
-        const cohCheck = validateCoherence(fullPrompt, draft);
-        if (!cohCheck.isValid) errors.push(...cohCheck.errors);
-
-        const flowCheck = validateFlowCompleteness(draft.businessSpec || (sc.blueprint as any).businessSpec || {}, draft.callFlowSteps || draft.businessSpec?.callFlowPlan?.steps || []);
-        if (!flowCheck.isValid) errors.push(...flowCheck.errors);
-
-      } catch (err: any) {
-        errors.push(`Compilation threw error: ${err.message || err}`);
-      }
-
-      results.push({
-        domainId: sc.domainId,
-        domainName: sc.domainName,
-        passed: errors.length === 0,
-        errors,
-        warnings,
-        promptLength: fullPrompt.length
-      });
+    const results: DomainScorecard[] = [];
+    for (const fixture of DOMAIN_FIXTURES) {
+      results.push(await this.runScenario(fixture));
     }
-
     const passedCount = results.filter(r => r.passed).length;
+    const avg = (pick: (r: DomainScorecard) => number) =>
+      results.length === 0 ? 0 : Math.round(results.reduce((s, r) => s + pick(r), 0) / results.length);
+
     return {
-      totalScenarios: scenarios.length,
+      totalScenarios: results.length,
       passedCount,
-      failedCount: scenarios.length - passedCount,
-      results
+      failedCount: results.length - passedCount,
+      averageContractScore: avg(r => r.contractScore),
+      averageDialogueScore: avg(r => r.dialogueScore),
+      results,
     };
   }
 }

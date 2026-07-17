@@ -67,6 +67,36 @@ function structurePreserved(newPrompt: string, oldPrompt: string): boolean {
 }
 
 /**
+ * Rebuilds the call flow when the judge finds a STRUCTURAL problem — a required
+ * stage with no state, i.e. the agent's purpose missing from the flow.
+ *
+ * Text repair cannot fix this: the flow is generated from `spec.callFlowPlan.steps`
+ * by the planner, so editing the rendered prompt would desync the two (and is why a
+ * missing stage previously had to be patched by hand). Re-planning and re-assembling
+ * keeps the spec and the prompt in agreement.
+ */
+async function repairStructurally(
+  spec: BusinessSpecification,
+  draft: PromptPackageDraft,
+  issues: Array<{ description: string; suggestedFix: string }>,
+): Promise<string> {
+  logger.info('compilePromptPackage: structural repair — re-planning the call flow', {
+    issues: issues.map(i => i.description),
+  });
+  // Clearing steps forces a full re-plan; requiredStages (which the planner enforces)
+  // are what the missing stage will come back through.
+  const replanSpec: BusinessSpecification = {
+    ...spec,
+    callFlowPlan: { ...spec.callFlowPlan, steps: [] },
+  };
+  const steps = await WorkflowArchitect.planWorkflow(replanSpec);
+  if (Array.isArray(steps) && steps.length > 0) {
+    spec.callFlowPlan.steps = steps;
+  }
+  return assembleUnifiedPrompt(spec, draft);
+}
+
+/**
  * Input accepted by the compiler. It is a (partial) blueprint plus a few fields
  * that arrive from the builder/CRM path but aren't part of the base blueprint.
  */
@@ -351,19 +381,36 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     let round = 0;
     const start = Date.now();
 
+    // Repair only on CRITICAL. `major` issues are advisory — they do not block
+    // delivery, so spending an LLM round (and the user's latency) on them is waste;
+    // they are surfaced as warnings instead.
+    const needsRepair = (r: typeof best.report) => r.blockingCount > 0;
+
     while (
-      (best.report.blockingCount > 0 || best.report.issues.some(i => i.severity === 'major')) &&
+      needsRepair(best.report) &&
       round < JUDGE_MAX_ROUNDS &&
       Date.now() - start < JUDGE_TIME_BUDGET_MS
     ) {
-      logger.info(`compilePromptPackage: Judge loop round ${round + 1}/${JUDGE_MAX_ROUNDS}, blockingCount=${best.report.blockingCount}, majorCount=${best.report.issues.filter(i => i.severity === 'major').length}, score=${best.report.score}`);
+      logger.info(`compilePromptPackage: Judge loop round ${round + 1}/${JUDGE_MAX_ROUNDS}, blockingCount=${best.report.blockingCount}, score=${best.report.score}`);
       try {
-        const repaired = await repairFromJudge({
-          finalPrompt: best.prompt,
-          report: best.report,
-          policy,
-          agentGender: policy.agentGender
-        });
+        // A flow-shaped problem (a required stage with no state) cannot be fixed by
+        // editing prompt text — the state machine has to be rebuilt. Re-plan with the
+        // judge's findings as constraints, then re-assemble; fall back to the text
+        // editor for wording-level issues.
+        const structural = best.report.issues.filter(
+          i => i.severity === 'critical' && i.category === 'coverage'
+        );
+        let repaired: string;
+        if (structural.length > 0) {
+          repaired = await repairStructurally(spec, draft, structural);
+        } else {
+          repaired = await repairFromJudge({
+            finalPrompt: best.prompt,
+            report: best.report,
+            policy,
+            agentGender: policy.agentGender
+          });
+        }
         if (!structurePreserved(repaired, best.prompt)) {
           logger.warn(`compilePromptPackage: repair discarded due to structure mismatch in round ${round}`);
           break;

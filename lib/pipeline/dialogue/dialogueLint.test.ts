@@ -79,6 +79,36 @@ describe('lintDialogueLine', () => {
   });
 });
 
+// Generators emit `slot.replace(/_/g,' ')`, so by the time a line exists the
+// underscore is gone and INTERNAL_FIELD cannot see it. These are real lines the
+// planner produced.
+describe('internal_term_spoken (de-underscored identifiers)', () => {
+  const ctx = { internalTerms: ['caller_intent', 'booking_time_window', 'context_reminder', 'Warm context reminder', 'email', 'name'] };
+
+  it('flags a slot name spoken in its de-underscored form', () => {
+    const f = lintDialogueLine('To help us proceed, what is your caller intent?', ctx);
+    expect(f.some(x => x.rule === 'internal_term_spoken' && x.severity === 'major')).toBe(true);
+  });
+
+  it('flags a stage label read aloud', () => {
+    const f = lintDialogueLine("Let's move forward with Warm context reminder. Does that sound good?", ctx);
+    expect(f.some(x => x.rule === 'internal_term_spoken')).toBe(true);
+  });
+
+  it('does not flag single-word identifiers that are ordinary speech', () => {
+    expect(lintDialogueLine('What is your name?', ctx).some(x => x.rule === 'internal_term_spoken')).toBe(false);
+    expect(lintDialogueLine('Could I take your email?', ctx).some(x => x.rule === 'internal_term_spoken')).toBe(false);
+  });
+
+  it('does not flag natural dialogue that avoids the identifier', () => {
+    expect(lintDialogueLine('Which day suits you best?', ctx)).toEqual([]);
+  });
+
+  it('is inert without context (no false positives)', () => {
+    expect(lintDialogueLine('What is your caller intent?').some(x => x.rule === 'internal_term_spoken')).toBe(false);
+  });
+});
+
 describe('lintPrompt / extractSpokenLines', () => {
   const prompt = `### CALL FLOW
 STATE: [closing] (Closing)

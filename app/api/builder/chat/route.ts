@@ -152,7 +152,7 @@ For meta:
 For extractedEntities, only list entities the user explicitly named. Copy names and numbers verbatim as stated — do not paraphrase, generalize, or invent additional departments, contacts, or services beyond what was said.
 If the user explicitly states that a policy does not exist (e.g. 'no policy', 'we don't have one', 'N/A'), write the literal string 'None — confirmed by business' for that field rather than omitting it or leaving it empty.
 If the user defines any pre-call CRM variables (infields) or data collected during the call (outfields), or answers what data is passed before the call (such as Company Name, Caller Name, Order ID, or confirms only certain variables or no variables are passed), populate dynamicVariables in the spec with items having key, label, type ('business'|'caller'|'task'|'runtime'), fieldDirection ('infield'|'outfield'), required, defaultValue, source ('crm'|'runtime'), and description.
-Whenever the user gives a substantive answer to a specific sub-topic (including when they define any pre-call variables, CRM fields, infields, or outfields, confirm that only specific variables like Company Name or any user-defined variable are passed, confirm that no other variables are needed, confirm that no specific managers/departments are needed, refer to the team as a whole, or answer questions about call flow/conversational handling like digression_handling, silence_handling, interruption_policy, opening_phrase, closing_script, retry_exhaustion, confirmation_style, voice_persona, dtmf_fallback, holiday_hours, entry_routing, or injection_resistance), append a short snake_case tag for it to resolvedTopics (e.g. 'infields', 'pre_call_variables', 'dynamic_variables', 'cancellation_policy', 'refund_policy', 'language_preference', 'staff_roster', 'team_structure', 'routing_protocol', 'qualification_criteria', 'objection_handling', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script', 'retry_exhaustion', 'confirmation_style', 'voice_persona', 'dtmf_fallback', 'holiday_hours', 'entry_routing', 'injection_resistance'). Do not repeat tags already present in the existing spec's resolvedTopics.
+Whenever the user answers a question about a specific sub-topic (EVEN if their answer is short, negative, declining, or stating that something is not applicable/not used — such as answering "No", "No such Holidays", "No details like these shared during call", "No it doesnt reference any name during cals", "None needed", "Not required", or confirming that no specific staff/departments/roster or transfers are needed), you MUST append a short snake_case tag for that topic to resolvedTopics (e.g. 'staff_roster', 'staff', 'team_structure', 'holiday_hours', 'routing_protocol', 'dtmf_fallback', 'infields', 'cancellation_policy', 'refund_policy', 'language_preference', 'qualification_criteria', 'objection_handling', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script', 'retry_exhaustion', 'confirmation_style', 'voice_persona', 'entry_routing', 'injection_resistance'). This is vital so the system knows the topic was answered and never asks the user about it again. Do not repeat tags already present in the existing spec's resolvedTopics.
 If the user gives a substantive, detailed operational or call flow answer that doesn't map cleanly to meta or businessSnapshot (e.g. after-hours routing, emergency triage protocol, referral handling, records handling, digression handling, silence handling, interruption behavior), append it to capturedTopics as { topic: short_snake_case_tag, summary: 2-4 sentence summary preserving key specifics like exact scripts, extensions, and thresholds }. Check existing capturedTopics first — do not add a duplicate topic tag.
 If the conversation history contains an 'AUDIT FIX REQUEST:', extract and apply every requested fix instruction to the corresponding fields in meta, businessSnapshot, resolvedTopics, or capturedTopics.
 Ensure you return valid JSON with no markdown fences.`;
@@ -316,7 +316,33 @@ Ensure you return valid JSON with no markdown fences.`;
       delete updatedSpec.meta!.openingPhrase;
     }
 
-    const coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
+    const userTurns = messages.filter((m: { role: string }) => m.role.toLowerCase() === 'user').length;
+
+    // Adaptive topics (once, early): decide which checklist topics this particular
+    // agent does not need, so discovery fits the use case instead of asking everyone
+    // the same 27 questions. Cached on the spec, so this costs one call per session.
+    if (!updatedSpec.meta!.notApplicableTopics && userTurns >= 2) {
+      try {
+        const na = await CoverageArchitect.selectNotApplicableTopics(updatedSpec, messages);
+        updatedSpec.meta!.notApplicableTopics = na;
+      } catch {
+        updatedSpec.meta!.notApplicableTopics = [];
+      }
+    }
+
+    let coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
+
+    // Coverage adjudication (once, at the boundary): the rules match keywords, so
+    // they can believe a topic is answered when the user never decided it. Verify
+    // before we let the interview end — the only moment a false "covered" hurts.
+    if (coverageReport.isReadyForCompilation) {
+      const unanswered = await CoverageArchitect.adjudicateCoverage(updatedSpec, messages, coverageReport.missingFields);
+      if (unanswered.length > 0) {
+        console.warn('[builder/chat] coverage adjudicator reopened topics the rules marked answered:', unanswered);
+        coverageReport = { missingFields: unanswered, isReadyForCompilation: false };
+      }
+    }
+
     // Language now comes from the chat itself (no pre-chat selector), so drive the
     // follow-up question language off whatever the interview has resolved so far.
     const resolvedLanguageMode = (updatedSpec.meta?.languageMode as 'english' | 'hindi' | 'multilingual' | undefined) || languageMode;

@@ -1,5 +1,8 @@
 export type IssueSeverity = 'critical' | 'major' | 'minor';
-export type IssueCategory = 'language' | 'missing' | 'extra' | 'incorrect' | 'coverage' | 'persona';
+/** Kept in sync with ContractCategory so contract violations map across losslessly. */
+export type IssueCategory =
+  | 'language' | 'missing' | 'extra' | 'incorrect'
+  | 'coverage' | 'persona' | 'dialogue' | 'tooling' | 'locale';
 
 export interface JudgeIssue {
   severity: IssueSeverity;

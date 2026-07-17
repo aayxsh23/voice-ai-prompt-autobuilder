@@ -31,6 +31,31 @@ function buildNaturalReadback(slots: string[], isHindiOrHinglish: boolean): stri
     : `Say: "Thank you. Just to make sure I have everything right: ${woven}. Does that all look correct?"`;
 }
 
+/**
+ * Deterministic turn for a stage we have no specific handling for.
+ *
+ * Deliberately does NOT speak the stage label: "Warm context reminder" and "Offer
+ * free consultation" are builder metadata, the same category as the instruction-as-
+ * speech bug — a caller must never hear them. The label goes to behaviorDirective so
+ * the agent (and the judge) still know what the stage is for.
+ *
+ * This is a last-resort fallback used when the planner LLM is unavailable; the LLM
+ * path writes a real line for the stage.
+ */
+function buildGenericStageTurn(label: string, isHindiOrHinglish: boolean): {
+  scriptDirective: string; behaviorDirective: string; fallbackBehavior: string;
+} {
+  return {
+    scriptDirective: isHindiOrHinglish
+      ? `Say: "एक बात आपसे कहना चाहती हूँ, क्या मैं बता सकती हूँ?"`
+      : `Say: "There's something I'd like to run past you, if that's alright?"`,
+    behaviorDirective: `Cover this stage of the call: ${label}. Do not say the stage name aloud.`,
+    fallbackBehavior: isHindiOrHinglish
+      ? `Say: "क्या हम आगे बढ़ सकते हैं?"`
+      : `Say: "Would that be alright?"`,
+  };
+}
+
 function buildIntentDrivenAsk(slot: string, isHindiOrHinglish: boolean, isRetry = false): string {
   const fName = slot.replace(/_/g, ' ');
   if (isRetry) {
@@ -165,8 +190,11 @@ export class WorkflowArchitect {
         { condition: "Identity verified / ready to proceed", goToStep: 2 },
         { condition: "Wrong number / caller busy", goToStep: "end_call", reason: "wrong_contact_or_busy" }
       ],
+      // hindiVerbForms() returns forms already resolved for the agent's gender —
+      // `sakti` IS "सकता" when male. There is no `sakta`/`raha` key, so using them
+      // rendered "क्या मैं जान undefined हूँ" into the prompt.
       fallbackBehavior: isHindiOrHinglish
-        ? `Say: "क्षमा करें, क्या मैं जान ${vf.sakta} हूँ कि मैं किससे बात कर ${vf.raha} हूँ?"`
+        ? `Say: "क्षमा करें, क्या मैं जान ${vf.sakti} हूँ कि मैं किससे बात कर ${vf.rahi} हूँ?"`
         : `Say: "Excuse me, may I verify whom I am speaking with?"`,
       maxRetries: 3,
       invokesTools: [] as string[],
@@ -333,21 +361,12 @@ export class WorkflowArchitect {
             stateId: stage.id,
             stateName: stLabel,
             objective: `Execute stage: ${stLabel}`,
-            scriptDirective: isHindiOrHinglish
-              ? `Say: "हम ${stLabel} के बारे में बात करते हैं। क्या हम आगे बढ़ सकते हैं?"`
-              : (stId === 'context_reminder' && nameInfield && existingSlots.has('last_purchase_or_service')
-                  ? `Say: "I'm calling regarding your recent {{last_purchase_or_service}} with us. How has that been?"`
-                  : stId === 'cross_sell_pitch' && infieldsList.some((v: any) => v.key === 'existing_segment')
-                  ? `Say: "Since you've been with us for {{existing_segment}}, I think our complementary category would suit you well. Can I share a quick overview?"`
-                  : `Say: "Let's move forward with ${stLabel}. Does that sound good?"`),
+            ...buildGenericStageTurn(stLabel, isHindiOrHinglish),
             slotsToCollect: [] as string[],
             branchingConditions: [
               { condition: "Caller acknowledges or agrees", goToStep: stageSteps.length + 2 },
               { condition: "Caller declines or disconnects", goToStep: "end_call", reason: "declined" }
             ],
-            fallbackBehavior: isHindiOrHinglish
-              ? `Say: "कृपया बताएं क्या हम आगे बढ़ सकते हैं?"`
-              : `Say: "Just wanted to see if you'd like to hear more about ${stLabel}?"`,
             maxRetries: 3,
             invokesTools: [] as string[],
             isFallback: true
@@ -645,21 +664,12 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
             stateId: st.id,
             stateName: st.label || st.id.replace(/_/g, ' '),
             objective: st.label || `Execute required stage: ${st.id}`,
-            scriptDirective: isHindiOrHinglish
-              ? `Say: "हम ${st.label || st.id.replace(/_/g, ' ')} के बारे में बात करते हैं। क्या हम आगे बढ़ सकते हैं?"`
-              : (st.id === 'context_reminder'
-                  ? `Say: "I'm calling regarding your recent experience with us. How has that been?"`
-                  : st.id === 'cross_sell_pitch'
-                  ? `Say: "Based on what you've shared, I think our complementary category would suit you well. Can I share a quick overview?"`
-                  : `Say: "Let's move forward with ${st.label || st.id.replace(/_/g, ' ')}. Does that sound good?"`),
+            ...buildGenericStageTurn(st.label || st.id.replace(/_/g, ' '), isHindiOrHinglish),
             slotsToCollect: [] as string[],
             branchingConditions: [
               { condition: "Caller agrees/shows interest", goToStep: insertPoint + 2 },
               { condition: "Caller declines", goToStep: "end_call", reason: "stage_declined" }
             ],
-            fallbackBehavior: isHindiOrHinglish
-              ? `Say: "कृपया बताएं क्या हम आगे बढ़ सकते हैं?"`
-              : `Say: "Just wanted to see if you'd like to hear more about ${st.label || st.id.replace(/_/g, ' ')}?"`,
             maxRetries: 3,
             invokesTools: []
           };

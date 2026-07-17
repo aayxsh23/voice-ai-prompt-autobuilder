@@ -24,6 +24,37 @@ export interface LintFinding {
   suggestion: string;
 }
 
+export interface LintContext {
+  /**
+   * Internal identifiers that must never be spoken — slot keys, stage ids, stage
+   * labels. Needed because generators emit `slot.replace(/_/g,' ')`, so by the time
+   * the line exists the underscore is gone and the INTERNAL_FIELD regex can't see it
+   * ("caller_intent" -> "what is your caller intent?"). Matching against the known
+   * identifiers catches the spoken form too.
+   */
+  internalTerms?: string[];
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Spoken forms of internal identifiers. Single words are skipped deliberately:
+ * "email", "name" and "date" are slot keys AND ordinary speech, so flagging them
+ * would fire on every well-written line. Multi-word identifiers ("caller intent",
+ * "booking time window", "warm context reminder") are never natural speech.
+ */
+function spokenInternalTerms(terms: string[] | undefined): string[] {
+  if (!terms || terms.length === 0) return [];
+  const out = new Set<string>();
+  for (const raw of terms) {
+    const spoken = String(raw || '').replace(/[_-]+/g, ' ').trim().toLowerCase();
+    if (spoken.includes(' ') && spoken.length >= 6) out.add(spoken);
+  }
+  return Array.from(out);
+}
+
 /** Pulls the literal spoken lines out of an assembled prompt (`Say: "..."`). */
 export function extractSpokenLines(prompt: string): string[] {
   if (!prompt) return [];
@@ -71,11 +102,24 @@ const TTS_HAZARD = /[—“”‘’]/;
 const INTERNAL_FIELD = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/;
 
 /** Lints one spoken line. Domain-agnostic by construction. */
-export function lintDialogueLine(line: string): LintFinding[] {
+export function lintDialogueLine(line: string, ctx?: LintContext): LintFinding[] {
   const findings: LintFinding[] = [];
   const raw = (line || '').trim();
   if (!raw) return findings;
   const bare = stripPlaceholders(raw);
+
+  for (const term of spokenInternalTerms(ctx?.internalTerms)) {
+    if (new RegExp(`\\b${escapeRegExp(term)}\\b`, 'i').test(bare)) {
+      findings.push({
+        rule: 'internal_term_spoken',
+        severity: 'major',
+        line: raw,
+        message: `Spoken line says the internal identifier "${term}" out loud.`,
+        suggestion: `"${term}" is a slot or stage name, not something a person says. Phrase the turn in the caller's language instead.`,
+      });
+      break;
+    }
+  }
 
   if (isInstructionLike(raw)) {
     findings.push({
@@ -185,8 +229,8 @@ export function lintDialogueLine(line: string): LintFinding[] {
 }
 
 /** Lints every spoken line in an assembled prompt. */
-export function lintPrompt(prompt: string): LintFinding[] {
-  return extractSpokenLines(prompt).flatMap(lintDialogueLine);
+export function lintPrompt(prompt: string, ctx?: LintContext): LintFinding[] {
+  return extractSpokenLines(prompt).flatMap(line => lintDialogueLine(line, ctx));
 }
 
 /** 0-100; structural problems dominate, lexical nits barely move it. */
