@@ -48,3 +48,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI/IDE specific folders and files
+.gemini/
+CLAUDE.md
+scratch/
+AGENTS.md
+.agents/

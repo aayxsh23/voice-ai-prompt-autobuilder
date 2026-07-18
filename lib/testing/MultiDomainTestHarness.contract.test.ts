@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { assembleUnifiedPrompt } from '@/lib/compiler/assembler/PromptAssembler';
 import { ToolPlanner } from '@/lib/compiler/planners/ToolPlanner';
+import { WorkflowArchitect } from '@/lib/compiler/planners/WorkflowArchitect';
 import { checkContracts, contractScore } from '@/lib/pipeline/contracts/promptContracts';
 import { DOMAIN_FIXTURES } from './fixtures';
 import type { BusinessSpecification } from '@/lib/llm/types';
@@ -26,8 +27,10 @@ describe('Contract harness — every fixture must satisfy every universal contra
   // Tools are planned deterministically (ToolPlanner makes no LLM calls), so the
   // whole fixture -> prompt path here is reproducible.
   async function build(spec: BusinessSpecification) {
-    const withTools = { ...spec, tools: await ToolPlanner.planTools(spec) } as BusinessSpecification;
-    const draft = { dynamicVariables: spec.dynamicVariables || [] };
+    const steps = await WorkflowArchitect.planWorkflow(spec);
+    const withFlow = { ...spec, callFlowPlan: { ...spec.callFlowPlan, steps } } as BusinessSpecification;
+    const withTools = { ...withFlow, tools: await ToolPlanner.planTools(withFlow) } as BusinessSpecification;
+    const draft = { dynamicVariables: withFlow.dynamicVariables || [] };
     return { prompt: assembleUnifiedPrompt(withTools, draft), spec: withTools };
   }
 

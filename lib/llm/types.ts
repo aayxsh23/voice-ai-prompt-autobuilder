@@ -246,6 +246,7 @@ export interface GenerateRawOptions {
    * model to emit a full prompt with a fixed section list.
    */
   systemInstruction?: string;
+  contextLabel?: string;
 }
 
 export interface LlmService {

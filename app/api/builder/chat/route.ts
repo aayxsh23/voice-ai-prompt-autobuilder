@@ -8,6 +8,7 @@ import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { detectAiDisclosure, detectAgentGender } from '@/lib/llm/language/personaExtract';
 import { isInstructionLike } from '@/lib/pipeline/dialogue/dialogueLint';
+import { semanticDedupSlots } from '@/lib/compiler/assembler/PromptAssembler';
 
 type CallFlowPolicy = Partial<Pick<BusinessSpecification['callFlowPlan'],
   'silenceHandling' | 'interruptionPolicy' | 'digressionPolicy' | 'confirmationStyle' |
@@ -79,6 +80,24 @@ function dedupeBy<T>(arr: T[], keyFn: (item: T) => string): T[] {
     if (!seen.has(key)) {
       seen.add(key);
       result.push(item);
+    }
+  }
+  return result;
+}
+
+function canonicalizeVars(vars: any[]): any[] {
+  if (!vars || vars.length === 0) return [];
+  const validVars = vars.filter(v => v && v.key);
+  const allKeys = validVars.map(v => v.key);
+  const dedupedKeys = new Set(semanticDedupSlots(allKeys));
+  
+  const result: any[] = [];
+  const seen = new Set<string>();
+  
+  for (const v of validVars) {
+    if (dedupedKeys.has(v.key) && !seen.has(v.key)) {
+      seen.add(v.key);
+      result.push(v);
     }
   }
   return result;
@@ -232,7 +251,22 @@ Ensure you return valid JSON with no markdown fences.`;
             // Policies accumulate across turns; a later answer supersedes an earlier one.
             ...patchPolicy,
             ...(patchStages.length > 0 || existingFlow?.requiredStages
-              ? { requiredStages: dedupeBy([...(existingFlow?.requiredStages || []), ...patchStages], (s) => s.id) }
+              ? { 
+                  requiredStages: (() => {
+                    const combined = [...(existingFlow?.requiredStages || []), ...patchStages].filter(s => s && s.id);
+                    const allIds = combined.map(s => s.id);
+                    const dedupedIds = new Set(semanticDedupSlots(allIds));
+                    const result = [];
+                    const seen = new Set<string>();
+                    for (const s of combined) {
+                      if (dedupedIds.has(s.id) && !seen.has(s.id)) {
+                        seen.add(s.id);
+                        result.push(s);
+                      }
+                    }
+                    return result.slice(0, 8);
+                  })()
+                }
               : {}),
           },
           knowledgeBase: {
@@ -271,10 +305,7 @@ Ensure you return valid JSON with no markdown fences.`;
             [...existingCaptured, ...patchCaptured],
             (c) => String(c?.topic || '').trim().toLowerCase()
           ),
-          dynamicVariables: dedupeBy(
-            [...existingVars, ...patchVars],
-            (v) => String(v?.key || '').trim().toLowerCase()
-          )
+          dynamicVariables: canonicalizeVars([...existingVars, ...patchVars])
         };
       }
     } catch (llmErr) {

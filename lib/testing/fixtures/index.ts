@@ -337,7 +337,59 @@ const patientMonitoring = makeFixture({
   transcript: ['Outbound post-op follow-up agent for St Jude Recovery Care collecting vitals and symptoms. English.'],
 });
 
+
+/**
+ * A test fixture that seeds the exact garbage the extractor used to produce.
+ * Guarantees the assembler/planner pipeline cleans it up before generating the prompt.
+ */
+const pollutedExtraction: DomainFixture = {
+  id: 'polluted_extraction',
+  name: 'Polluted Extraction',
+  spec: {
+    meta: {
+      companyName: 'Clean Co', agentName: 'Alex', industry: 'Testing',
+      isRegulated: false, toneProfile: ['Professional'],
+      primaryGoal: 'Test deduplication',
+      languageMode: 'english', callDirection: 'outbound',
+      aiDisclosure: 'disclose', agentGender: 'female', region: 'US',
+    },
+    businessSnapshot: {
+      operatingHours: '9-5', servicesOffered: ['Service'],
+      policies: { cancellation: 'None', refunds: 'None', escalationNumbers: [] },
+    },
+    callFlowPlan: {
+      requiredStages: [
+        { id: 'opening', label: 'Opening' },
+        { id: 'light_qualifying', label: 'Light qualifying' },
+        { id: 'light_qualification', label: 'Light qualification' },
+        { id: 'brief_echo', label: 'Brief echo' },
+        { id: 'brief_echoing', label: 'Brief echoing' },
+        { id: 'closing', label: 'Closing' },
+        { id: 'close', label: 'Close' },
+      ],
+      steps: [
+        st(1, 'opening', 'Opening', 'Opening', 'Say: "Hi"', [], 2),
+        st(2, 'light_qualifying', 'Light qualifying', 'Qualifying', 'Say: "How are you?"', ['segment'], 3),
+        st(3, 'light_qualification', 'Light qualification', 'Qualification', 'Say: "How is it?"', ['current_segment'], 4),
+        st(4, 'brief_echo', 'Brief echo', 'Echo', 'Say: "Got it."', [], 5),
+        st(5, 'brief_echoing', 'Brief echoing', 'Echoing', 'Say: "I see."', [], 6),
+        term(6, 'closing', 'Closing', 'Closing', 'Say: "Bye."'),
+        term(7, 'close', 'Close', 'Close', 'Say: "Goodbye."')
+      ],
+    },
+    knowledgeBase: emptyKb,
+    tools: [],
+    dynamicVariables: [],
+  } as unknown as BusinessSpecification,
+  transcript: [
+    { role: 'user', content: 'Agent for Clean Co. Please test deduplication.' },
+  ],
+  expect: {
+    mustContain: ['Clean Co'],
+  },
+};
 export const DOMAIN_FIXTURES: DomainFixture[] = [
+  pollutedExtraction,
   vlccQatar,
   margErpHinglish,
   dentalInbound,

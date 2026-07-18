@@ -142,6 +142,12 @@ function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string
   if (extractedThinking) {
     logger.debug(`Qwen thinking tokens (${contextLabel})`, extractedThinking);
   }
+
+  if (response.usage) {
+    const { prompt_tokens, completion_tokens, total_tokens } = response.usage;
+    logger.info(`[TOKEN_USAGE] [${contextLabel}] Prompt: ${prompt_tokens} | Completion: ${completion_tokens} | Total: ${total_tokens}`);
+  }
+
   return rawContent;
 }
 
@@ -156,7 +162,7 @@ function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
 }
 
 export const llmClient = {
-  async generate({ systemInstruction, prompt, responseMimeType }: { systemInstruction: string, prompt: string, responseMimeType?: string }) {
+  async generate({ systemInstruction, prompt, responseMimeType, contextLabel }: { systemInstruction: string, prompt: string, responseMimeType?: string, contextLabel?: string }) {
     const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
     const client = getOpenAIClient();
     const model = llmConfig.model;
@@ -175,7 +181,7 @@ export const llmClient = {
       chat_template_kwargs: { enable_thinking: true },
     } as any);
 
-    const rawContent = extractAndLogThinking(response, "llmClient.generate");
+    const rawContent = extractAndLogThinking(response, contextLabel || "llmClient.generate");
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent) {
@@ -239,7 +245,8 @@ export class QwenProvider implements LlmService {
       chat_template_kwargs: { enable_thinking: true },
     } as any);
 
-    const rawContent = extractAndLogThinking(response, "generateRaw");
+    const label = options?.contextLabel || "generateRaw";
+    const rawContent = extractAndLogThinking(response, label);
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent || cleanContent.trim() === "") {
@@ -274,7 +281,7 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 7. RETRY LIMITS: Each step that collects information must include maxRetries: 3.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
-    const pass1Raw = await this.generateRaw(pass1Prompt);
+    const pass1Raw = await this.generateRaw(pass1Prompt, 0.1, { contextLabel: "WorkflowArchitect Pass 1 (Structure)" });
     let plan: CallFlowPlan = safeParseJson<CallFlowPlan>(pass1Raw, {
       agentName: "Voice Assistant",
       primaryGoal: "Assist callers",
@@ -307,7 +314,7 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
     // Structure (pass 1) stays deterministic; the dialogue-heavy draft (pass 2)
     // gets a modest temperature bump for more natural spoken lines. JSON validity
     // is still enforced by response_format.
-    const pass2Raw = await this.generateRaw(pass2Prompt, 0.35);
+    const pass2Raw = await this.generateRaw(pass2Prompt, 0.35, { contextLabel: "WorkflowArchitect Pass 2 (Draft)" });
     let draft: PromptPackageDraft = safeParseJson<PromptPackageDraft>(pass2Raw, {} as any);
     if (!draft || (!draft.systemPrompt && !draft.faqCards)) {
       try {

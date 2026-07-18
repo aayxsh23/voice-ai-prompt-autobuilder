@@ -244,140 +244,32 @@ export class WorkflowArchitect {
       isFallback: true
     };
 
-    const terminalStepsArray: any[] = [];
-    if (meta.terminalStates && Array.isArray(meta.terminalStates) && meta.terminalStates.length > 0) {
-      const defaultClose = isHindiOrHinglish
-        ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
-        : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`;
-      meta.terminalStates.forEach((ts: any, tIdx: number) => {
-        const raw = typeof ts.closingScript === 'string' ? ts.closingScript.trim() : '';
-        const isSpeech = !!raw && !isInstructionLike(raw);
-        if (raw && !isSpeech) {
-          logger.warn("WorkflowArchitect: terminalState closingScript is an instruction, not speech", { stateId: ts.stateId, closingScript: raw });
-        }
-        terminalStepsArray.push({
-          sequenceOrder: nextSeqAfterSlots + 1 + tIdx,
-          stateId: ts.stateId || `terminal_${tIdx}`,
-          stateName: ts.label || `Terminal Close ${tIdx + 1}`,
-          objective: ts.label || "Cleanly end the call after final confirmation.",
-          behaviorDirective: isSpeech ? undefined : (raw || undefined),
-          scriptDirective: isSpeech ? (raw.startsWith("Say:") ? raw : `Say: "${raw}"`) : defaultClose,
-          slotsToCollect: [] as string[],
-          branchingConditions: [
-            { condition: "Concluding call", goToStep: "end_call", reason: ts.stateId || "completed" }
-          ],
-          fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
-          maxRetries: 1,
-          invokesTools: ["end_call"],
-          isFallback: true,
-          isTerminal: true
-        });
-      });
-    } else {
-      terminalStepsArray.push({
-        sequenceOrder: nextSeqAfterSlots + 1,
-        stateId: "resolution",
-        stateName: "Resolution & Terminal Close",
-        objective: "Cleanly end the call after final confirmation.",
-        scriptDirective: isHindiOrHinglish
-          ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
-          : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`,
-        slotsToCollect: [] as string[],
-        branchingConditions: [
-          { condition: "Concluding call", goToStep: "end_call", reason: "completed" }
-        ],
-        fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
-        maxRetries: 1,
-        invokesTools: ["end_call"],
-        isFallback: true,
-        isTerminal: true
-      });
-    }
+        const terminalBranches = (meta.terminalStates && Array.isArray(meta.terminalStates) && meta.terminalStates.length > 0)
+      ? meta.terminalStates.map((ts: any) => ({
+          condition: `Concluding call: ${ts.label || ts.stateId || 'completed'}`,
+          goToStep: 'end_call',
+          reason: ts.stateId || 'completed'
+        }))
+      : [{ condition: "Concluding call", goToStep: "end_call", reason: "completed" }];
 
-    let fallbackSteps: any[] = [];
-    if (requiredStages && Array.isArray(requiredStages) && requiredStages.length > 0) {
-      const stageSteps: any[] = [];
-      requiredStages.forEach((stage: any, sIdx: number) => {
-        const stId = String(stage.id || '').toLowerCase();
-        const stLabel = stage.label || stage.id || `Stage ${sIdx + 1}`;
-        if (sIdx === 0 || /opening|identity|greet/i.test(stId)) {
-          stageSteps.push({
-            ...step1,
-            stateId: stId === 'identity_gate' ? stId : (stage.id || step1.stateId),
-            stateName: stLabel,
-            sequenceOrder: stageSteps.length + 1
-          });
-        } else if (/confirm|readback/i.test(stId)) {
-          stageSteps.push({
-            ...confirmStep,
-            stateId: stage.id || confirmStep.stateId,
-            stateName: stLabel,
-            sequenceOrder: stageSteps.length + 1
-          });
-        } else if (/close|resolut|terminal|end/i.test(stId) || sIdx === requiredStages.length - 1) {
-          if (terminalStepsArray.length > 0 && stageSteps.length + terminalStepsArray.length >= requiredStages.length) {
-            terminalStepsArray.forEach(t => {
-              stageSteps.push({ ...t, sequenceOrder: stageSteps.length + 1 });
-            });
-          } else {
-            stageSteps.push({
-              ...terminalStepsArray[0],
-              stateId: stage.id || terminalStepsArray[0].stateId,
-              stateName: stLabel,
-              sequenceOrder: stageSteps.length + 1
-            });
-          }
-        } else if (/collect|capture|booking|qualif|requirement|detail/i.test(stId) || (slotsArray.length > 0 && !stageSteps.some(s => Array.isArray(s.slotsToCollect) && s.slotsToCollect.length > 0))) {
-          if (slotsArray.length > 0) {
-            slotSteps.forEach((slStep, slIdx) => {
-              stageSteps.push({
-                ...slStep,
-                stateId: slIdx === 0 ? (stage.id || slStep.stateId) : slStep.stateId,
-                stateName: slIdx === 0 ? stLabel : slStep.stateName,
-                sequenceOrder: stageSteps.length + 1
-              });
-            });
-          } else {
-            stageSteps.push({
-              sequenceOrder: stageSteps.length + 1,
-              stateId: stage.id,
-              stateName: stLabel,
-              objective: `Collect details for ${stLabel}`,
-              scriptDirective: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, false),
-              slotsToCollect: ["caller_intent"],
-              branchingConditions: [
-                { condition: "Details provided", goToStep: stageSteps.length + 2 },
-                { condition: "Caller declines", goToStep: "end_call", reason: "declined" }
-              ],
-              fallbackBehavior: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, true),
-              maxRetries: 3,
-              invokesTools: [],
-              isFallback: true
-            });
-          }
-        } else {
-          stageSteps.push({
-            sequenceOrder: stageSteps.length + 1,
-            stateId: stage.id,
-            stateName: stLabel,
-            objective: `Execute stage: ${stLabel}`,
-            ...buildGenericStageTurn(stLabel, isHindiOrHinglish),
-            slotsToCollect: [] as string[],
-            branchingConditions: [
-              { condition: "Caller acknowledges or agrees", goToStep: stageSteps.length + 2 },
-              { condition: "Caller declines or disconnects", goToStep: "end_call", reason: "declined" }
-            ],
-            maxRetries: 3,
-            invokesTools: [] as string[],
-            isFallback: true
-          });
-        }
-      });
-      fallbackSteps = stageSteps;
-      fallbackSteps.forEach((s, i) => { s.sequenceOrder = i + 1; });
-    } else {
-      fallbackSteps = [step1, ...slotSteps, confirmStep, ...terminalStepsArray];
-    }
+    const terminalStep = {
+      sequenceOrder: nextSeqAfterSlots + 1,
+      stateId: "resolution",
+      stateName: "Resolution & Terminal Close",
+      objective: "Cleanly end the call after final confirmation.",
+      scriptDirective: isHindiOrHinglish
+        ? `Say: "बहुत धन्यवाद। हमारी टीम इस पर शीघ्र ही आगे की कार्रवाई करेगी। आपका दिन शुभ हो!"`
+        : `Say: "Wonderful. Our team will review this and follow up shortly. Thank you for your time, and have a great day!"`,
+      slotsToCollect: [] as string[],
+      branchingConditions: terminalBranches,
+      fallbackBehavior: isHindiOrHinglish ? `Say: "बात करने के लिए धन्यवाद, शुभ दिन!"` : `Say: "Thank you for speaking with me today, goodbye!"`,
+      maxRetries: 1,
+      invokesTools: ["end_call"],
+      isFallback: true,
+      isTerminal: true
+    };
+
+    let fallbackSteps = [step1, ...slotSteps, confirmStep, terminalStep];
 
     const genderDirective = isHindiOrHinglish
       ? `\nAGENT GENDER: The agent is ${agentGender}. Use ${agentGender === 'male' ? 'MASCULINE' : 'FEMININE'} verb inflections for the agent's own speech (e.g., "${agentGender === 'male' ? 'कर रहा हूँ, कर सकता हूँ' : 'कर रही हूँ, कर सकती हूँ'}"). Address the caller respectfully with "आप" and plural verbs.`
@@ -490,6 +382,162 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     }
   }
 
+  private static dedupeStatesByCanonicalId(steps: any[]): any[] {
+    const canonical = (id: string) => (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const uniqueSteps: any[] = [];
+    const seenCores = new Set<string>();
+
+    for (const step of steps) {
+      if (!step) continue;
+      const idCore = canonical(step.stateId);
+      
+      let isDuplicate = false;
+      let matchedCore = "";
+      for (const existingCore of seenCores) {
+        if (existingCore === idCore || idCore.endsWith(`_${existingCore}`) || existingCore.endsWith(`_${idCore}`)) {
+          isDuplicate = true;
+          matchedCore = existingCore;
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        seenCores.add(idCore);
+        uniqueSteps.push({ ...step });
+      } else {
+        const survivor = uniqueSteps.find(s => {
+           const sc = canonical(s.stateId);
+           return sc === matchedCore || sc.endsWith(`_${matchedCore}`) || matchedCore.endsWith(`_${sc}`);
+        });
+        if (survivor && Array.isArray(step.slotsToCollect)) {
+          const combined = new Set([...(survivor.slotsToCollect || []), ...step.slotsToCollect]);
+          survivor.slotsToCollect = Array.from(combined);
+        }
+      }
+    }
+    return uniqueSteps;
+  }
+
+  private static ensureAdvisoryStages(steps: any[], requiredStages: any[], isHindiOrHinglish: boolean): any[] {
+    if (!requiredStages || requiredStages.length === 0) return steps;
+    const canonical = (id: string) => (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const existingCores = new Set(steps.map(s => canonical(s.stateId)));
+    
+    let result = [...steps];
+    
+    let currentIdx = 0;
+    for (const req of requiredStages) {
+      const reqCore = canonical(req.id);
+      let found = false;
+      for (const existing of existingCores) {
+        if (existing === reqCore || reqCore.endsWith(`_${existing}`) || existing.endsWith(`_${reqCore}`)) {
+          found = true;
+          const foundIdx = result.findIndex(s => {
+             const sc = canonical(s.stateId);
+             return sc === existing || sc.endsWith(`_${existing}`) || existing.endsWith(`_${sc}`);
+          });
+          if (foundIdx !== -1) currentIdx = foundIdx + 1;
+          break;
+        }
+      }
+      
+      if (!found) {
+        const isCollect = /collect|capture|booking|qualif|requirement|detail/i.test(reqCore);
+        const newState = {
+          stateId: req.id,
+          stateName: req.label || req.id.replace(/_/g, ' '),
+          objective: isCollect ? `Collect details for ${req.label}` : `Execute stage: ${req.label}`,
+          ...(isCollect ? {
+             scriptDirective: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, false),
+             fallbackBehavior: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, true),
+          } : buildGenericStageTurn(req.label || req.id, isHindiOrHinglish)),
+          slotsToCollect: isCollect ? ["caller_intent"] : [],
+          branchingConditions: [],
+          maxRetries: 3,
+          invokesTools: [],
+          isFallback: true
+        };
+        
+        if (currentIdx === 0 && result.length > 0 && /identity|greet|open/i.test(result[0].stateId)) {
+          currentIdx = 1;
+        }
+        while (currentIdx > 0 && currentIdx < result.length && (result[currentIdx].isTerminal || /terminal|end|close|resolut/i.test(result[currentIdx].stateId))) {
+          currentIdx--;
+        }
+        
+        result.splice(currentIdx, 0, newState);
+        currentIdx++;
+      }
+    }
+    
+    return result;
+  }
+
+  private static orderFlow(steps: any[]): any[] {
+    const opening: any[] = [];
+    const middle: any[] = [];
+    const confirm: any[] = [];
+    const terminal: any[] = [];
+
+    for (const step of steps) {
+      const id = (step.stateId || '').toLowerCase();
+      if (/identity|greet|open/i.test(id) && opening.length === 0) {
+        opening.push(step);
+      } else if (step.isTerminal || /terminal|end|close|resolut/i.test(id)) {
+        terminal.push(step);
+      } else if (/confirm|readback/i.test(id)) {
+        confirm.push(step);
+      } else {
+        middle.push(step);
+      }
+    }
+
+    const ordered = [...opening, ...middle, ...confirm, ...terminal];
+    ordered.forEach((s, idx) => {
+      s.sequenceOrder = idx + 1;
+    });
+    return ordered;
+  }
+
+  private static routeByPosition(steps: any[]): any[] {
+    const firstCapture = steps.find(s => s.slotsToCollect?.length > 0) || steps[1] || steps[0];
+
+    return steps.map((step, idx) => {
+      const isLast = idx === steps.length - 1;
+      const nextStep = isLast ? null : steps[idx + 1];
+      
+      const newBranches: any[] = [];
+      const existingBranches = Array.isArray(step.branchingConditions) ? step.branchingConditions : [];
+      
+      for (const b of existingBranches) {
+        if (b.goToStep === 'end_call' || b.action === 'end_call' || b.goToStep === 'transfer' || b.action === 'transfer') {
+          newBranches.push(b);
+        }
+      }
+      
+      if (!step.isTerminal && !/terminal|end|close|resolut/i.test(step.stateId || '')) {
+        const id = (step.stateId || '').toLowerCase();
+        if (/confirm|readback/i.test(id)) {
+          newBranches.push({ condition: "Caller confirms accuracy", goToStep: nextStep?.stateId || 'end_call' });
+          newBranches.push({ condition: "Caller wants to modify details", goToStep: firstCapture.stateId });
+        } else {
+          if (step.slotsToCollect?.length > 0) {
+             newBranches.unshift({ condition: `Information provided`, goToStep: nextStep?.stateId || 'end_call' });
+          } else {
+             newBranches.unshift({ condition: "Completed or agreed", goToStep: nextStep?.stateId || 'end_call' });
+          }
+        }
+      } else {
+        if (!newBranches.some(b => b.goToStep === 'end_call' || b.action === 'end_call')) {
+          newBranches.push({ condition: "Concluding call", goToStep: "end_call", reason: "completed" });
+        }
+      }
+      
+      step.branchingConditions = newBranches;
+      return step;
+    });
+  }
+
   private static postProcessSteps(
     steps: any[],
     expectedOutfields: Set<string>,
@@ -499,24 +547,16 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     requiredStages: any[] = [],
     infieldsList: any[] = []
   ): any[] {
-    const refined: any[] = [];
-    const collectedSoFar = new Set<string>();
-    const collectedCores = new Set<string>();
     const vf = hindiVerbForms(meta?.agentGender === 'male' ? 'male' : 'female');
     const denyAi = meta?.aiDisclosure === 'deny';
 
+    // Stage 1: Normalize each step
+    const normalized: any[] = [];
     steps.forEach((s: any, idx: number) => {
-      const preservedProps = {
-        onFailure: s.onFailure,
-        confirmationRequired: s.confirmationRequired,
-        digressionAllowed: s.digressionAllowed,
-        invokesTools: s.invokesTools || [],
-        isFallback: s.isFallback,
-        isTerminal: s.isTerminal
-      };
+      const step = { ...s };
 
-      if (idx === 0 || s.stateId === 'identity_gate') {
-        let directive = s.scriptDirective || "";
+      if (idx === 0 || step.stateId === 'identity_gate') {
+        let directive = step.scriptDirective || "";
         if (meta?.openingPhrase) {
           directive = meta.openingPhrase.startsWith("Say:") ? meta.openingPhrase : `Say: "${meta.openingPhrase}"`;
         } else {
@@ -545,206 +585,71 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
             }
           }
         }
-        s.scriptDirective = directive;
-        refined.push({ ...s, ...preservedProps, sequenceOrder: 1 });
-        return;
+        step.scriptDirective = directive;
       }
 
-      const rawSlots = (Array.isArray(s.slotsToCollect) ? s.slotsToCollect.filter(Boolean) : []).filter((slot: string) => !isDerivedSlot(slot));
-      const slots: string[] = [];
-      rawSlots.forEach((singleSlot: string) => {
-        const core = getSemanticCore(singleSlot);
-        if (!collectedCores.has(core) && !collectedSoFar.has(singleSlot)) {
-          collectedCores.add(core);
-          collectedSoFar.add(singleSlot);
-          slots.push(singleSlot);
-        }
-      });
-
-      if (rawSlots.length > 0 && slots.length === 0 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
-        return;
+      // Demotion guard
+      let rawScript = step.scriptDirective || "";
+      let justText = rawScript.replace(/^Say:\s*"?/i, '').replace(/"?$/g, '').trim();
+      if (isInstructionLike(justText)) {
+        step.behaviorDirective = step.behaviorDirective ? `${step.behaviorDirective} | ${justText}` : justText;
+        step.scriptDirective = buildGenericStageTurn(step.stateName || step.stateId || "Step", isHindiOrHinglish).scriptDirective;
       }
 
-      if (slots.length > 1 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
-        slots.forEach((singleSlot: string, sIdx: number) => {
+      // Slot hygiene
+      const rawSlots = Array.isArray(step.slotsToCollect) ? step.slotsToCollect : [];
+      step.slotsToCollect = semanticDedupSlots(rawSlots.filter((slot: string) => !isDerivedSlot(slot)));
+
+      normalized.push(step);
+    });
+
+    // Split multi-slot steps
+    const splitSteps: any[] = [];
+    for (const s of normalized) {
+      if (s.slotsToCollect.length > 1 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
+        s.slotsToCollect.forEach((singleSlot: string, sIdx: number) => {
           const fName = singleSlot.replace(/_/g, ' ');
-          const directive = (sIdx === 0 && s.scriptDirective && !isInstructionLike(s.scriptDirective))
-            ? s.scriptDirective
-            : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, false);
-          const fallback = (sIdx === 0 && s.fallbackBehavior && !isInstructionLike(s.fallbackBehavior))
-            ? s.fallbackBehavior
-            : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, true);
-
-          refined.push({
+          splitSteps.push({
             ...s,
-            ...preservedProps,
-            sequenceOrder: refined.length + 1,
             stateId: sIdx === 0 ? s.stateId : `capture_${singleSlot.toLowerCase()}`,
             stateName: sIdx === 0 ? s.stateName : `Capture ${fName}`,
             objective: `Collect: ${singleSlot}`,
-            scriptDirective: directive,
-            fallbackBehavior: fallback,
+            scriptDirective: (sIdx === 0 && s.scriptDirective) ? s.scriptDirective : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, false),
+            fallbackBehavior: (sIdx === 0 && s.fallbackBehavior) ? s.fallbackBehavior : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, true),
             slotsToCollect: [singleSlot]
           });
         });
       } else {
-        if (slots.length > 0) {
-          s.slotsToCollect = slots;
-        } else {
-          const stepText = `${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''} ${(preservedProps.invokesTools || []).join(' ')}`;
+        if (!s.slotsToCollect || s.slotsToCollect.length === 0) {
+          const stepText = `${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''} ${(s.invokesTools || []).join(' ')}`;
           if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText)) {
             s.slotsToCollect = [/whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number"];
-            if (!preservedProps.invokesTools.includes("validate_digit_input")) preservedProps.invokesTools.push("validate_digit_input");
-            if (!preservedProps.invokesTools.includes("set_capture_mode")) preservedProps.invokesTools.push("set_capture_mode");
+            if (!s.invokesTools) s.invokesTools = [];
+            if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
+            if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
           } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
             s.slotsToCollect = ["pin_code"];
-            if (!preservedProps.invokesTools.includes("validate_digit_input")) preservedProps.invokesTools.push("validate_digit_input");
-            if (!preservedProps.invokesTools.includes("set_capture_mode")) preservedProps.invokesTools.push("set_capture_mode");
+            if (!s.invokesTools) s.invokesTools = [];
+            if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
+            if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
           }
         }
-        s.sequenceOrder = refined.length + 1;
-        refined.push({ ...s, ...preservedProps });
+        splitSteps.push(s);
       }
-    });
-
-    const missingOutfields = semanticDedupSlots(Array.from(expectedOutfields)).filter((o: string) => {
-      const core = getSemanticCore(o);
-      return !collectedCores.has(core) && !collectedSoFar.has(o) && o !== 'caller_intent';
-    });
-
-    if (missingOutfields.length > 0 && refined.length >= 2) {
-      let insertIdx = refined.findIndex((s: any) =>
-        /collect|capture|booking|qualif|requirement|detail/i.test(`${s.stateId || ''} ${s.stateName || ''}`) ||
-        (Array.isArray(s.slotsToCollect) && s.slotsToCollect.length > 0)
-      );
-      if (insertIdx === -1) {
-        insertIdx = refined.findIndex((s: any) => s.stateId?.includes('confirm') || s.stateId?.includes('readback') || s.stateId?.includes('resolution') || s.isTerminal);
-      } else {
-        while (insertIdx + 1 < refined.length && (Array.isArray(refined[insertIdx + 1].slotsToCollect) && refined[insertIdx + 1].slotsToCollect.length > 0)) {
-          insertIdx++;
-        }
-      }
-      if (insertIdx === -1) insertIdx = refined.length - 1;
-
-      missingOutfields.forEach((slot: string) => {
-        collectedSoFar.add(slot);
-        collectedCores.add(getSemanticCore(slot));
-        const fName = slot.replace(/_/g, ' ');
-        const newStep = {
-          sequenceOrder: insertIdx + 1,
-          stateId: `capture_${slot.toLowerCase()}`,
-          stateName: `Capture ${fName}`,
-          objective: `Capture required field: ${slot}`,
-          scriptDirective: buildIntentDrivenAsk(slot, isHindiOrHinglish, false),
-          slotsToCollect: [slot],
-          branchingConditions: [
-            { condition: `${fName} provided`, goToStep: insertIdx + 2 },
-            { condition: "Caller asks for callback", goToStep: "end_call", reason: "callback_requested" }
-          ],
-          fallbackBehavior: buildIntentDrivenAsk(slot, isHindiOrHinglish, true),
-          maxRetries: 3,
-          invokesTools: []
-        };
-        refined.splice(insertIdx + 1, 0, newStep);
-        insertIdx++;
-      });
     }
 
-    if (Array.isArray(requiredStages) && requiredStages.length > 0) {
-      const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-      const existingTokens = refined.map(s => norm(`${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''}`));
-      requiredStages.forEach((st: any, stIdx: number) => {
-        const t = norm(st.id || '');
-        if (t && !existingTokens.some(ex => ex.includes(t))) {
-          let insertPoint = refined.length - 1;
-          const confirmIdx = refined.findIndex(s => s.stateId?.includes('confirm') || s.stateId?.includes('readback'));
-          if (confirmIdx !== -1) insertPoint = confirmIdx;
+    // Stage 2: Dedupe by canonical ID
+    const deduped = WorkflowArchitect.dedupeStatesByCanonicalId(splitSteps);
 
-          const newStageStep = {
-            sequenceOrder: insertPoint + 1,
-            stateId: st.id,
-            stateName: st.label || st.id.replace(/_/g, ' '),
-            objective: st.label || `Execute required stage: ${st.id}`,
-            ...buildGenericStageTurn(st.label || st.id.replace(/_/g, ' '), isHindiOrHinglish),
-            slotsToCollect: [] as string[],
-            branchingConditions: [
-              { condition: "Caller agrees/shows interest", goToStep: insertPoint + 2 },
-              { condition: "Caller declines", goToStep: "end_call", reason: "stage_declined" }
-            ],
-            maxRetries: 3,
-            invokesTools: []
-          };
-          refined.splice(insertPoint, 0, newStageStep);
-          existingTokens.splice(insertPoint, 0, norm(`${newStageStep.stateId} ${newStageStep.stateName}`));
-        }
-      });
-    }
+    // Stage 3: Ensure advisory stages
+    const withAdvisory = WorkflowArchitect.ensureAdvisoryStages(deduped, requiredStages, isHindiOrHinglish);
 
-    refined.forEach((st: any, index: number) => { st.sequenceOrder = index + 1; });
+    // Stage 4: Order flow
+    const ordered = WorkflowArchitect.orderFlow(withAdvisory);
 
-    if (Array.isArray(infieldsList) && infieldsList.length > 0 && refined.length >= 2) {
-      infieldsList.forEach((infield: any) => {
-        const key = infield?.key;
-        if (!key || /first_name|caller_name|^name$/i.test(key)) return;
-        const alreadyUsed = refined.some(s =>
-          (s.scriptDirective || '').includes(`{{${key}}}`) ||
-          (s.objective || '').includes(`{{${key}}}`) ||
-          (Array.isArray(s.branchingConditions) && s.branchingConditions.some((b: any) => (b.condition || '').includes(`{{${key}}}`)))
-        );
-        if (!alreadyUsed) {
-          const targetStep = refined.find(s =>
-            s.stateId !== 'identity_gate' && s.stateId !== 'confirmation_readback' && !s.isTerminal &&
-            /pitch|offer|reminder|segment|context|qualif/i.test(`${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''}`)
-          ) || refined[1] || refined[0];
+    // Stage 5: Route by position
+    const routed = WorkflowArchitect.routeByPosition(ordered);
 
-          if (targetStep) {
-            targetStep.objective = `${targetStep.objective || ''} (Tailored by pre-call {{${key}}})`.trim();
-            if (Array.isArray(targetStep.branchingConditions) && targetStep.branchingConditions.length > 0) {
-              targetStep.branchingConditions.unshift({
-                condition: `If pre-call {{${key}}} indicates specific status or category`,
-                goToStep: targetStep.sequenceOrder + 1
-              });
-            }
-          }
-        }
-      });
-    }
-
-    refined.forEach((st: any) => {
-      if (st.stateId?.includes('confirm') || st.stateId?.includes('readback') || st.stateName?.toLowerCase().includes('confirm')) {
-        const allSlotsToConfirm = semanticDedupSlots(Array.from(collectedSoFar)).filter(Boolean);
-        if (allSlotsToConfirm.length > 0) {
-          const readbackStr = allSlotsToConfirm.map((s: string) => `${s.replace(/_/g, ' ')}: [${s}]`).join(', ');
-          if (!allSlotsToConfirm.some((s: string) => (st.scriptDirective || '').includes(`[${s}]`))) {
-            st.scriptDirective = isHindiOrHinglish
-              ? `Say: "धन्यवाद। एक बार मैं आपके दिए गए विवरण की पुष्टि कर लेती हूँ: ${readbackStr}। क्या यह सभी जानकारी सही है?"`
-              : `Say: "Thank you. Let me verify the details I've noted so far: ${readbackStr}. Does everything look correct?"`;
-          }
-        }
-      }
-    });
-
-    // Final guard: whatever the source (LLM, user-defined steps, terminalStates), a
-    // scriptDirective must be literal speech. Anything instruction-shaped would be
-    // read aloud to the caller, so demote it to behaviorDirective and substitute a
-    // real line. Applies to every domain — no per-case handling.
-    const genericClose = isHindiOrHinglish
-      ? `Say: "बात करने के लिए धन्यवाद। आपका दिन शुभ हो!"`
-      : `Say: "Thank you for your time today. Have a great day!"`;
-    const genericAsk = isHindiOrHinglish
-      ? `Say: "क्या आप मुझे इसके बारे में थोड़ा और बता सकते हैं?"`
-      : `Say: "Could you tell me a little more about that?"`;
-
-    refined.forEach((st: any) => {
-      if (!st?.scriptDirective || !isInstructionLike(st.scriptDirective)) return;
-      const original = String(st.scriptDirective).replace(/^Say:\s*"|"$/g, '').trim();
-      logger.warn("WorkflowArchitect: scriptDirective was an instruction, not speech — demoted", { stateId: st.stateId, directive: original });
-      st.behaviorDirective = st.behaviorDirective ? `${st.behaviorDirective} ${original}` : original;
-      st.scriptDirective = (st.isTerminal || /clos|resolution|end|not_interested|wrong_number|abusive|out_of_scope|retry/i.test(st.stateId || ''))
-        ? genericClose
-        : genericAsk;
-    });
-
-    return refined;
+    return routed;
   }
 }

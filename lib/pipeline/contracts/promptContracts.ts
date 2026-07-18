@@ -475,6 +475,107 @@ const sensitiveCaptureProhibited: Contract = {
 };
 
 
+const noDuplicateStates: Contract = {
+  id: 'no_duplicate_states',
+  description: 'No two states share a canonical ID.',
+  check: ({ spec }) => {
+    const steps = spec.callFlowPlan?.steps || [];
+    const canonical = (id: string) => (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+    for (const s of steps) {
+      const core = canonical(s.stateId);
+      if (seen.has(core)) dupes.add(core);
+      seen.add(core);
+    }
+    return Array.from(dupes).map(d => ({
+      contract: 'no_duplicate_states',
+      severity: 'critical' as const,
+      category: 'incorrect' as const,
+      description: `Multiple states share the canonical ID "${d}".`,
+      whereInPrompt: 'CALL FLOW',
+      suggestedFix: 'Remove duplicate states from the flow.',
+    }));
+  },
+};
+
+const forwardRouting: Contract = {
+  id: 'forward_routing',
+  description: 'All state routing is forward, except the sanctioned readback back-edge.',
+  check: ({ spec }) => {
+    const steps = spec.callFlowPlan?.steps || [];
+    if (steps.length === 0) return [];
+    
+    const stateIds = steps.map((s: any) => s.stateId);
+    const seqMap = new Map(steps.map((s: any) => [s.stateId, s.sequenceOrder]));
+    const firstCaptureId = steps.find((s: any) => s.slotsToCollect?.length > 0)?.stateId || steps[1]?.stateId || steps[0]?.stateId;
+
+    const violations: ContractViolation[] = [];
+    
+    for (const step of steps) {
+      const branches = Array.isArray(step.branchingConditions) ? step.branchingConditions : [];
+      for (const branch of branches) {
+        const target = branch.goToStep;
+        if (!target || target === 'end_call' || target === 'transfer' || (branch as any).action === 'end_call' || (branch as any).action === 'transfer') continue;
+        
+        let targetId = typeof target === 'string' ? target : steps.find((s: any) => s.sequenceOrder === target)?.stateId;
+        
+        if (!targetId || !stateIds.includes(targetId)) {
+          violations.push({
+            contract: 'forward_routing',
+            severity: 'critical' as const,
+            category: 'incorrect' as const,
+            description: `State "${step.stateId}" routes to a non-existent state "${target}".`,
+            whereInPrompt: `state [${step.stateId}]`,
+            suggestedFix: 'Ensure branch targets an existing stateId.',
+          });
+          continue;
+        }
+
+        const sourceSeq = seqMap.get(step.stateId) || 0;
+        const targetSeq = seqMap.get(targetId) || 0;
+
+        if (targetSeq <= sourceSeq) {
+          // Backward routing check. Only allow readback to modify.
+          const isReadback = /confirm|readback/i.test(step.stateId || '');
+          const isModifyEdge = isReadback && targetId === firstCaptureId;
+          
+          if (!isModifyEdge) {
+            violations.push({
+              contract: 'forward_routing',
+              severity: 'critical' as const,
+              category: 'incorrect' as const,
+              description: `State "${step.stateId}" routes backward to "${targetId}" which is not the sanctioned readback modification edge.`,
+              whereInPrompt: `state [${step.stateId}]`,
+              suggestedFix: 'Flow must be linear. Remove backward routing loops.',
+            });
+          }
+        }
+      }
+    }
+    return violations;
+  }
+};
+
+const flowBounded: Contract = {
+  id: 'flow_bounded',
+  description: 'State machine has no more than 12 states.',
+  check: ({ spec }) => {
+    const steps = spec.callFlowPlan?.steps || [];
+    if (steps.length > 12) {
+      return [{
+        contract: 'flow_bounded',
+        severity: 'major' as const,
+        category: 'incorrect' as const,
+        description: `State machine is too large (${steps.length} states).`,
+        whereInPrompt: 'CALL FLOW',
+        suggestedFix: 'Bound the number of states to 12 maximum.',
+      }];
+    }
+    return [];
+  }
+};
+
 export const PROMPT_CONTRACTS: Contract[] = [
   stageCoverage,
   dialogueQuality,
@@ -490,6 +591,9 @@ export const PROMPT_CONTRACTS: Contract[] = [
   agentGenderAgrees,
   pricingProhibitionHonoured,
   sensitiveCaptureProhibited,
+  noDuplicateStates,
+  forwardRouting,
+  flowBounded,
 ];
 
 /** Runs every contract. Pure, deterministic, no LLM, no network. */

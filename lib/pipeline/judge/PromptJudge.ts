@@ -100,6 +100,7 @@ ${a.finalPrompt}`;
         const rawResp = await llm.generateRaw(judgePromptText, 0.1, {
           json: true,
           systemInstruction: JUDGE_SYSTEM_INSTRUCTION,
+          contextLabel: "PromptJudge LLM Audit",
         });
         if (rawResp) {
           const parsed = safeParseJson<JudgeReport>(rawResp, { verdict: 'pass', score: 100, issues: [], blockingCount: 0 });
@@ -202,6 +203,7 @@ ${currentPrompt}`;
     const rawOut = await llm.generateRaw(repairPromptText, 0.1, {
       json: false,
       systemInstruction: PROMPT_EDITOR_INSTRUCTION,
+      contextLabel: "PromptJudge Repair",
     });
     if (!rawOut) return currentPrompt;
 
