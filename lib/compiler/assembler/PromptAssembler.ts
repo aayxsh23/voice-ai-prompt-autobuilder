@@ -602,6 +602,13 @@ OFF-TOPIC REFUSAL PROTOCOL
     dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (such as ${exampleInfield}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
   }
 
+  const markdownScript = spec?.callFlowPlan?.script || draft?.callFlowScript || "";
+  const needsDatetime = /date|time|appointment|schedule|booking/i.test(spec?.meta?.primaryGoal || "") || /date|time|appointment/i.test(markdownScript || JSON.stringify(steps));
+  if (needsDatetime) {
+    const sysVars = `#### SYSTEM VARIABLES\nThe following variables are automatically injected by the system. Use them exactly as formatted if you need to reference the current date/time:\nCURRENT_DAY      : "{{current_day}}"\nCURRENT_DATE     : "{{current_date}}"\nCURRENT_TIME     : "{{current_time}}"`;
+    dynamicVariables = dynamicVariables ? `${dynamicVariables}\n\n${sysVars}` : `### DYNAMIC VARIABLES\n\n${sysVars}`;
+  }
+
   // 8. CALL FLOW / STATE MACHINE
   const callFlowPolicies: string[] = [];
   if (spec?.callFlowPlan?.interruptionPolicy) {
@@ -639,8 +646,10 @@ OFF-TOPIC REFUSAL PROTOCOL
     return `Go to state [${target}]`;
   };
 
-  const flowContent = steps.length > 0
-    ? steps.map((step: any) => {
+  const flowContent = markdownScript
+    ? markdownScript
+    : (steps.length > 0
+      ? steps.map((step: any) => {
         const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
         const branchText = branches.length > 0
           ? branches.map((b: any) => {
@@ -687,7 +696,7 @@ OFF-TOPIC REFUSAL PROTOCOL
         }
         return lines.join('\n');
       }).join('\n\n---\n\n')
-    : "No structured call flow defined. Engage conversationally based on primary goal.";
+    : "No structured call flow defined. Engage conversationally based on primary goal.");
   const flow = `### CALL FLOW\n${callFlowPolicyHeader}${flowContent}`;
 
   // 9. FAQS — context-driven, not an exhaustive scripted dump. Give the agent a

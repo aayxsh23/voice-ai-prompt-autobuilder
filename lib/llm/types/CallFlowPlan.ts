@@ -24,7 +24,8 @@ export interface CallFlowStep {
 export interface CallFlowPlan {
   agentName: string;
   primaryGoal: string;
-  steps: CallFlowStep[];
+  script?: string;
+  steps?: CallFlowStep[];
   emergencyTriggers: string[];
   outOfScopeTopics: string[];
   userDefinedSteps?: any[];

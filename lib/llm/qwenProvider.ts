@@ -117,7 +117,7 @@ Return ONLY the full corrected prompt text.
 // Appended to the structured-generation passes.
 const DENSITY_DIRECTIVE = `
 DENSITY & ANTI-BLOAT (KEEP IT LEAN):
-- Each scriptDirective / fallback line: 1-2 short spoken sentences. No rationale, no meta-commentary, no "(this is because...)".
+- Keep responses concise (1-3 sentences) but maintain natural conversational flow and bridging. Avoid abrupt, interrogative phrasing.
 - Keep FAQ and objection answers to 1-2 spoken sentences each. Do not pad.
 - State each rule once. Never restate global policies inside individual steps or cross-reference other sections.`;
 
@@ -265,40 +265,42 @@ export class QwenProvider implements LlmService {
       ? "\nCRITICAL LANGUAGE MANDATE (DEVANAGARI STRICT RULE):\n1. All dialogue lines ('generatedLine', 'fallbackBehavior', 'scriptDirective'), FAQ questions/answers ('question', 'answer'), and objection handling triggers/responses ('trigger', 'response') MUST be written entirely in Devanagari script (देवनागरी), NOT Romanized/English letters.\n2. NEVER write common Hindi words ('kya', 'ho', 'hai', 'baat', 'kar', `rahi`, 'hoon', 'sir', 'maam', 'namaste', 'haan', 'nahi') or Indian names ('Deepika', 'Ananya') in English letters! Write them strictly in Devanagari ('क्या', 'हो', 'है', 'बात', 'कर', 'रही', 'हूँ', 'सर/मैम', 'नमस्ते', 'हाँ', `नहीं`, 'दीपिका', 'अनन्या').\n3. ONLY specific technical/domain software keywords (like 'Marg ERP', 'business owner', 'online demo', 'software', 'accounting', 'inventory', 'billing', 'pincode', 'team', 'office', 'schedule') can remain in English characters inside the Devanagari sentence.\n4. Do NOT output duplicate questions/objections — never output both a Romanized and a Devanagari version of the same FAQ or objection. Output ONLY the Devanagari version."
       : languageMode === 'multilingual'
       ? "\nCRITICAL LANGUAGE MANDATE: Support English, Hindi, and Hinglish. When generating Hindi sentences in dialogue, FAQ answers, or objection responses, they MUST be written in Devanagari script (देवनागरी), not Roman script."
-      : "";
+      : "\nLANGUAGE PURITY RULE: This is an English-only deployment. You MUST output strictly in English. Do not include any Devanagari script, Hindi, or Hinglish words, and do not code-switch under any circumstances.";
     const styleExemplars = fewShotBlock({ policy: { mode: languageMode as 'english' | 'hindi' | 'hinglish' | 'multilingual' } });
-    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","steps":[{"sequenceOrder":"number","stateId":"string","stateName":"string","objective":"string","slotsToCollect":["string"],"scriptDirective":"string","branchingConditions":[{"condition":"string","goToStep":"number|'end_call'|'transfer'"}],"fallbackBehavior":"string","maxRetries":3,"invokesTools":["string"]}],"emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
-    const pass1Prompt = `You are a voice agent call flow architect. Design logical state transitions.
+    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","script":"string (Detailed Markdown script detailing all stages, branching, tool calls, and dialogue)","emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
+    const pass1Prompt = `You are a voice agent call flow architect.
 Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
 
 MANDATORY RULES FOR CALL FLOW GENERATION:
-1. ONE QUESTION PER TURN: Ask exactly ONE question or prompt in each step. Never stack multiple questions in a single turn.
-2. DEDICATED SLOT STEPS: If multiple variables/outfields must be collected (e.g. fitness_goal, health_concerns, language_preference, callback_time), generate ONE dedicated state step for each slot! Never collect more than one slot in a single step.
-3. BRANCHING & ROUTING: Every step must include explicit 'branchingConditions' indicating transitions (e.g., if confirmed -> goToStep N; if busy/wrong number -> goToStep 'end_call' or 'transfer').
-4. READ-BACK CONFIRMATION: The step right before the final closing step MUST be a 'Confirmation Read-Back' step where the agent reads back all collected slots to verify accuracy.
-5. WIRE END_CALL ON TERMINAL STEPS: The final closing step and all terminal error/refusal branches MUST specify 'end_call' in their branching transition ('goToStep: "end_call"') OR in 'invokesTools: ["end_call"]'.
-6. FALLBACK DIALOGUE: Every fallbackBehavior MUST be written as exact spoken dialogue starting with Say:.
-7. RETRY LIMITS: Each step that collects information must include maxRetries: 3.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
+1. NARRATIVE SCRIPT FORMAT: Do not generate JSON states or arrays for the call flow. Output the entire call flow as a well-structured, cohesive Markdown string in the "script" field. Use sections, bullet points, and clear "Say:" directives.
+2. STRICT CUSTOM STAGE ADHERENCE: If the Business input defines 'requiredStages' or explicitly describes a custom narrative flow, you MUST implement that EXACT flow stage by stage. Do NOT default to a generic appointment booking template. You MUST implement any specific cross-sell logic and conditional branching exactly as described in the input context.
+3. CONVERSATIONAL GROUNDING: Do not ask isolated, context-blind questions. You must weave previously collected details or CRM infields into your sentences to create a natural, flowing conversation (e.g., 'Since you are interested in Slimming, which center...?').
+4. TOOL INVOCATIONS: Do NOT output simple placeholders like [Tool: validate_digit_input]. You MUST write out the complete tool invocation including all required parameters. For digits/emails, instruct the agent to use \`set_capture_mode\` before and after the collection. You MUST also define edge-case logic (e.g., 'If the user provides fewer digits than required, ask for the remaining digits using set_capture_mode').
+5. DATA COLLECTION: Do NOT use or invent a \`collect_field\` tool for general data (e.g., dates, names, preferences). Data collection is handled post-call via transcript analysis. You must simply instruct the agent to ask for the data naturally and apply conversational guardrails (e.g., 'ensure the booking date is in the future'). Only use tools for specific technical functions like \`validate_digit_input\` or \`end_call\`.
+6. VARIABLE CONSISTENCY: You MUST strictly use the exact variable keys provided in the input context. Do NOT invent or alter keys (e.g., do not use {{customer_name}} if the key is {{name}}).
+7. VARIABLE BRACKET RULE: For pre-call CRM data (infields), use {{variable_name}}. For data collected DURING the call, instruct the agent to store it as [[variable_name]] and use double square brackets [[variable_name]] when reading it back for confirmation. NEVER use {{}} for data collected on the live call.
+8. READ-BACK CONFIRMATION: Include a final stage where the agent reads back all collected information to verify accuracy.
+9. ONE QUESTION PER TURN: Design the dialogue so the agent only asks one question at a time. Group related fields (like Date & Time) logically into conversational stages without interrogating the user.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     const pass1Raw = await this.generateRaw(pass1Prompt, 0.1, { contextLabel: "WorkflowArchitect Pass 1 (Structure)" });
     let plan: CallFlowPlan = safeParseJson<CallFlowPlan>(pass1Raw, {
       agentName: "Voice Assistant",
       primaryGoal: "Assist callers",
-      steps: []
+      script: ""
     } as any);
-    if (!plan || !Array.isArray(plan.steps)) {
+    if (!plan || (!plan.script && !Array.isArray(plan.steps))) {
       try {
         plan = JSON.parse(pass1Raw.replace(/```json|```/g, '').trim()) as CallFlowPlan;
       } catch {
         throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
       }
     }
-    const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","fieldDirection":"'infield'|'outfield'","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
+    const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","callFlowScript":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","fieldDirection":"'infield'|'outfield'","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
 ${langNote}
 
-FAQ GENERATION RULE: Generate 3-5 concise FAQ entries covering only the most common, business-specific caller questions (do not pad — the agent answers the rest from business context at runtime). For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined."${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
+FAQ GENERATION RULE: If the input context provides a fixed list of FAQs, you MUST include ALL of them without dropping or truncating any items. If generating from scratch, generate 3-5 concise FAQ entries covering only the most common, business-specific caller questions (do not pad — the agent answers the rest from business context at runtime). For UNKNOWN facts, generate deflection answers. Never generate "No FAQs defined."${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 GUARDRAIL GENERATION RULES:
 1. Generate 5-8 guardrails specific to THIS exact business.
@@ -306,9 +308,15 @@ GUARDRAIL GENERATION RULES:
 3. Include at least 2 BEHAVIORAL guardrails (what to DO, not just prohibitions).
 4. Include an INVENTION prohibition specific to this business.
 
+CONTEXT PRESERVATION RULES:
+1. Do not override explicit phrasing provided by the user (e.g., exact recording disclosures). Use their exact words.
+2. Ensure all explicit prohibitions stated by the user are included in the prohibitions list.
+3. REGIONAL LOCALIZATION: Ensure all monetary values, phone number formats, and examples strictly use the native currency and conventions of the deployment region. Do not default to USD/US formats if the region is non-US.
+
 VARIABLE CLASSIFICATION RULE:
 1. INFIELDS (Pre-Call Context): An infield can NEVER be an extraction (i.e., inside 'collectsVariable' or collected during call flow). Furthermore, you CANNOT create or invent any infields on your own — infields MUST be explicitly specified by the user as pre-call context. If the user did not explicitly specify any pre-call variables, set ZERO infields.
-2. OUTFIELDS (Post-Call Extraction): All details collected or extracted from the conversation transcript ('collectsVariable', 'interest_status', 'demo_type', 'pincode') MUST be marked as 'fieldDirection: "outfield"' and referenced with '[variable_name]' syntax in extractions.
+2. OUTFIELDS (Post-Call Extraction): All details collected or extracted from the conversation transcript ('collectsVariable', 'interest_status', 'demo_type', 'pincode') MUST be marked as 'fieldDirection: "outfield"' and referenced with '[[variable_name]]' syntax in extractions.
+3. VARIABLE CONSISTENCY: You MUST strictly use the exact variable keys provided in the context. Never invent new keys for existing variables.
 
 SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JSON.stringify(llmInput, null, 2)}`;
     // Structure (pass 1) stays deterministic; the dialogue-heavy draft (pass 2)

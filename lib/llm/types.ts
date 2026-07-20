@@ -176,6 +176,7 @@ export interface PromptPackageDraft {
   languageMode?: string;
   verbatimLines?: { stepLabel: string; exactLine: string }[];
   transferConditions?: TransferCondition[];
+  callFlowScript?: string;
   callFlowSteps?: any[];
   emergencyTriggers?: string[];
   outOfScopeTopics?: string[];
@@ -401,7 +402,8 @@ export interface BusinessSpecification {
      * just be another hardcoded template.
      */
     requiredStages?: Array<{ id: string; label: string }>;
-    steps: Array<{
+    script?: string;
+    steps?: Array<{
       sequenceOrder: number;
       stateId: string;
       stateName: string;

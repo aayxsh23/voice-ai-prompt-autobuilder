@@ -567,7 +567,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
     } else if (topic3Fields.length > 0) {
       activeTopicGroup = "Services, Caller Intake & Pre-Call Infields";
       targetFields = topic3Fields;
-      topicInstruction = `We are exploring core offerings, caller intake requirements, FAQs, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically what CRM variables/infields will be passed to the agent before the call begins (or if none will be passed). Do NOT jump into cancellation fees or call flow yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
+      topicInstruction = `We are exploring core offerings, caller intake requirements, FAQs, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically: "Are there any variables our system already knows before the call starts (like their name or segment)?" Do NOT jump into cancellation fees or call flow yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
     } else if (topic4Fields.length > 0) {
       activeTopicGroup = "Policies, Edge Cases & Guardrails";
       targetFields = topic4Fields;

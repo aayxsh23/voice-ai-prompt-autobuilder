@@ -70,6 +70,9 @@ DATABASE_URL="mongodb://localhost:27017/autoprompt"
 QWEN_BASE_URL_FOR_LLM="http://localhost:8000/v1"
 QWEN_API_KEY="EMPTY"
 QWEN_MODEL="Qwen/Qwen3.6-35B-A3B-FP8"
+ATLAS_PROJECT_ID="your_project_id_here"
+ATLAS_PUBLIC_KEY="your_public_key_here"
+ATLAS_PRIVATE_KEY="your_private_key_here"
 ```
 
 All LLM configuration is read and validated once in [`lib/config.ts`](lib/config.ts).
