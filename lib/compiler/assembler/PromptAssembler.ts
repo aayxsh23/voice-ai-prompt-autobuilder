@@ -219,16 +219,28 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   }
 
   const appliedRules = Array.isArray(draft?.appliedRules) ? draft.appliedRules : [];
+  
+  const regionalCurrency = region && CURRENCY_BY_REGION[region] ? CURRENCY_BY_REGION[region] : undefined;
+  const localizeRule = (content: string) => {
+    let localized = content.trim();
+    if (regionalCurrency && region !== 'US') {
+      localized = localized.replace(/\$/g, regionalCurrency.symbol);
+      localized = localized.replace(/\bdollars\b/gi, regionalCurrency.name.toLowerCase());
+      localized = localized.replace(/\bUSD\b/gi, regionalCurrency.code);
+    }
+    return localized;
+  };
+
   const speakabilityRules = appliedRules
     .filter((r: any) => r?.category === 'SPEAKABILITY' && r?.content)
-    .map((r: any) => r.content.trim())
+    .map((r: any) => localizeRule(r.content))
     .join('\n\n');
   const combinedSpeakability = [speakabilityRules, ...codeLevelSpeakability].filter(Boolean).join('\n\n');
   const speakabilityContent = combinedSpeakability || "No special speakability rules defined.";
 
   const guardrailRules = appliedRules
     .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
-    .map((r: any) => r.content.trim())
+    .map((r: any) => localizeRule(r.content))
     .join('\n\n');
   const guardrailsContent = guardrailRules || "";
 
@@ -521,6 +533,8 @@ CORE TASK & BOUNDARIES
 VOICE RULES & TOOL SILENCE
 - Never speak tool names, internal function names, or variable keys out loud to the caller.
 - When executing a tool (such as checking a calendar or validating input), do not narrate the tool execution (e.g., never say "I am calling the check_calendar tool"). Simply speak naturally or pause while checking.
+- State Teardown: If a tool initiates a listening state (e.g. keep_buffer: true), you must explicitly disable it (keep_buffer: false) once the task completes to avoid trapping the call in a runaway state.
+- Tool Payload Reliance: Never attempt to manually validate user input (like counting digits). Always rely on the boolean flags returned by the tool (e.g. is_valid: true). If a tool fails, read back the exact error message provided by the tool payload rather than inventing a generic apology.
 
 OFF-TOPIC REFUSAL PROTOCOL
 - If the user asks anything unrelated (for example: food, cooking, recipes, weapons, bombs, hacking, personal advice, general knowledge), say one of the two based on the context: “I might be missing something, how does this relate to what we’re discussing.” or "I might be missing something, can you please repeat yourself?"

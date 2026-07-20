@@ -148,9 +148,8 @@ const COVERAGE_RULES: CoverageRule[] = [
       /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
       c.resolvedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
       c.capturedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
-      /* General check: if the user answered any question bounding what variables/infields are passed ("only X", "just Y", "no other", "nothing else", "none") */
-      (c.fullUserText.toLowerCase().includes("only ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
-      (c.fullUserText.toLowerCase().includes("just ") && (c.fullUserText.toLowerCase().includes("name") || c.fullUserText.toLowerCase().includes("variable") || c.fullUserText.toLowerCase().includes("data") || c.fullUserText.toLowerCase().includes("company") || c.fullUserText.toLowerCase().includes("pass") || c.fullUserText.toLowerCase().includes("field"))) ||
+      /* Strictly check for "only X" or "just Y" bounding phrases using proximity regex rather than arbitrary .includes() to avoid false positives */
+      /\b(only|just)\s+(the\s+)?(name|variable|data|company|pass|field|infield)s?\b/i.test(c.fullUserText) ||
       /\b(no just|only just|nothing else|no other|that's all|only [a-z0-9_]+|just [a-z0-9_]+)\b/i.test(c.fullUserText)
     ),
   },

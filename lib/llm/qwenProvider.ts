@@ -275,7 +275,11 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 1. NARRATIVE SCRIPT FORMAT: Do not generate JSON states or arrays for the call flow. Output the entire call flow as a well-structured, cohesive Markdown string in the "script" field. Use sections, bullet points, and clear "Say:" directives.
 2. STRICT CUSTOM STAGE ADHERENCE: If the Business input defines 'requiredStages' or explicitly describes a custom narrative flow, you MUST implement that EXACT flow stage by stage. Do NOT default to a generic appointment booking template. You MUST implement any specific cross-sell logic and conditional branching exactly as described in the input context.
 3. CONVERSATIONAL GROUNDING: Do not ask isolated, context-blind questions. You must weave previously collected details or CRM infields into your sentences to create a natural, flowing conversation (e.g., 'Since you are interested in Slimming, which center...?').
-4. TOOL INVOCATIONS: Do NOT output simple placeholders like [Tool: validate_digit_input]. You MUST write out the complete tool invocation including all required parameters. For digits/emails, instruct the agent to use \`set_capture_mode\` before and after the collection. You MUST also define edge-case logic (e.g., 'If the user provides fewer digits than required, ask for the remaining digits using set_capture_mode').
+4. TOOL INVOCATION & STATE MANAGEMENT (CRITICAL):
+   a) Payload Reliance: You must NEVER manually evaluate tool inputs (like checking digit length or validity). You MUST rely entirely on the tool's boolean flags (e.g., \`is_valid: true\`).
+   b) Paired Execution: Tools that initiate a state (e.g., \`set_capture_mode\`) and tools that process the state (e.g., \`validate_digit_input\`) are paired state mechanisms and MUST ALWAYS be invoked together in the flow.
+   c) State Teardown: You MUST explicitly instruct the agent to disable states (e.g., \`keep_buffer: false\`) upon successful completion of the action to prevent runaway states.
+   d) Dynamic Error Passthrough: NEVER hardcode generic apology strings on tool failure. Instruct the agent to read back the specific dynamic error message provided by the tool payload.
 5. DATA COLLECTION: Do NOT use or invent a \`collect_field\` tool for general data (e.g., dates, names, preferences). Data collection is handled post-call via transcript analysis. You must simply instruct the agent to ask for the data naturally and apply conversational guardrails (e.g., 'ensure the booking date is in the future'). Only use tools for specific technical functions like \`validate_digit_input\` or \`end_call\`.
 6. VARIABLE CONSISTENCY: You MUST strictly use the exact variable keys provided in the input context. Do NOT invent or alter keys (e.g., do not use {{customer_name}} if the key is {{name}}).
 7. VARIABLE BRACKET RULE: For pre-call CRM data (infields), use {{variable_name}}. For data collected DURING the call, instruct the agent to store it as [[variable_name]] and use double square brackets [[variable_name]] when reading it back for confirmation. NEVER use {{}} for data collected on the live call.
@@ -498,13 +502,17 @@ Also ask once (not a category):
 In "missingDetails", return the IDs of categories not yet covered ("request_types", "caller_segmentation", "operational_context", "data_collection", "escalation_triggers", "forbidden_actions", "faq_content", "post_call_action").
 Set "isReadyToGenerate" only when ALL 8 required categories are populated or clearly addressed.
 
+EXTRACTION RULES:
+1. "proactiveAiDisclosure": Set to TRUE if the user wants the AI to explicitly state it is an AI/voice assistant. Set to FALSE only if they explicitly want to hide it or present as a human.
+2. "languageMode": If the user explicitly requests "English only" or forbids other languages (e.g. "no Hindi/Arabic"), you MUST set languageMode to "english" (do not infer multilingual from the forbidden languages).
+
 Return ONLY valid JSON matching the exact schema:
 {
   "reply": "Your conversational follow-up response",
   "isReadyToGenerate": boolean,
   "triggerGeneration": boolean,
   "extractedBlueprint": {
-    "business": { "businessName": "", "industry": "", "description": "", "operatingHours": "", "address": "", "confirmationMethod": "", "policies": [], "targetPlatform": "", "callRecordingDisclosure": false, "proactiveAiDisclosure": false },
+    "business": { "businessName": "", "industry": "", "description": "", "operatingHours": "", "address": "", "confirmationMethod": "", "policies": [], "targetPlatform": "", "callRecordingDisclosure": false, "proactiveAiDisclosure": true, "languageMode": "english" },
     "mission": { "primaryGoal": "", "supportedIntents": [], "requiredInformation": [] },
     "personality": { "tone": "" },
     "conversation": { "opening": "", "faqCards": [{ "question": "", "answer": "" }] },

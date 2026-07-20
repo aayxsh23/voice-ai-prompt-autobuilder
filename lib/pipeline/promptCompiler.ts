@@ -317,6 +317,20 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     }
   });
 
+  const needsDatetime = /date|time|appointment|schedule|booking/i.test(spec?.meta?.primaryGoal || "") || /date|time|appointment/i.test(JSON.stringify(draft?.callFlowSteps || []));
+  if (needsDatetime) {
+    const sysVars = [
+      { key: 'current_day', label: 'Current Day', type: 'runtime' as const, description: 'The current day of the week', fieldDirection: 'infield' as const, required: true, source: 'system', defaultValue: '' },
+      { key: 'current_date', label: 'Current Date', type: 'runtime' as const, description: 'The current date', fieldDirection: 'infield' as const, required: true, source: 'system', defaultValue: '' },
+      { key: 'current_time', label: 'Current Time', type: 'runtime' as const, description: 'The current time in the local timezone', fieldDirection: 'infield' as const, required: true, source: 'system', defaultValue: '' }
+    ];
+    for (const sv of sysVars) {
+      if (!draft.dynamicVariables.find((v: any) => v.key === sv.key)) {
+        draft.dynamicVariables.push(sv);
+      }
+    }
+  }
+
   try {
     // Default rules rarely change; cache them so we don't hit the DB on every compile.
     const dbRules = await cached('default_prompt_rules', 5 * 60_000, () =>
