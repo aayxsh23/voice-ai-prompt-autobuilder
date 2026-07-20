@@ -419,58 +419,10 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
   }
 
   private static ensureAdvisoryStages(steps: any[], requiredStages: any[], isHindiOrHinglish: boolean): any[] {
-    if (!requiredStages || requiredStages.length === 0) return steps;
-    const canonical = (id: string) => (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-    const existingCores = new Set(steps.map(s => canonical(s.stateId)));
-    
-    let result = [...steps];
-    
-    let currentIdx = 0;
-    for (const req of requiredStages) {
-      const reqCore = canonical(req.id);
-      let found = false;
-      for (const existing of existingCores) {
-        if (existing === reqCore || reqCore.endsWith(`_${existing}`) || existing.endsWith(`_${reqCore}`)) {
-          found = true;
-          const foundIdx = result.findIndex(s => {
-             const sc = canonical(s.stateId);
-             return sc === existing || sc.endsWith(`_${existing}`) || existing.endsWith(`_${sc}`);
-          });
-          if (foundIdx !== -1) currentIdx = foundIdx + 1;
-          break;
-        }
-      }
-      
-      if (!found) {
-        const isCollect = /collect|capture|booking|qualif|requirement|detail/i.test(reqCore);
-        const newState = {
-          stateId: req.id,
-          stateName: req.label || req.id.replace(/_/g, ' '),
-          objective: isCollect ? `Collect details for ${req.label}` : `Execute stage: ${req.label}`,
-          ...(isCollect ? {
-             scriptDirective: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, false),
-             fallbackBehavior: buildIntentDrivenAsk("caller_intent", isHindiOrHinglish, true),
-          } : buildGenericStageTurn(req.label || req.id, isHindiOrHinglish)),
-          slotsToCollect: isCollect ? ["caller_intent"] : [],
-          branchingConditions: [],
-          maxRetries: 3,
-          invokesTools: [],
-          isFallback: true
-        };
-        
-        if (currentIdx === 0 && result.length > 0 && /identity|greet|open/i.test(result[0].stateId)) {
-          currentIdx = 1;
-        }
-        while (currentIdx > 0 && currentIdx < result.length && (result[currentIdx].isTerminal || /terminal|end|close|resolut/i.test(result[currentIdx].stateId))) {
-          currentIdx--;
-        }
-        
-        result.splice(currentIdx, 0, newState);
-        currentIdx++;
-      }
-    }
-    
-    return result;
+    // The LLM prompt now strictly enforces generating the required stages.
+    // Blindly injecting missing stages with generic dialogue destroys the flow quality.
+    // We trust the LLM's generated flow here.
+    return steps;
   }
 
   private static orderFlow(steps: any[]): any[] {
@@ -499,41 +451,31 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
     return ordered;
   }
 
-  private static routeByPosition(steps: any[]): any[] {
-    const firstCapture = steps.find(s => s.slotsToCollect?.length > 0) || steps[1] || steps[0];
-
+  private static ensureDefaultRouting(steps: any[]): any[] {
     return steps.map((step, idx) => {
       const isLast = idx === steps.length - 1;
       const nextStep = isLast ? null : steps[idx + 1];
       
-      const newBranches: any[] = [];
-      const existingBranches = Array.isArray(step.branchingConditions) ? step.branchingConditions : [];
-      
-      for (const b of existingBranches) {
-        if (b.goToStep === 'end_call' || b.action === 'end_call' || b.goToStep === 'transfer' || b.action === 'transfer') {
-          newBranches.push(b);
-        }
-      }
+      let existingBranches = Array.isArray(step.branchingConditions) ? [...step.branchingConditions] : [];
       
       if (!step.isTerminal && !/terminal|end|close|resolut/i.test(step.stateId || '')) {
-        const id = (step.stateId || '').toLowerCase();
-        if (/confirm|readback/i.test(id)) {
-          newBranches.push({ condition: "Caller confirms accuracy", goToStep: nextStep?.stateId || 'end_call' });
-          newBranches.push({ condition: "Caller wants to modify details", goToStep: firstCapture.stateId });
-        } else {
+        // Only inject a fallback progression branch if the LLM generated NO branches to move forward
+        const hasProgression = existingBranches.some(b => b.goToStep && b.goToStep !== 'end_call' && b.action !== 'end_call' && b.goToStep !== 'transfer');
+        if (!hasProgression && nextStep) {
           if (step.slotsToCollect?.length > 0) {
-             newBranches.unshift({ condition: `Information provided`, goToStep: nextStep?.stateId || 'end_call' });
+             existingBranches.unshift({ condition: `Information provided`, goToStep: nextStep.stateId });
           } else {
-             newBranches.unshift({ condition: "Completed or agreed", goToStep: nextStep?.stateId || 'end_call' });
+             existingBranches.unshift({ condition: "Completed or agreed", goToStep: nextStep.stateId });
           }
         }
       } else {
-        if (!newBranches.some(b => b.goToStep === 'end_call' || b.action === 'end_call')) {
-          newBranches.push({ condition: "Concluding call", goToStep: "end_call", reason: "completed" });
+        // Ensure terminal steps have an end_call branch
+        if (!existingBranches.some(b => b.goToStep === 'end_call' || b.action === 'end_call')) {
+          existingBranches.push({ condition: "Concluding call", goToStep: "end_call", reason: "completed" });
         }
       }
       
-      step.branchingConditions = newBranches;
+      step.branchingConditions = existingBranches;
       return step;
     });
   }
@@ -603,52 +545,37 @@ Return a JSON array of step objects with sequenceOrder, stateId, stateName, obje
       normalized.push(step);
     });
 
-    // Split multi-slot steps
-    const splitSteps: any[] = [];
+    // Apply tool hygiene to unmapped slots
+    const processedSteps: any[] = [];
     for (const s of normalized) {
-      if (s.slotsToCollect.length > 1 && s.stateId !== 'confirmation_readback' && s.stateId !== 'resolution' && !s.isTerminal) {
-        s.slotsToCollect.forEach((singleSlot: string, sIdx: number) => {
-          const fName = singleSlot.replace(/_/g, ' ');
-          splitSteps.push({
-            ...s,
-            stateId: sIdx === 0 ? s.stateId : `capture_${singleSlot.toLowerCase()}`,
-            stateName: sIdx === 0 ? s.stateName : `Capture ${fName}`,
-            objective: `Collect: ${singleSlot}`,
-            scriptDirective: (sIdx === 0 && s.scriptDirective) ? s.scriptDirective : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, false),
-            fallbackBehavior: (sIdx === 0 && s.fallbackBehavior) ? s.fallbackBehavior : buildIntentDrivenAsk(singleSlot, isHindiOrHinglish, true),
-            slotsToCollect: [singleSlot]
-          });
-        });
-      } else {
-        if (!s.slotsToCollect || s.slotsToCollect.length === 0) {
-          const stepText = `${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''} ${(s.invokesTools || []).join(' ')}`;
-          if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText)) {
-            s.slotsToCollect = [/whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number"];
-            if (!s.invokesTools) s.invokesTools = [];
-            if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
-            if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
-          } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
-            s.slotsToCollect = ["pin_code"];
-            if (!s.invokesTools) s.invokesTools = [];
-            if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
-            if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
-          }
+      if (!s.slotsToCollect || s.slotsToCollect.length === 0) {
+        const stepText = `${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''} ${(s.invokesTools || []).join(' ')}`;
+        if (/whatsapp|phone|mobile|contact_number|telephone/i.test(stepText)) {
+          s.slotsToCollect = [/whatsapp/i.test(stepText) ? "whatsapp_number" : "phone_number"];
+          if (!s.invokesTools) s.invokesTools = [];
+          if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
+          if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
+        } else if (/pin|pincode|otp|passcode/i.test(stepText)) {
+          s.slotsToCollect = ["pin_code"];
+          if (!s.invokesTools) s.invokesTools = [];
+          if (!s.invokesTools.includes("validate_digit_input")) s.invokesTools.push("validate_digit_input");
+          if (!s.invokesTools.includes("set_capture_mode")) s.invokesTools.push("set_capture_mode");
         }
-        splitSteps.push(s);
       }
+      processedSteps.push(s);
     }
 
     // Stage 2: Dedupe by canonical ID
-    const deduped = WorkflowArchitect.dedupeStatesByCanonicalId(splitSteps);
+    const deduped = WorkflowArchitect.dedupeStatesByCanonicalId(processedSteps);
 
     // Stage 3: Ensure advisory stages
     const withAdvisory = WorkflowArchitect.ensureAdvisoryStages(deduped, requiredStages, isHindiOrHinglish);
 
-    // Stage 4: Order flow
+    // Stage 4: Order by sequence
     const ordered = WorkflowArchitect.orderFlow(withAdvisory);
 
-    // Stage 5: Route by position
-    const routed = WorkflowArchitect.routeByPosition(ordered);
+    // Stage 5: Fix up branches using default routing for safety
+    const routed = WorkflowArchitect.ensureDefaultRouting(ordered);
 
     return routed;
   }

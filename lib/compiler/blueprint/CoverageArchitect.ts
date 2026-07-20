@@ -101,17 +101,7 @@ const COVERAGE_RULES: CoverageRule[] = [
         c.capturedHas("service", "offering", "course", "product", "module")
       ),
   },
-  {
-    id: "operating_hours", label: "Operating Hours", group: "schedule",
-    missing: (c) =>
-      (!c.hoursStr || c.hoursStr === "Standard Business Hours" || c.hoursStr === "{}" || c.hoursStr === "[]" || c.hoursStr.trim() === "") &&
-      !(
-        /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|8:00|9:00|5:00|10:00|am|pm|hours|timings|timing|window|available all days|available from|open daily|daily)\b/i.test(c.fullUserText) ||
-        c.containsAny(['बजे', 'सुबह', 'शाम', 'समय', 'सोमवार', 'मंगलवार', 'बुधवार', 'गुरुवार', 'शुक्रवार', 'शनिवार', 'रविवार', 'खुला', 'बंद', 'घंटे', 'टाइम']) ||
-        c.resolvedHas("hour", "timing", "schedule", "availability", "operating") ||
-        c.capturedHas("hour", "timing", "schedule", "availability", "operating")
-      ),
-  },
+
   {
     id: "location", label: "Physical Location & Contact Info (address, phone number, or website)", group: "identity",
     missing: (c) => !(
@@ -218,12 +208,12 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "silence", label: "No-Input / Silence Handling (timeout seconds, reprompt action, or N/A)", group: "callflow",
+    id: "silence", label: "No-Input / Silence Handling (what the agent should say to reprompt after silence, or N/A)", group: "callflow",
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.silenceHandling ||
-      /\b(silence|no input|no-input|doesn't answer|quiet|timeout|reprompt|re-prompt|if caller says nothing|say nothing|when silent|no response|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("silence", "timeout", "no_input", "no-input", "reprompt") ||
-      c.capturedHas("silence", "timeout", "no_input", "no-input", "reprompt")
+      /\b(silence|no input|no-input|doesn't answer|quiet|reprompt|re-prompt|if caller says nothing|say nothing|when silent|no response|n\/a)\b/i.test(c.fullUserText) ||
+      c.resolvedHas("silence", "no_input", "no-input", "reprompt") ||
+      c.capturedHas("silence", "no_input", "no-input", "reprompt")
     ),
   },
   {
@@ -281,25 +271,7 @@ const COVERAGE_RULES: CoverageRule[] = [
       c.capturedHas("disclosure", "consent", "compliance", "recording")
     ),
   },
-  {
-    id: "dtmf", label: "DTMF / Keypad Input Fallback (keypad entry fallback after speech recognition failure, or N/A)", group: "callflow",
-    missing: (c) => !(
-      !!c.spec?.callFlowPlan?.dtmfFallback ||
-      /\b(dtmf|keypad|press 1|type digits|keypad entry|touch tone|if speech fails use keypad|no dtmf|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("dtmf", "keypad", "touch_tone") ||
-      c.capturedHas("dtmf", "keypad", "touch_tone")
-    ),
-  },
-  {
-    id: "holiday_hours", label: "Holiday / Exception Hours (special closures, holiday schedules, or N/A)", group: "schedule",
-    missing: (c) => !(
-      (typeof c.snap.operatingHours === 'object' && !!c.snap.operatingHours?.exceptions && c.snap.operatingHours.exceptions.length > 0) ||
-      (!!c.snap.exceptions && c.snap.exceptions.length > 0) ||
-      /\b(holiday|holidays|exceptions|closed on|christmas|new year|national holiday|no special holiday hours|no such holidays|no holiday|no holidays|standard only|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("holiday", "exception") ||
-      c.capturedHas("holiday", "exception")
-    ),
-  },
+
   {
     id: "entry_routing", label: "Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)", group: "callflow",
     missing: (c) => !(

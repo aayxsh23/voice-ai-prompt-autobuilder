@@ -470,7 +470,7 @@ LANGUAGE DETECTION & RESPONSE PROTOCOL:
   } else {
     languageHandling = `### LANGUAGE HANDLING
 - Speak clearly in natural conversational English.
-- Never switch languages unless the caller explicitly initiates or requests a language switch.
+- NEVER switch languages into Arabic, Hindi, or any other language under any circumstance, even if the caller speaks in another language.
 - Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`.trim();
   }
 
@@ -501,8 +501,9 @@ Key Rules
 
   // 3. SCOPE & REFUSAL BEHAVIOR
   const specProhibitions = Array.isArray(spec?.guardrails?.prohibitions) ? spec.guardrails.prohibitions : [];
+  const metaProhibitions = Array.isArray(spec?.meta?.scopeExclusions) ? spec.meta.scopeExclusions : [];
   const draftProhibitions = Array.isArray(draft?.guardrails?.prohibitions) ? draft.guardrails.prohibitions : [];
-  const allProhibitions = Array.from(new Set([...specProhibitions, ...draftProhibitions])).filter(Boolean);
+  const allProhibitions = Array.from(new Set([...specProhibitions, ...metaProhibitions, ...draftProhibitions])).filter(Boolean);
   const customProhibitions = allProhibitions.length > 0
     ? '\n' + allProhibitions.map((p: any) => `- ${String(p)}`).join('\n')
     : "";
