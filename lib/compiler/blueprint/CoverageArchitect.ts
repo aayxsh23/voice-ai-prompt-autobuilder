@@ -179,15 +179,7 @@ const COVERAGE_RULES: CoverageRule[] = [
       /\b(objection|objections|busy|not interested|fees|already enrolled|pushback|concern|concerns|reject|rejection|upset|confused|edge case)\b/i.test(c.fullUserText)
     ),
   },
-  {
-    id: "call_flow_skeleton", label: "Call Flow FSM Logic (states, extractions, conditional routing)", group: "callflow",
-    missing: (c) => !(
-      c.callFlowSteps.length > 0 ||
-      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("flow", "skeleton", "template", "steps") ||
-      c.capturedHas("flow", "skeleton", "template", "steps")
-    ),
-  },
+
   {
     id: "opening_phrase", label: "Greeting State (objective and pre-call data fetch tools)", group: "callflow",
     missing: (c) => !(
@@ -270,6 +262,15 @@ const COVERAGE_RULES: CoverageRule[] = [
       /\b(entry routing|multiple request types|if caller says cancel|if caller says book|branching from start|single request type only|one flow only|single, straightforward|single straightforward|straightforward welcome flow|standard onboarding flow first|smart branching|branch into specific handling flows|branching into different paths|branching right away|single flow|standard onboarding journey|branching \/ exception|branch|branching|handling flows|n\/a)\b/i.test(c.fullUserText) ||
       c.resolvedHas("entry", "routing", "multi-request", "multi_request", "branch", "flow") ||
       c.capturedHas("entry", "routing", "multi-request", "multi_request", "branch", "flow")
+    ),
+  },
+  {
+    id: "call_flow_skeleton", label: "Call Flow FSM Logic (states, extractions, conditional routing)", group: "callflow",
+    missing: (c) => !(
+      c.callFlowSteps.length > 0 ||
+      /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
+      c.resolvedHas("flow", "skeleton", "template", "steps") ||
+      c.capturedHas("flow", "skeleton", "template", "steps")
     ),
   },
   {

@@ -72,6 +72,7 @@ ${JSON.stringify({ meta, snap, capturedTopics: spec.capturedTopics || [], resolv
 MANDATORY RULES:
 1. If any policy value in the business snapshot is 'None — confirmed by business', 'None — not specified', 'Standard cancellation policy applies.', or 'Standard refund policy applies.', do NOT generate FAQ entries about that topic! Only generate FAQs for topics where real, custom details were explicitly provided by the user.
 2. If any topic is listed in 'scopeExclusions' (${meta?.scopeExclusions && meta.scopeExclusions.length > 0 ? JSON.stringify(meta.scopeExclusions) : "[]"}), strictly skip it and do NOT generate FAQs or objection handlers for it.
+3. CRITICAL: Never summarize, abstract, or omit exact addresses, phone numbers, exact locations, or URLs provided by the user. They must be preserved verbatim in the FAQs.
 
 Return a JSON object with:
 - faqs: array of { question: string, answer: string (in exact target language) }

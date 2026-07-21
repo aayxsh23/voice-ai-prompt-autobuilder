@@ -492,6 +492,7 @@ LANGUAGE DETECTION & RESPONSE PROTOCOL:
     languageHandling = `### LANGUAGE HANDLING
 - Speak clearly in natural conversational English.
 - NEVER switch languages into Arabic, Hindi, or any other language under any circumstance, even if the caller speaks in another language.
+- CRITICAL SCRIPT RULE: Your spoken output must consist ONLY of English words using the Latin alphabet. NEVER output sentences in Devanagari (देवनागरी), Arabic script, or any other non-Latin script.
 - Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`.trim();
   }
 
@@ -613,7 +614,7 @@ OFF-TOPIC REFUSAL PROTOCOL
     // Only pre-call infields are published. Outfields (post-call extractions) are
     // intentionally NOT emitted — the agent collects what it needs during the call
     // flow; publishing a separate extraction list is redundant and token-heavy.
-    if (!isOutfield(slot)) {
+    if (!isOutfield(slot) && !['current_day', 'current_date', 'current_time'].includes(slot)) {
       infields.push(`{{${slot}}}${v?.label && v.label !== slot ? ` — ${v.label}` : ''}`);
     }
   });
@@ -623,7 +624,7 @@ OFF-TOPIC REFUSAL PROTOCOL
     // Must use the SAME deduped list the displayed INFIELDS block uses. Reading
     // allSlots here meant the usage sentence referenced variables the block never
     // declared (e.g. {{current_day_current_date_current_time}}).
-    const infieldNames = dedupedSlots.filter(s => !isOutfield(s));
+    const infieldNames = dedupedSlots.filter(s => !isOutfield(s) && !['current_day', 'current_date', 'current_time'].includes(s));
     const exampleInfield = nameInfieldKey ? `{{${nameInfieldKey}}}` : (infieldNames.length > 0 ? `{{${infieldNames[0]}}}` : "the provided pre-call context");
     dynamicVariables = `### DYNAMIC VARIABLES\n\n#### INFIELDS (Pre-Call Context)\nThe following variables are provided dynamically from CRM/API before the call begins. You MUST actively reference and apply them in your behavior:\n${infields.join('\n')}\n\n- **Infield Usage Instructions**: Always personalize your dialogue using any caller profile data present (such as ${exampleInfield}). If regional or operational variables are present (such as ${infieldNames.map(n => `{{${n}}}`).join(', ')}), use them to tailor your timing, language selection, or scheduling logic during the conversation.`;
   }

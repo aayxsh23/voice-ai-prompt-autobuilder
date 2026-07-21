@@ -128,11 +128,11 @@ MANDATORY STATE MACHINE DESIGN RULES:
    - If Inbound: State 1 MUST greet and ask how to help. Do NOT ask "Am I speaking with...".
    - If Outbound: State 1 MUST introduce the agent and verify the caller's identity.
    - AI DISCLOSURE: ${denyAiDisclosure ? "DO NOT disclose AI identity. Present as a human." : "Proactively disclose that the agent is an AI."}
-5. ROUTING & TRANSITIONS: Every state MUST have transitions indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
+5. ROUTING & TRANSITIONS: Every state MUST have transitions indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. You must generate the complete call flow spanning ALL specified stages in detail. Do NOT summarize the logic into a single generic end step. Detail all extraction points, conditional branches, and sub-behaviors.
 6. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
-7. SLOT NAMING: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
-8. SYSTEM VARIABLES: The variables 'current_day', 'current_date', and 'current_time' are reserved system variables. They MUST NOT be shortened, renamed, or modified under any circumstances.
-9. VARIABLE USAGE: You MUST incorporate the defined pre-call infields (using '{{variable_name}}' syntax) into your FSM state objectives or speech prompts where appropriate. If a variable was defined, you must actively use it in the call flow.
+7. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date'). CRITICAL: If a state collects a date, time, or phone number, YOU MUST explicitly include the field in the 'slotsToCollect' array (e.g. ['booking_date']).
+8. SYSTEM VARIABLES: The variables 'current_day', 'current_date', and 'current_time' are reserved system variables. They MUST NOT be shortened, renamed, or modified under any circumstances. When collecting scheduling details, you must instruct the agent to use {{current_day}}, {{current_date}} and {{current_time}} as reference points.
+9. VARIABLE USAGE & HALLUCINATION: You MUST incorporate the defined pre-call infields (using '{{variable_name}}' syntax) into your FSM state objectives or speech prompts where appropriate. Use ONLY the explicit variables provided in Known Pre-Call Infields. Do NOT invent redundant variants like 'customer_name' if 'name' is already provided.
 
 Generate the strict JSON array of FSM state nodes now.`;
 
