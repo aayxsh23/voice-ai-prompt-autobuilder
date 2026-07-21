@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Button, Input, Badge } from '../ui';
-import { RotateCcw, Bot, User, Send } from 'lucide-react';
+import { RotateCcw, Bot, Send } from 'lucide-react';
 
 interface Props {
   projectId: string;

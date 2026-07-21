@@ -11,7 +11,7 @@ import { isInstructionLike } from '@/lib/pipeline/dialogue/dialogueLint';
 import { semanticDedupSlots } from '@/lib/compiler/assembler/PromptAssembler';
 
 type CallFlowPolicy = Partial<Pick<BusinessSpecification['callFlowPlan'],
-  'silenceHandling' | 'interruptionPolicy' | 'digressionPolicy' | 'confirmationStyle' |
+  'interruptionPolicy' | 'digressionPolicy' | 'confirmationStyle' |
   'dtmfFallback' | 'closingScript' | 'retryExhaustion'>>;
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
@@ -27,14 +27,7 @@ function sanitizeCallFlowPolicy(raw: unknown): CallFlowPolicy {
   const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
   const out: CallFlowPolicy = {};
 
-  const silence = src.silenceHandling as { timeoutSeconds?: unknown; action?: unknown; maxReprompts?: unknown } | undefined;
-  if (silence && typeof silence === 'object') {
-    const s: NonNullable<CallFlowPolicy['silenceHandling']> = {};
-    if (typeof silence.timeoutSeconds === 'number') s.timeoutSeconds = silence.timeoutSeconds;
-    if (isNonEmptyString(silence.action)) s.action = silence.action.trim();
-    if (typeof silence.maxReprompts === 'number') s.maxReprompts = silence.maxReprompts;
-    if (Object.keys(s).length > 0) out.silenceHandling = s;
-  }
+
   if (isNonEmptyString(src.interruptionPolicy)) out.interruptionPolicy = src.interruptionPolicy.trim();
   if (isNonEmptyString(src.digressionPolicy)) out.digressionPolicy = src.digressionPolicy.trim();
   if (isNonEmptyString(src.confirmationStyle)) out.confirmationStyle = src.confirmationStyle.trim();
@@ -170,7 +163,7 @@ For meta:
 - terminalStates: list any distinct end-of-call closure outcomes specified by the user (e.g. training slot scheduled, not using software, billing issue logged, callback requested).
 For extractedEntities, only list entities the user explicitly named. Copy names and numbers verbatim as stated — do not paraphrase, generalize, or invent additional departments, contacts, or services beyond what was said.
 If the user explicitly states that a policy does not exist (e.g. 'no policy', 'we don't have one', 'N/A'), write the literal string 'None — confirmed by business' for that field rather than omitting it or leaving it empty.
-If the user defines any pre-call CRM variables (infields) or data collected during the call (outfields), or answers what data is passed before the call (such as Company Name, Caller Name, Order ID, or confirms only certain variables or no variables are passed), populate dynamicVariables in the spec with items having key, label, type ('business'|'caller'|'task'|'runtime'), fieldDirection ('infield'|'outfield'), required, defaultValue, source ('crm'|'runtime'), and description. CRITICAL NAMING RULE: All variable keys (key), slot names, and infield/outfield names MUST be under 2 words max (separated by single underscores, e.g. 'phone_number', 'booking_date', 'caller_name', 'first_name', 'order_id'). Names with 3 or more words like 'customer_phone_number', 'preferred_appointment_time', or 'current_day_current_date_current_time' are strictly forbidden and NOT allowed! Always shorten any 3+ word variable or slot name to at most 2 words (e.g. use 'phone_number' instead of 'customer_phone_number').
+If the user defines any pre-call CRM variables (infields) or data collected during the call (outfields), or answers what data is passed before the call (such as Company Name, Caller Name, Order ID, or confirms only certain variables or no variables are passed), populate dynamicVariables in the spec with items having key, label, type ('business'|'caller'|'task'|'runtime'), fieldDirection ('infield'|'outfield'), required, defaultValue, source ('crm'|'runtime'), and description. CRITICAL NAMING RULE: All variable keys (key), slot names, and infield/outfield names MUST be under 2 words max (separated by single underscores, e.g. 'phone_number', 'booking_date', 'caller_name', 'first_name', 'order_id'). Names with 3 or more words like 'customer_phone_number', or 'preferred_appointment_time' are strictly forbidden and NOT allowed! Always shorten any 3+ word variable or slot name to at most 2 words (e.g. use 'phone_number' instead of 'customer_phone_number'). EXCEPTION: The variables 'current_day', 'current_date', and 'current_time' are reserved system variables. They MUST NOT be shortened, renamed, or modified under any circumstances.
 Whenever the user answers a question about a specific sub-topic (EVEN if their answer is short, negative, declining, or stating that something is not applicable/not used — such as answering "No", "No such Holidays", "No details like these shared during call", "No it doesnt reference any name during cals", "None needed", "Not required", or confirming that no specific staff/departments/roster or transfers are needed), you MUST append a short snake_case tag for that topic to resolvedTopics (e.g. 'staff_roster', 'staff', 'team_structure', 'holiday_hours', 'routing_protocol', 'dtmf_fallback', 'infields', 'cancellation_policy', 'refund_policy', 'language_preference', 'qualification_criteria', 'objection_handling', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script', 'retry_exhaustion', 'confirmation_style', 'voice_persona', 'entry_routing', 'injection_resistance'). This is vital so the system knows the topic was answered and never asks the user about it again. Do not repeat tags already present in the existing spec's resolvedTopics.
 If the user gives a substantive, detailed operational or call flow answer that doesn't map cleanly to meta or businessSnapshot (e.g. after-hours routing, emergency triage protocol, referral handling, records handling, digression handling, silence handling, interruption behavior), append it to capturedTopics as { topic: short_snake_case_tag, summary: 2-4 sentence summary preserving key specifics like exact scripts, extensions, and thresholds }. Check existing capturedTopics first — do not add a duplicate topic tag.
 If the conversation history contains an 'AUDIT FIX REQUEST:', extract and apply every requested fix instruction to the corresponding fields in meta, businessSnapshot, resolvedTopics, or capturedTopics.
@@ -379,7 +372,6 @@ Ensure you return valid JSON with no markdown fences.`;
     const resolvedLanguageMode = (updatedSpec.meta?.languageMode as 'english' | 'hindi' | 'multilingual' | undefined) || languageMode;
     const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, resolvedLanguageMode);
 
-    const lastUserMsg = messages[messages.length - 1]?.content || "";
     const triggerGeneration = coverageReport.isReadyForCompilation;
 
     const result = {

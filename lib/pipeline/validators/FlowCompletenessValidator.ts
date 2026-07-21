@@ -6,7 +6,6 @@ export function validateFlowCompleteness(
   steps: CallFlowStep[] = []
 ): ValidationResult {
   const errors: string[] = [];
-  const warnings: string[] = [];
 
   const flowSteps = steps.length > 0 ? steps : (spec.callFlowPlan?.steps || []);
 

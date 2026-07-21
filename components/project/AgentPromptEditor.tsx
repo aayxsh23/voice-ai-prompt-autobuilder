@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Button, Textarea } from '../ui';
-import { Bot, Save, Copy, Check } from 'lucide-react';
+import { Save, Copy, Check } from 'lucide-react';
 
 interface Props {
   value: string;

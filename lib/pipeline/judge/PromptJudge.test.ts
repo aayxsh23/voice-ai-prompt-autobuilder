@@ -3,7 +3,7 @@ import { judgePrompt, repairFromJudge } from './PromptJudge';
 import { compilePromptPackage } from '../promptCompiler';
 import * as llmClientModule from '@/lib/llm/llmClient';
 import { LanguagePolicy } from '@/lib/llm/language/LanguagePolicy';
-import { ChatMessage, BusinessSpecification } from '@/lib/llm/types';
+import { BusinessSpecification } from '@/lib/llm/types';
 import { WorkflowArchitect } from '@/lib/compiler/planners/WorkflowArchitect';
 import { KnowledgeArchitect } from '@/lib/compiler/planners/KnowledgeArchitect';
 import { ToolPlanner } from '@/lib/compiler/planners/ToolPlanner';

@@ -11,8 +11,6 @@ export class WorkflowArchitect {
     const meta = spec.meta || {} as any;
     const snap = spec.businessSnapshot || {} as any;
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
-    const capturedTopics = spec.capturedTopics || [];
-    const resolvedTopics = spec.resolvedTopics || [];
     const requiredStages = (spec.callFlowPlan as any)?.requiredStages || (meta as any)?._requiredStages || [];
     const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
     const primaryGoal = meta.primaryGoal || meta.description || "Assist callers professionally";
@@ -96,6 +94,7 @@ BUSINESS SNAPSHOT:
 - **Operating Hours:** ${snap.operatingHours || "N/A"}
 - **Services:** ${snap.servicesOffered?.join(', ') || "N/A"}
 - **Call Direction:** ${isInbound ? "INBOUND (Customer calls us)" : "OUTBOUND (We call customer)"}
+${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes:\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
 
 CONTEXT VARIABLES & EXTRACTIONS:
 ${infieldsList.length > 0 ? `Known Pre-Call Infields (Available before call): ${JSON.stringify(infieldsList.map((v: any) => v.key))}\n` : ""}
@@ -132,6 +131,8 @@ MANDATORY STATE MACHINE DESIGN RULES:
 5. ROUTING & TRANSITIONS: Every state MUST have transitions indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
 6. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 7. SLOT NAMING: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
+8. SYSTEM VARIABLES: The variables 'current_day', 'current_date', and 'current_time' are reserved system variables. They MUST NOT be shortened, renamed, or modified under any circumstances.
+9. VARIABLE USAGE: You MUST incorporate the defined pre-call infields (using '{{variable_name}}' syntax) into your FSM state objectives or speech prompts where appropriate. If a variable was defined, you must actively use it in the call flow.
 
 Generate the strict JSON array of FSM state nodes now.`;
 
@@ -147,9 +148,9 @@ Generate the strict JSON array of FSM state nodes now.`;
       });
       let parsed = safeParseJson(response.text, fallbackStates);
       
-      let nodes = Array.isArray(parsed) && parsed.length >= 2 ? parsed : null;
+      let nodes: any[] = Array.isArray(parsed) && parsed.length >= 2 ? parsed : [];
 
-      if (!nodes) {
+      if (nodes.length === 0) {
         if (requiredStages && requiredStages.length > 0) {
           nodes = requiredStages.map((s: any) => ({
             id: s.id || `stage_${Math.random().toString(36).substr(2, 6)}`,

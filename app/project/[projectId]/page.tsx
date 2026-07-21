@@ -17,7 +17,6 @@ import { VersionHistoryPanel } from '@/components/project/VersionHistoryPanel';
 import { VoiceStylePanel } from '@/components/settings/VoiceStylePanel';
 import { ConversationRulesPanel } from '@/components/settings/ConversationRulesPanel';
 import { FallbackGuardrailsPanel } from '@/components/settings/FallbackGuardrailsPanel';
-import { PostConversationSummaryPromptPanel } from '@/components/settings/PostConversationSummaryPromptPanel';
 
 export default function ProjectStudioPage({ params }: { params: Promise<{ projectId: string }> }) {
   const [projectId, setProjectId] = React.useState('');

@@ -106,7 +106,7 @@ export class MultiDomainTestHarness {
         stageCoverage: `${covered}/${required.length}`,
         violations: [
           ...violations
-            .sort((a, b) => (a.severity === 'critical' ? -1 : 1))
+            .sort((a, _b) => (a.severity === 'critical' ? -1 : 1))
             .map(v => `[${v.severity}] ${v.contract}: ${v.description}`),
           ...expectationFailures.map(e => `[expectation] ${e}`),
         ],

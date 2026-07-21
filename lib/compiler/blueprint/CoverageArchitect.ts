@@ -78,7 +78,7 @@ const COVERAGE_RULES: CoverageRule[] = [
       !/\b(called|named|clinic is|dentistry|company|business is)\s+([A-Z][a-zA-Z\s]+)/i.test(c.fullUserText),
   },
   {
-    id: "primary_goal", label: "Primary Agent Goal / Use Case", group: "services",
+    id: "primary_goal", label: "Primary Agent Goal / Use Case", group: "identity",
     missing: (c) => !c.goalStr || c.goalStr === "Assist callers effectively" || c.goalStr.trim().length < 15,
   },
   {
@@ -383,7 +383,7 @@ export class CoverageArchitect {
    * verdict stands.
    */
   public static async adjudicateCoverage(
-    spec: Partial<BusinessSpecification>,
+    _spec: Partial<BusinessSpecification>,
     chatHistory: Array<{ role: string; content: string }>,
     missingFields: string[],
   ): Promise<string[]> {
@@ -498,20 +498,8 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
       return "I have all the core and in-depth operational specifications needed! Automatically generating your structured Voice AI agent prompt now...";
     }
 
-    const vertical = spec?.meta?.industry || "General";
-    const verticalProbes: Record<string, string> = {
-      "Healthcare": "insurance verification scripts, appointment qualification criteria (new vs. follow-up), emergency triage protocol, HIPAA referral handling",
-      "Dental": "insurance handling, acute emergency vs routine checkup slots, cancellation notice phrasing, intake form procedures, pediatric/sedation thresholds",
-      "Gym/Fitness": "class scheduling restrictions, membership tier qualification, staff-led vs self-service trial bookings, guest pass verification procedures",
-      "Fitness": "class scheduling restrictions, membership tier qualification, staff-led vs self-service trial bookings, guest pass verification procedures",
-      "Logistics": "exact GPS tracking consent language, driver identity verification rules, dispatch escalation numbers, hazmat or over-dimension protocols",
-      "Real Estate": "property viewing qualification criteria (budget, timeline, pre-approval status), agent transfer routing rules, lockbox/access scripts",
-      "Hospitality": "check-in/check-out modification rules, room deposit requirements, dining/amenity reservation scripts, cancellation window exceptions",
-      "Financial Services": "caller authentication steps, fraud escalation procedures, transfer criteria for loan officers or support specialists, fee structures",
-      "Legal": "case intake screening questions, statute of limitations disclaimers, consultation fee collection phrasing, attorney escalation criteria"
-    };
-    const activeProbes = verticalProbes[vertical] || "specific operational edge cases, exact qualification questions, transfer escalation criteria, fallback procedures";
 
+    const vertical = spec?.meta?.industry || "General";
     const entities = spec?.extractedEntities;
     const namedItems = [
       ...(entities?.departments || []),
@@ -541,7 +529,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
 
     let activeTopicGroup = "Call Flow Design & Conversational Mechanics";
     let targetFields = topicCallFlowFields.length > 0 ? topicCallFlowFields : missingFields;
-    let topicInstruction = `We are designing the Finite State Machine (FSM) call flow logic and conversational mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow FSM Logic, ask about the sequence of states, which exact data fields need to be extracted at each step, and any conditional routing (e.g., 'if X, go to state Y'). Do NOT ask them to write the exact sentences or dialogue the bot should speak, as our system synthesizes that automatically from the state machine rules. If asking about Interruption or Digression Handling, ask directly what the agent should do when interrupted or off-script.`;
+    let topicInstruction = `We are designing the Finite State Machine (FSM) call flow logic and conversational mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow FSM Logic, you MUST PROPOSE a sequence of states, exact data fields to extract at each step, and conditional routing (e.g. 'if X, go to state Y') based on the user's business goal and industry. DO NOT ask the user to design the state machine from scratch. Present your proposed flow and ask if they approve or want to make changes. Do NOT ask them to write the exact sentences or dialogue the bot should speak, as our system synthesizes that automatically from the state machine rules. If asking about Interruption or Digression Handling, ask directly what the agent should do when interrupted or off-script.`;
 
     if (missingFields.includes(LANGUAGE_FIELD_LABEL)) {
       activeTopicGroup = "Identity, Language & Location";

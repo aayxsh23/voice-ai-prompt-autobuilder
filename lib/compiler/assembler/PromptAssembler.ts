@@ -1,5 +1,4 @@
 import { BusinessSpecification } from "@/lib/llm/types";
-import { WorkflowArchitect } from "@/lib/compiler/planners/WorkflowArchitect";
 import { ToolPlanner } from "@/lib/compiler/planners/ToolPlanner";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
 import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
@@ -81,7 +80,7 @@ export function getSemanticCore(slot: string): string {
   if (!slot) return '';
   return slot.trim().toLowerCase()
     .replace(/^(preferred|caller|user|customer|client|primary|app|selected|expected|target|desired|requested)_+/i, '')
-    .replace(/_+(preference|time|date|number|id|info|details)$/i, (match, p1) => `_${p1}`)
+    .replace(/_+(preference|time|date|number|id|info|details)$/i, (_match, p1) => `_${p1}`)
     .replace(/_+/g, '_');
 }
 
@@ -90,8 +89,6 @@ export function semanticDedupSlots(slots: string[]): string[] {
   const seenCores = new Set<string>();
 
   const sorted = [...slots].filter(Boolean).sort((a, b) => {
-    const aCore = getSemanticCore(a);
-    const bCore = getSemanticCore(b);
     return a.length - b.length;
   });
 
@@ -686,13 +683,7 @@ OFF-TOPIC REFUSAL PROTOCOL
         block += `* **Required Extractions:** Extract and record ${extractions} from the caller's response.\n`;
       }
       if (state.entryAction) {
-        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${state.entryAction.tool}(${formatArgs(state.entryAction.args)})\`.`;
-        if (state.entryAction.speechPrompt) {
-          block += ` Then speak: "${state.entryAction.speechPrompt}"`;
-        }
-        block += `\n`;
-      } else if (state.speechPrompt) {
-        block += `* **Agent Speech:** ${state.speechPrompt}\n`;
+        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${state.entryAction.tool}(${formatArgs(state.entryAction.args)})\`.\n`;
       }
       if (state.inTurnTool) {
         block += `* **If user provides input:** Invoke \`${state.inTurnTool.tool}(${formatArgs(state.inTurnTool.args)})\` in the same turn.\n`;
@@ -700,9 +691,11 @@ OFF-TOPIC REFUSAL PROTOCOL
       
       const transitions = Array.isArray(state.transitions) ? state.transitions : [];
       if (transitions.length > 0) {
-        block += `\n#### ROUTING LOGIC (based strictly on tool output):\n`;
-        transitions.forEach((t: any, index: number) => {
-          block += `* **Condition ${index + 1}** \`${t.condition}\`: ${t.action ? t.action + ' -> ' : ''}${t.speechPrompt ? `Say: "${t.speechPrompt}" -> ` : ''}${t.nextState ? 'Go to ' + t.nextState : ''}\n`;
+        block += `* **Action:**\n`;
+        transitions.forEach((t: any) => {
+          const actionText = t.action ? `Trigger ${t.action} + ` : '';
+          const nextStateText = t.nextState ? `Go to state [${t.nextState}]` : 'end_call';
+          block += `  * If ${t.condition} -> ${actionText}${nextStateText}\n`;
         });
       }
       return block.trim();

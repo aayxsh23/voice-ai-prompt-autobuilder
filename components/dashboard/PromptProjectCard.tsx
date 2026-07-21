@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Card, Badge, Button } from '../ui';
-import { Calendar, ArrowUpRight, Copy, Archive, CheckCircle2, FileText } from 'lucide-react';
+import { Calendar, ArrowUpRight, Copy, Archive } from 'lucide-react';
 
 interface ProjectCardProps {
   project: any;

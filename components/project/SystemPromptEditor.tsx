@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, Button, Input } from '../ui';
-import { Save, Check, Plus } from 'lucide-react';
+import { Save, Plus } from 'lucide-react';
 import {
   ReactFlow,
   MiniMap,
@@ -19,7 +19,7 @@ import '@xyflow/react/dist/style.css';
 // Custom Node Component
 // ----------------------------------------------------
 const FsmStateNode = ({ data }: any) => {
-  const { id, objective, entryAction, inTurnTool, transitions, isTerminal } = data;
+  const { id, objective, entryAction, inTurnTool, isTerminal } = data;
   return (
     <div className={`p-4 bg-[#1e2025] border-2 ${isTerminal ? 'border-red-500/50' : 'border-[#383b42]'} rounded-xl min-w-[250px] text-white shadow-xl`}>
       <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
@@ -101,7 +101,7 @@ export const SystemPromptEditor: React.FC<Props> = ({ project, onUpdate, onSave,
     [setEdges],
   );
 
-  const onNodeClick = (event: React.MouseEvent, node: any) => {
+  const onNodeClick = (_event: React.MouseEvent, node: any) => {
     setSelectedState(node.data);
   };
 

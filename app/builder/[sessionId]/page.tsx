@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, User, Send, CheckCircle2, ArrowRight, Layers, ShieldAlert, Sliders, Play, RefreshCw } from 'lucide-react';
-import { PromptPackageDraft, BusinessSnapshot, CallMission, ConversationDesign, VoicePersonality, SchemaOverrides } from '@/lib/llm/types';
+import { Bot, User, Send, ArrowRight, ShieldAlert, RefreshCw } from 'lucide-react';
+import { PromptPackageDraft, SchemaOverrides } from '@/lib/llm/types';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -62,8 +62,6 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
     verbatimLines: [],
     transferRules: []
   });
-  const [isOverridePanelOpen, setIsOverridePanelOpen] = useState(false);
-  const [activeOverrideTab, setActiveOverrideTab] = useState<'faq' | 'transfer' | 'verbatim'>('faq');
   const [auditFixInputs, setAuditFixInputs] = useState<Record<number, string>>({});
   const [isSubmittingFixes, setIsSubmittingFixes] = useState(false);
 
