@@ -387,7 +387,7 @@ export interface BusinessSpecification {
       isTerminal?: boolean;
     }>;
     entryRouting?: Array<{ trigger: string; goToStep: string | number }>;
-    silenceHandling?: { timeoutSeconds?: number; action?: string; maxReprompts?: number };
+
     interruptionPolicy?: string;
     digressionPolicy?: string;
     confirmationStyle?: string;
@@ -427,6 +427,7 @@ export interface BusinessSpecification {
       isFallback?: boolean;
       isTerminal?: boolean;
     }>;
+    fsmStates?: any[];
   };
   knowledgeBase: {
     faqs: Array<{ question: string; answer: string; isFallback?: boolean }>;

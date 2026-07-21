@@ -35,8 +35,8 @@ describe('PromptJudge & Transcript-Aware Compilation Pipeline', () => {
       }
     },
     callFlowPlan: {
-      steps: [
-        { sequenceOrder: 1, stateId: 'GREETING', stateName: 'Greeting', objective: 'Greet caller', scriptDirective: 'Say hello', slotsToCollect: [] }
+      fsmStates: [
+        { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Say hello' } }
       ]
     },
     knowledgeBase: { faqs: [], objections: [] },
@@ -64,7 +64,7 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
     } as any);
     vi.spyOn(qwenLlmClient, 'generate').mockResolvedValue({ text: '[]' } as any);
     vi.spyOn(WorkflowArchitect, 'planWorkflow').mockResolvedValue([
-      { sequenceOrder: 1, stateId: 'GREETING', stateName: 'Greeting', objective: 'Greet caller', slotsToCollect: [], scriptDirective: 'नमस्ते, TestCorp में आपका स्वागत है।' }
+      { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'नमस्ते, TestCorp में आपका स्वागत है।' } }
     ]);
     vi.spyOn(KnowledgeArchitect, 'planKnowledge').mockResolvedValue({
       faqs: [{ question: 'समय क्या है?', answer: 'सुबह 9 से शाम 5 बजे तक।' }],
@@ -354,6 +354,7 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
     // Initial check (1) + after 1 repair check (2). Because new score (25) <= old score (35), anti-thrash stops immediately!
     expect(judgeCalls).toBe(2);
     // Draft preserves the best prompt so far (round 0 score 35)
+    console.log('ISSUES IN TEST 6:', draft.judgeReport?.issues);
     expect(draft.judgeReport?.score).toBe(35);
   });
 
@@ -529,8 +530,8 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
       } as any);
 
       vi.spyOn(WorkflowArchitect, 'planWorkflow').mockResolvedValue([
-        { sequenceOrder: 1, stateId: 'opening', stateName: 'Opening', objective: 'Greet', scriptDirective: 'Say: "Hi there, is now a good time?"', slotsToCollect: [] },
-        { sequenceOrder: 2, stateId: 'cross_sell_pitch', stateName: 'Cross-sell pitch', objective: 'Pitch', scriptDirective: 'Say: "May I share something that might suit you?"', slotsToCollect: [] },
+        { id: 'opening', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Hi' } },
+        { id: 'cross_sell_pitch', objective: 'Pitch', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'May I share?' } },
       ] as any);
 
       const input = {
@@ -545,7 +546,8 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
       };
 
       const draft = await compilePromptPackage(input as any);
-      const states = (draft.businessSpec?.callFlowPlan?.steps || []).map(s => s.stateId);
+      const states = (draft.businessSpec?.callFlowPlan?.fsmStates || []).map(s => s.id);
+      expect(states.length).toBeGreaterThan(0);
       expect(states).toContain('cross_sell_pitch');
       expect(draft.finalPrompt).toContain('cross_sell_pitch');
     });

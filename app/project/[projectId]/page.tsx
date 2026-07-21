@@ -154,14 +154,13 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
           )}
 
           {activeTab === 'system' && (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 min-h-[700px]">
+            <div className="grid grid-cols-1 xl:grid-cols-1 gap-6 min-h-[700px]">
               <SystemPromptEditor
-                value={project.finalPrompt || ""}
-                onChange={v => setProject({ ...project, finalPrompt: v })}
+                project={project}
                 onSave={handleSavePrompt}
+                onUpdate={handleFieldUpdate}
                 saving={saving}
               />
-              <PostConversationSummaryPromptPanel project={project} />
             </div>
           )}
 

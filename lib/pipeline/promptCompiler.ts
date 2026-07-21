@@ -62,11 +62,11 @@ async function repairStructurally(
   // are what the missing stage will come back through.
   const replanSpec: BusinessSpecification = {
     ...spec,
-    callFlowPlan: { ...spec.callFlowPlan, steps: [] },
+    callFlowPlan: { ...spec.callFlowPlan, fsmStates: [] },
   };
-  const steps = await WorkflowArchitect.planWorkflow(replanSpec);
-  if (Array.isArray(steps) && steps.length > 0) {
-    spec.callFlowPlan.steps = steps;
+  const fsmStates = await WorkflowArchitect.planWorkflow(replanSpec);
+  if (Array.isArray(fsmStates) && fsmStates.length > 0) {
+    spec.callFlowPlan.fsmStates = fsmStates;
   }
   return assembleUnifiedPrompt(spec, draft);
 }
@@ -220,21 +220,20 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and
   // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
-  const needWorkflow = spec.callFlowPlan.steps.length === 0 ||
-    (isHindiMode && !spec.callFlowPlan.steps.some((s: any) => /[\u0900-\u097F]/.test(s.scriptDirective || '')));
+  const needWorkflow = !spec.callFlowPlan.fsmStates || spec.callFlowPlan.fsmStates.length === 0;
   const needKnowledge = spec.knowledgeBase.faqs.length === 0 ||
     (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)));
 
   // WorkflowArchitect and KnowledgeArchitect are independent (Knowledge reads
   // meta/snapshot/topics, not the call-flow steps), so run them concurrently.
-  const [plannedSteps, plannedKb] = await Promise.all([
-    needWorkflow ? WorkflowArchitect.planWorkflow(spec) : Promise.resolve(spec.callFlowPlan.steps),
+  const [plannedFsmStates, plannedKb] = await Promise.all([
+    needWorkflow ? WorkflowArchitect.planWorkflow(spec) : Promise.resolve(spec.callFlowPlan.fsmStates),
     needKnowledge ? KnowledgeArchitect.planKnowledge(spec) : Promise.resolve(spec.knowledgeBase),
   ]);
-  spec.callFlowPlan.steps = plannedSteps;
+  spec.callFlowPlan.fsmStates = plannedFsmStates;
   spec.knowledgeBase = plannedKb;
 
-  // ToolPlanner consumes the finalized call-flow steps, so it must run afterwards.
+  // ToolPlanner consumes the finalized call-flow states, so it must run afterwards.
   if (spec.tools.length === 0) {
     spec.tools = await ToolPlanner.planTools(spec);
   }

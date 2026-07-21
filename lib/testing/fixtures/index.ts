@@ -122,7 +122,7 @@ const vlccQatar: DomainFixture = {
         { id: 'readback', label: 'Read back confirmation' },
         { id: 'close', label: 'Close' },
       ],
-      silenceHandling: { timeoutSeconds: 10, action: "Ask if they are still there" },
+
       dtmfFallback: { enabled: false },
       retryExhaustion: { afterRetries: 3, action: 'Politely wrap up and end the call' },
       steps: [

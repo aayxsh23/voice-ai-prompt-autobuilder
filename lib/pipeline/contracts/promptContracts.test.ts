@@ -93,7 +93,7 @@ describe('policies_rendered', () => {
   it('flags captured policies that never reached the prompt', () => {
     const spec = {
       ...baseSpec,
-      callFlowPlan: { steps: [], silenceHandling: { timeoutSeconds: 10, action: 'nudge' } },
+      callFlowPlan: { steps: [], interruptionPolicy: 'allow' },
     } as unknown as Partial<BusinessSpecification>;
     expect(checkContracts({ prompt: `${SAFE}\n### CALL FLOW\nSTATE: [x] (X)`, spec })
       .some(x => x.contract === 'policies_rendered')).toBe(true);

@@ -19,11 +19,11 @@ describe('CoverageArchitect language-aware detection', () => {
     ).toBe(false);
   });
 
-  it('still reports operating hours as missing when never mentioned', () => {
+  it('still reports location as missing when never mentioned', () => {
     const report = CoverageArchitect.evaluate({}, [
       { role: 'user', content: 'I want an agent.' },
     ]);
-    expect(report.missingFields).toContain('Operating Hours');
+    expect(report.missingFields).toContain('Physical Location & Contact Info (address, phone number, or website)');
   });
 });
 
@@ -83,13 +83,13 @@ describe('adaptive topics (notApplicableTopics)', () => {
 
   it('skips a topic marked not applicable', () => {
     const withNa = CoverageArchitect.evaluate(
-      { meta: { notApplicableTopics: ['dtmf'] } } as never, hist);
-    expect(withNa.missingFields.some(f => f.startsWith('DTMF'))).toBe(false);
+      { meta: { notApplicableTopics: ['interruption'] } } as never, hist);
+    expect(withNa.missingFields.some(f => f.startsWith('Interruption'))).toBe(false);
   });
 
   it('still asks that topic when nothing is marked not applicable', () => {
     const base = CoverageArchitect.evaluate({}, hist);
-    expect(base.missingFields.some(f => f.startsWith('DTMF'))).toBe(true);
+    expect(base.missingFields.some(f => f.startsWith('Interruption'))).toBe(true);
   });
 
   it('refuses to skip the mandatory floor even if asked to', () => {
@@ -101,9 +101,9 @@ describe('adaptive topics (notApplicableTopics)', () => {
   });
 
   it('drops floor ids from the LLM selection rather than trusting the model', async () => {
-    mockLlm({ notApplicable: ['dtmf', 'language', 'injection'] });
+    mockLlm({ notApplicable: ['interruption', 'language', 'injection'] });
     const na = await CoverageArchitect.selectNotApplicableTopics({}, hist);
-    expect(na).toContain('dtmf');
+    expect(na).toContain('interruption');
     expect(na).not.toContain('language');
     expect(na).not.toContain('injection');
   });

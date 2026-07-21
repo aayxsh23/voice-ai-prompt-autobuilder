@@ -21,16 +21,48 @@ export interface CallFlowStep {
   digressionAllowed?: boolean;
 }
 
+export interface ToolInvocation {
+  tool: string;
+  args: Record<string, any>;
+  executeBeforeSpeech?: boolean;
+  speechPrompt?: string;
+}
+
+export interface StateTransition {
+  condition: string;
+  action?: string;
+  speechPrompt?: string;
+  nextState?: string;
+}
+
+export interface FsmSubProtocol {
+  name: string;
+  args?: Record<string, any>;
+  rules?: any[];
+}
+
+export interface FsmStateNode {
+  id: string;
+  objective: string;
+  speechPrompt?: string;
+  entryAction?: ToolInvocation;
+  inTurnTool?: ToolInvocation;
+  subProtocol?: string | FsmSubProtocol;
+  transitions: StateTransition[];
+  slotsToCollect?: string[];
+}
+
 export interface CallFlowPlan {
   agentName: string;
   primaryGoal: string;
   script?: string;
-  steps?: CallFlowStep[];
+  steps?: CallFlowStep[]; // Legacy
+  fsmStates?: FsmStateNode[]; // New FSM structure
   emergencyTriggers: string[];
   outOfScopeTopics: string[];
   userDefinedSteps?: any[];
   entryRouting?: Array<{ trigger: string; goToStep: string | number }>;
-  silenceHandling?: { timeoutSeconds?: number; action?: string; maxReprompts?: number };
+
   interruptionPolicy?: string;
   digressionPolicy?: string;
   confirmationStyle?: string;

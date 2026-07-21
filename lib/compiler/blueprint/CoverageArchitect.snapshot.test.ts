@@ -43,18 +43,15 @@ const fixtures: Record<string, { spec: Partial<BusinessSpecification>; hist: Arr
 };
 
 const CALLFLOW = [
-  'Call Flow Skeleton (greeting, step sequence, branches, or template selection)',
-  'Opening Line / Greeting Script (exact opening phrasing)',
-  'Closing Line / Call Wrap-up Script (exact closing phrasing or N/A)',
-  'No-Input / Silence Handling (timeout seconds, reprompt action, or N/A)',
+  'Call Flow FSM Logic (states, extractions, conditional routing)',
+  'Greeting State (objective and pre-call data fetch tools)',
+  'Terminal States (closing objective and end_call tool)',
   'Interruption / Barge-in Behavior (allow interruption vs disallow, or N/A)',
   'Mid-Flow Digression Handling (answer off-script question then resume vs refuse, or N/A)',
   'Retry Exhaustion Fallback (action after max retries per slot e.g. transfer/hangup)',
   'Confirmation & Read-back Style (character-by-character vs summary, or N/A)',
 ];
 const MARKER = 'Additional In-Depth Operational Detail (interview in progress)';
-const DTMF = 'DTMF / Keypad Input Fallback (keypad entry fallback after speech recognition failure, or N/A)';
-const HOLIDAY = 'Holiday / Exception Hours (special closures, holiday schedules, or N/A)';
 const ENTRY = 'Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)';
 const INJECTION = 'Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)';
 const CONSENT = 'Consent & Compliance Disclosures (recording consent, AI identity disclosure, or N/A)';
@@ -64,7 +61,7 @@ const EXPECTED: Record<string, string[]> = {
   F1_empty: [
     'Company Name', 'Primary Agent Goal / Use Case',
     'Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)',
-    'Services Offered', 'Operating Hours',
+    'Services Offered',
     'Physical Location & Contact Info (address, phone number, or website)',
     'Staff & Practitioner Roster (names of doctors, specialists, or key departments)',
     'Key Business Policies / Rules (cancellation, fee, or refund details)',
@@ -73,13 +70,13 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, DTMF, HOLIDAY, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
   ],
   F2_rich: ['Physical Location & Contact Info (address, phone number, or website)', MARKER],
   F3_english_history: [
     'Primary Agent Goal / Use Case',
     'Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)',
-    ...CALLFLOW, VOICE, CONSENT, DTMF, HOLIDAY, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
   ],
   F4_hindi_history: [
     'Company Name', 'Primary Agent Goal / Use Case',
@@ -91,12 +88,12 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, DTMF, HOLIDAY, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
   ],
   F5_five_turns: [
     'Company Name', 'Primary Agent Goal / Use Case',
     'Primary Agent Language & Dialect (English, Hindi, Hinglish, or Multilingual)',
-    'Services Offered', 'Operating Hours',
+    'Services Offered',
     'Physical Location & Contact Info (address, phone number, or website)',
     'Staff & Practitioner Roster (names of doctors, specialists, or key departments)',
     'Key Business Policies / Rules (cancellation, fee, or refund details)',
@@ -105,7 +102,7 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, DTMF, HOLIDAY, ENTRY, INJECTION,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION,
   ],
   F6_partial_spec: [
     'Company Name', 'Primary Agent Goal / Use Case',
@@ -118,7 +115,7 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, DTMF, HOLIDAY, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
   ],
 };
 

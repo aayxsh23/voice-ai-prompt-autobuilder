@@ -1,4 +1,6 @@
 import { BusinessSpecification } from "@/lib/llm/types";
+import { WorkflowArchitect } from "@/lib/compiler/planners/WorkflowArchitect";
+import { ToolPlanner } from "@/lib/compiler/planners/ToolPlanner";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
 import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
 import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
@@ -235,7 +237,17 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     .filter((r: any) => r?.category === 'SPEAKABILITY' && r?.content)
     .map((r: any) => localizeRule(r.content))
     .join('\n\n');
-  const combinedSpeakability = [speakabilityRules, ...codeLevelSpeakability].filter(Boolean).join('\n\n');
+
+  // Inject FSM protocols via ToolPlanner
+  let fsmProtocols = '';
+  if (Array.isArray(spec?.callFlowPlan?.fsmStates)) {
+    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates);
+    if (protocols.length > 0) {
+      fsmProtocols = protocols.join('\n\n') + '\n\n';
+    }
+  }
+
+  const combinedSpeakability = [fsmProtocols, speakabilityRules, ...codeLevelSpeakability].filter(Boolean).join('\n\n');
   const speakabilityContent = combinedSpeakability || "No special speakability rules defined.";
 
   const guardrailRules = appliedRules
@@ -572,9 +584,12 @@ OFF-TOPIC REFUSAL PROTOCOL
     : `### ESCALATION & ROUTING MAP\nNo specific transfer numbers or departments configured. Address inquiries directly or offer a callback.`;
 
   // 7. DYNAMIC VARIABLES
+  const activeStates = (Array.isArray(spec?.callFlowPlan?.fsmStates) && spec!.callFlowPlan!.fsmStates.length > 0) 
+    ? spec!.callFlowPlan!.fsmStates 
+    : steps;
 
   const stepCollectedSlots = new Set<string>(
-    steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
+    activeStates.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [])
   );
 
   const allSlots = Array.from(new Set<string>([
@@ -631,10 +646,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   if (spec?.callFlowPlan?.digressionPolicy) {
     callFlowPolicies.push(`* **Mid-Flow Digression Handling:** ${spec.callFlowPlan.digressionPolicy}`);
   }
-  if (spec?.callFlowPlan?.silenceHandling) {
-    const sh = spec.callFlowPlan.silenceHandling;
-    callFlowPolicies.push(`* **No-Input / Silence Handling:** Timeout after ${sh.timeoutSeconds || 5} seconds. Action: ${sh.action || 'Reprompt caller'} (Max reprompts: ${sh.maxReprompts || 2}).`);
-  }
+
   if (spec?.callFlowPlan?.confirmationStyle) {
     callFlowPolicies.push(`* **Confirmation Read-back Style:** ${spec.callFlowPlan.confirmationStyle}`);
   }
@@ -660,57 +672,87 @@ OFF-TOPIC REFUSAL PROTOCOL
     return `Go to state [${target}]`;
   };
 
-  const flowContent = markdownScript
-    ? markdownScript
-    : (steps.length > 0
-      ? steps.map((step: any) => {
-        const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
-        const branchText = branches.length > 0
-          ? branches.map((b: any) => {
-              // A 'transfer' branch has no backing tool (transfer_call is not registered),
-              // so route it through the human-handoff path instead of naming a tool the
-              // platform cannot execute.
-              const dest = (b.goToStep === 'end_call' || b.action === 'end_call')
-                ? `Trigger ${buildToolInvocation('end_call', { reason: b.reason || 'completed' }, (spec?.tools || []) as any) || 'call termination'}`
-                : (b.goToStep === 'transfer' || b.action === 'transfer')
-                ? 'Hand off to a human per the ESCALATION & ROUTING MAP'
-                : resolveStateRef(b.goToStep);
-              return `  * If ${b.condition} -> ${dest}`;
-            }).join('\n')
-          : (() => {
-              const next = seqToState.get((step.sequenceOrder || 0) + 1);
-              return `  * On completion / confirmation -> ${next ? `Go to state [${next.stateId}]` : 'End the call'}`;
-            })();
+  function formatArgs(args: Record<string, any> = {}): string {
+    return Object.entries(args).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
+  }
 
-        const lines: string[] = [];
-        lines.push(`STATE: [${step?.stateId}] (${step?.stateName})`);
-        lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute state [${step?.stateId}]`}`);
-        if (Array.isArray(step?.slotsToCollect) && step.slotsToCollect.length > 0) {
-          const extractions = step.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
-          lines.push(`* **Required Extractions:** Extract and record ${extractions} from the caller's response.`);
+  let flowContent = "No structured call flow defined. Engage conversationally based on primary goal.";
+  
+  if (Array.isArray(spec?.callFlowPlan?.fsmStates) && spec.callFlowPlan.fsmStates.length > 0) {
+    flowContent = spec.callFlowPlan.fsmStates.map((state: any) => {
+      let block = `#### STATE: ${state.id}\n* **Objective:** ${state.objective}\n`;
+      if (Array.isArray(state.slotsToCollect) && state.slotsToCollect.length > 0) {
+        const extractions = state.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
+        block += `* **Required Extractions:** Extract and record ${extractions} from the caller's response.\n`;
+      }
+      if (state.entryAction) {
+        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${state.entryAction.tool}(${formatArgs(state.entryAction.args)})\`.`;
+        if (state.entryAction.speechPrompt) {
+          block += ` Then speak: "${state.entryAction.speechPrompt}"`;
         }
-        // Non-spoken handling notes. Kept distinct from the Dialogue Directive so the
-        // agent never reads an instruction aloud.
-        if (step?.behaviorDirective) {
-          lines.push(`* **Handling (do not say aloud):** ${step.behaviorDirective}`);
-        }
-        lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
-        lines.push(`* **Routing & Branches:**\n${branchText}`);
-        if (step?.fallbackBehavior) {
-          lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior} (Max retries: ${step?.maxRetries || 3})`);
-        }
-        if (step?.onFailure) {
-          lines.push(`* **Exhaustion / Failure Behavior:** On failure after ${step.onFailure?.afterRetries || step.maxRetries || 3} retries -> Action: ${step.onFailure?.action || 'Transfer/Hangup'}${step.onFailure?.target ? ` to ${step.onFailure.target}` : ''}${step.onFailure?.fallbackLine ? ` (Say: "${step.onFailure.fallbackLine}")` : ''}`);
-        }
-        if (step?.confirmationRequired) {
-          lines.push(`* **Confirmation Rule:** MUST read back collected slot explicitly and obtain verbal confirmation before advancing.`);
-        }
-        if (step?.digressionAllowed !== undefined) {
-          lines.push(`* **Mid-Flow Digression:** ${step.digressionAllowed ? "Allowed. Answer off-topic question briefly using FAQ/Knowledge Base and return to this step immediately." : "Strictly disallowed. Politely decline off-topic questions and re-prompt for required extractions."}`);
-        }
-        return lines.join('\n');
-      }).join('\n\n---\n\n')
-    : "No structured call flow defined. Engage conversationally based on primary goal.");
+        block += `\n`;
+      } else if (state.speechPrompt) {
+        block += `* **Agent Speech:** ${state.speechPrompt}\n`;
+      }
+      if (state.inTurnTool) {
+        block += `* **If user provides input:** Invoke \`${state.inTurnTool.tool}(${formatArgs(state.inTurnTool.args)})\` in the same turn.\n`;
+      }
+      
+      const transitions = Array.isArray(state.transitions) ? state.transitions : [];
+      if (transitions.length > 0) {
+        block += `\n#### ROUTING LOGIC (based strictly on tool output):\n`;
+        transitions.forEach((t: any, index: number) => {
+          block += `* **Condition ${index + 1}** \`${t.condition}\`: ${t.action ? t.action + ' -> ' : ''}${t.speechPrompt ? `Say: "${t.speechPrompt}" -> ` : ''}${t.nextState ? 'Go to ' + t.nextState : ''}\n`;
+        });
+      }
+      return block.trim();
+    }).join('\n\n---\n\n');
+  } else if (markdownScript) {
+    flowContent = markdownScript;
+  } else if (steps.length > 0) {
+    flowContent = steps.map((step: any) => {
+      const branches = Array.isArray(step?.branchingConditions) ? step.branchingConditions : [];
+      const branchText = branches.length > 0
+        ? branches.map((b: any) => {
+            const dest = (b.goToStep === 'end_call' || b.action === 'end_call')
+              ? `Trigger ${buildToolInvocation('end_call', { reason: b.reason || 'completed' }, (spec?.tools || []) as any) || 'call termination'}`
+              : (b.goToStep === 'transfer' || b.action === 'transfer')
+              ? 'Hand off to a human per the ESCALATION & ROUTING MAP'
+              : resolveStateRef(b.goToStep);
+            return `  * If ${b.condition} -> ${dest}`;
+          }).join('\n')
+        : (() => {
+            const next = seqToState.get((step.sequenceOrder || 0) + 1);
+            return `  * On completion / confirmation -> ${next ? `Go to state [${next.stateId}]` : 'End the call'}`;
+          })();
+
+      const lines: string[] = [];
+      lines.push(`STATE: [${step?.stateId}] (${step?.stateName})`);
+      lines.push(`* **Objective:** ${step?.objective || step?.stateName || `Execute state [${step?.stateId}]`}`);
+      if (Array.isArray(step?.slotsToCollect) && step.slotsToCollect.length > 0) {
+        const extractions = step.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
+        lines.push(`* **Required Extractions:** Extract and record ${extractions} from the caller's response.`);
+      }
+      if (step?.behaviorDirective) {
+        lines.push(`* **Handling (do not say aloud):** ${step.behaviorDirective}`);
+      }
+      lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
+      lines.push(`* **Routing & Branches:**\n${branchText}`);
+      if (step?.fallbackBehavior) {
+        lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior} (Max retries: ${step?.maxRetries || 3})`);
+      }
+      if (step?.onFailure) {
+        lines.push(`* **Exhaustion / Failure Behavior:** On failure after ${step.onFailure?.afterRetries || step.maxRetries || 3} retries -> Action: ${step.onFailure?.action || 'Transfer/Hangup'}${step.onFailure?.target ? ` to ${step.onFailure.target}` : ''}${step.onFailure?.fallbackLine ? ` (Say: "${step.onFailure.fallbackLine}")` : ''}`);
+      }
+      if (step?.confirmationRequired) {
+        lines.push(`* **Confirmation Rule:** MUST read back collected slot explicitly and obtain verbal confirmation before advancing.`);
+      }
+      if (step?.digressionAllowed !== undefined) {
+        lines.push(`* **Mid-Flow Digression:** ${step.digressionAllowed ? "Allowed. Answer off-topic question briefly using FAQ/Knowledge Base and return to this step immediately." : "Strictly disallowed. Politely decline off-topic questions and re-prompt for required extractions."}`);
+      }
+      return lines.join('\n');
+    }).join('\n\n---\n\n');
+  }
   const flow = `### CALL FLOW\n${callFlowPolicyHeader}${flowContent}`;
 
   // 9. FAQS — context-driven, not an exhaustive scripted dump. Give the agent a

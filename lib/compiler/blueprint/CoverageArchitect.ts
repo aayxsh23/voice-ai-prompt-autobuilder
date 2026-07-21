@@ -180,7 +180,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "call_flow_skeleton", label: "Call Flow Skeleton (greeting, step sequence, branches, or template selection)", group: "callflow",
+    id: "call_flow_skeleton", label: "Call Flow FSM Logic (states, extractions, conditional routing)", group: "callflow",
     missing: (c) => !(
       c.callFlowSteps.length > 0 ||
       /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
@@ -189,7 +189,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "opening_phrase", label: "Opening Line / Greeting Script (exact opening phrasing)", group: "callflow",
+    id: "opening_phrase", label: "Greeting State (objective and pre-call data fetch tools)", group: "callflow",
     missing: (c) => !(
       !!c.meta.openingPhrase ||
       /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with)\b/i.test(c.fullUserText) ||
@@ -198,7 +198,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "closing_script", label: "Closing Line / Call Wrap-up Script (exact closing phrasing or N/A)", group: "callflow",
+    id: "closing_script", label: "Terminal States (closing objective and end_call tool)", group: "callflow",
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.closingScript ||
       /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a)\b/i.test(c.fullUserText) ||
@@ -206,15 +206,7 @@ const COVERAGE_RULES: CoverageRule[] = [
       c.capturedHas("closing", "wrap", "goodbye", "end_call")
     ),
   },
-  {
-    id: "silence", label: "No-Input / Silence Handling (what the agent should say to reprompt after silence, or N/A)", group: "callflow",
-    missing: (c) => !(
-      !!c.spec?.callFlowPlan?.silenceHandling ||
-      /\b(silence|no input|no-input|doesn't answer|quiet|reprompt|re-prompt|if caller says nothing|say nothing|when silent|no response|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("silence", "no_input", "no-input", "reprompt") ||
-      c.capturedHas("silence", "no_input", "no-input", "reprompt")
-    ),
-  },
+
   {
     id: "interruption", label: "Interruption / Barge-in Behavior (allow interruption vs disallow, or N/A)", group: "callflow",
     missing: (c) => !(
@@ -549,7 +541,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
 
     let activeTopicGroup = "Call Flow Design & Conversational Mechanics";
     let targetFields = topicCallFlowFields.length > 0 ? topicCallFlowFields : missingFields;
-    let topicInstruction = `We are designing the conversational call flow and dialogue mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow Skeleton, offer them a standard industry 5-step template vs building from scratch. If asking about Interruption/Digression or Silence Handling, ask directly what the agent should do when interrupted, off-script, or met with silence.`;
+    let topicInstruction = `We are designing the Finite State Machine (FSM) call flow logic and conversational mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow FSM Logic, ask about the sequence of states, which exact data fields need to be extracted at each step, and any conditional routing (e.g., 'if X, go to state Y'). Do NOT ask them to write the exact sentences or dialogue the bot should speak, as our system synthesizes that automatically from the state machine rules. If asking about Interruption or Digression Handling, ask directly what the agent should do when interrupted or off-script.`;
 
     if (missingFields.includes(LANGUAGE_FIELD_LABEL)) {
       activeTopicGroup = "Identity, Language & Location";

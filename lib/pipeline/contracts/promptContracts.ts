@@ -80,8 +80,9 @@ const stageCoverage: Contract = {
     // "crossSellPitch" all match regardless of how the planner spelled the state.
     const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     const flowNorm = norm(callFlowBlock(prompt));
-    const stepTokens = (spec.callFlowPlan?.steps || []).map(s =>
-      norm(`${s.stateId || ''} ${s.stateName || ''} ${s.objective || ''}`));
+    const activeStates = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
+    const stepTokens = activeStates.map(s =>
+      norm(`${(s as any).id || (s as any).stateId || ''} ${(s as any).objective || (s as any).stateName || ''}`));
     return stages
       .filter(stage => {
         const token = norm(stage?.id || '');
@@ -109,8 +110,8 @@ const dialogueQuality: Contract = {
     // identifiers spoken in their de-underscored form ("caller intent"), which the
     // regex alone cannot see.
     internalTerms: [
-      ...(spec.callFlowPlan?.steps || []).flatMap(s => [
-        s.stateId || '',
+      ...((spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || []) as any[]).flatMap(s => [
+        s.id || s.stateId || '',
         ...(Array.isArray(s.slotsToCollect) ? s.slotsToCollect : []),
       ]),
       ...((spec.callFlowPlan as { requiredStages?: Array<{ id: string; label?: string }> } | undefined)?.requiredStages || [])
@@ -134,9 +135,10 @@ const placeholdersDeclared: Contract = {
   description: 'No undeclared {{placeholder}} appears in the prompt.',
   check: ({ prompt, spec }) => {
     const declared = new Set((spec.dynamicVariables || []).map(v => v.key).filter(Boolean));
+    const implicit = new Set(['current_day', 'current_date', 'current_time']);
     const used = new Set(Array.from(prompt.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g)).map(m => m[1]));
     return Array.from(used)
-      .filter(k => !declared.has(k))
+      .filter(k => !declared.has(k) && !implicit.has(k))
       .map(k => ({
         contract: 'placeholders_declared',
         severity: 'major' as const,
@@ -157,7 +159,6 @@ const policiesRendered: Contract = {
     const plan = spec.callFlowPlan;
     if (!plan) return [];
     const declared: Array<[string, unknown]> = [
-      ['silence handling', plan.silenceHandling],
       ['interruption policy', plan.interruptionPolicy],
       ['digression policy', plan.digressionPolicy],
       ['confirmation style', plan.confirmationStyle],
@@ -461,8 +462,8 @@ const sensitiveCaptureProhibited: Contract = {
     const prohibitions = collectProhibitions(spec, transcript);
     if (!prohibitions.some(p => /\b(payment|otp|bank|credit\s*card|debit\s*card|pii|national\s*id|qid|ssn|social\s*security|cvv)\b/i.test(p))) return [];
     const SENSITIVE = /(otp|cvv|card_number|credit_card|debit_card|bank_account|national_id|ssn|qid|passport)/i;
-    return (spec.callFlowPlan?.steps || [])
-      .flatMap(s => (Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []).map(slot => ({ slot, stateId: s.stateId })))
+    return ((spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || []) as any[])
+      .flatMap(s => (Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []).map((slot: any) => ({ slot, stateId: s.id || s.stateId })))
       .filter(({ slot }) => SENSITIVE.test(String(slot)))
       .map(({ slot, stateId }) => ({
         contract: 'sensitive_capture_prohibited', severity: 'critical' as const, category: 'incorrect' as const,
@@ -479,12 +480,12 @@ const noDuplicateStates: Contract = {
   id: 'no_duplicate_states',
   description: 'No two states share a canonical ID.',
   check: ({ spec }) => {
-    const steps = spec.callFlowPlan?.steps || [];
+    const steps = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
     const canonical = (id: string) => (id || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     const seen = new Set<string>();
     const dupes = new Set<string>();
-    for (const s of steps) {
-      const core = canonical(s.stateId);
+    for (const s of (steps as any[])) {
+      const core = canonical(s.id || s.stateId);
       if (seen.has(core)) dupes.add(core);
       seen.add(core);
     }
@@ -503,41 +504,41 @@ const forwardRouting: Contract = {
   id: 'forward_routing',
   description: 'All state routing is forward, except the sanctioned readback back-edge.',
   check: ({ spec }) => {
-    const steps = spec.callFlowPlan?.steps || [];
+    const steps = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
     if (steps.length === 0) return [];
     
-    const stateIds = steps.map((s: any) => s.stateId);
-    const seqMap = new Map(steps.map((s: any) => [s.stateId, s.sequenceOrder]));
-    const firstCaptureId = steps.find((s: any) => s.slotsToCollect?.length > 0)?.stateId || steps[1]?.stateId || steps[0]?.stateId;
+    const stateIds = (steps as any[]).map((s: any) => s.id || s.stateId);
+    const seqMap = new Map((steps as any[]).map((s: any, idx: number) => [s.id || s.stateId, s.sequenceOrder || idx]));
+    const firstCaptureId = (steps as any[]).find((s: any) => s.slotsToCollect?.length > 0)?.id || (steps as any[])[1]?.id || (steps as any[])[0]?.id;
 
     const violations: ContractViolation[] = [];
     
-    for (const step of steps) {
-      const branches = Array.isArray(step.branchingConditions) ? step.branchingConditions : [];
+    for (const step of (steps as any[])) {
+      const branches = Array.isArray(step.transitions) ? step.transitions : (Array.isArray(step.branchingConditions) ? step.branchingConditions : []);
       for (const branch of branches) {
-        const target = branch.goToStep;
+        const target = branch.nextState || branch.goToStep;
         if (!target || target === 'end_call' || target === 'transfer' || (branch as any).action === 'end_call' || (branch as any).action === 'transfer') continue;
         
-        let targetId = typeof target === 'string' ? target : steps.find((s: any) => s.sequenceOrder === target)?.stateId;
+        let targetId = typeof target === 'string' ? target : (steps as any[]).find((s: any) => s.sequenceOrder === target)?.id;
         
         if (!targetId || !stateIds.includes(targetId)) {
           violations.push({
             contract: 'forward_routing',
             severity: 'critical' as const,
             category: 'incorrect' as const,
-            description: `State "${step.stateId}" routes to a non-existent state "${target}".`,
-            whereInPrompt: `state [${step.stateId}]`,
+            description: `State "${step.id || step.stateId}" routes to a non-existent state "${target}".`,
+            whereInPrompt: `state [${step.id || step.stateId}]`,
             suggestedFix: 'Ensure branch targets an existing stateId.',
           });
           continue;
         }
 
-        const sourceSeq = seqMap.get(step.stateId) || 0;
+        const sourceSeq = seqMap.get(step.id || step.stateId) || 0;
         const targetSeq = seqMap.get(targetId) || 0;
 
         if (targetSeq <= sourceSeq) {
           // Backward routing check. Only allow readback to modify.
-          const isReadback = /confirm|readback/i.test(step.stateId || '');
+          const isReadback = /confirm|readback/i.test(step.id || step.stateId || '');
           const isModifyEdge = isReadback && targetId === firstCaptureId;
           
           if (!isModifyEdge) {
@@ -545,8 +546,8 @@ const forwardRouting: Contract = {
               contract: 'forward_routing',
               severity: 'critical' as const,
               category: 'incorrect' as const,
-              description: `State "${step.stateId}" routes backward to "${targetId}" which is not the sanctioned readback modification edge.`,
-              whereInPrompt: `state [${step.stateId}]`,
+              description: `State "${step.id || step.stateId}" routes backward to "${targetId}" which is not the sanctioned readback modification edge.`,
+              whereInPrompt: `state [${step.id || step.stateId}]`,
               suggestedFix: 'Flow must be linear. Remove backward routing loops.',
             });
           }
@@ -561,7 +562,7 @@ const flowBounded: Contract = {
   id: 'flow_bounded',
   description: 'State machine has no more than 12 states.',
   check: ({ spec }) => {
-    const steps = spec.callFlowPlan?.steps || [];
+    const steps = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
     if (steps.length > 12) {
       return [{
         contract: 'flow_bounded',
