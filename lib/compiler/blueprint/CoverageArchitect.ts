@@ -75,11 +75,16 @@ const COVERAGE_RULES: CoverageRule[] = [
     id: "company_name", label: "Company Name", group: "identity",
     missing: (c) =>
       (!c.companyStr || c.companyStr === "Enterprise Client" || c.companyStr.trim() === "") &&
-      !/\b(called|named|clinic is|dentistry|company|business is)\s+([A-Z][a-zA-Z\s]+)/i.test(c.fullUserText),
+      !/\b(called|named|clinic is|dentistry|company|business is)\s+([A-Z][a-zA-Z\s]+)/i.test(c.fullUserText) &&
+      !c.resolvedHas("company", "business", "name") &&
+      !c.capturedHas("company", "business", "name"),
   },
   {
     id: "primary_goal", label: "Primary Agent Goal / Use Case", group: "identity",
-    missing: (c) => !c.goalStr || c.goalStr === "Assist callers effectively" || c.goalStr.trim().length < 15,
+    missing: (c) => 
+      (!c.goalStr || c.goalStr === "Assist callers effectively" || c.goalStr.trim().length < 15) &&
+      !c.resolvedHas("goal", "purpose", "objective", "use_case") &&
+      !c.capturedHas("goal", "purpose", "objective", "use_case"),
   },
   {
     id: "language", label: LANGUAGE_FIELD_LABEL, group: "identity",
@@ -530,7 +535,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
 
     let activeTopicGroup = "Call Flow Design & Conversational Mechanics";
     let targetFields = topicCallFlowFields.length > 0 ? topicCallFlowFields : missingFields;
-    let topicInstruction = `We are designing the Finite State Machine (FSM) call flow logic and conversational mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow FSM Logic, you MUST PROPOSE a sequence of states, exact data fields to extract at each step, and conditional routing (e.g. 'if X, go to state Y') based on the user's business goal and industry. DO NOT ask the user to design the state machine from scratch. Present your proposed flow and ask if they approve or want to make changes. Do NOT ask them to write the exact sentences or dialogue the bot should speak, as our system synthesizes that automatically from the state machine rules. If asking about Interruption or Digression Handling, ask directly what the agent should do when interrupted or off-script.`;
+    let topicInstruction = `We are designing the Finite State Machine (FSM) call flow logic and conversational mechanics for ${vertical}. Specifically, ask a guided question targeting: ${targetFields[0]}. If asking about Call Flow FSM Logic, ask the user to outline their step-by-step call flow or state machine. Tell them they can provide their own detailed sequence (like Step 1, Step 2, branching, etc.), or if they prefer, you can propose a standard one based on their industry. Do NOT ask them to write the exact sentences or dialogue the bot should speak, as our system synthesizes that automatically from the state machine rules. If asking about Interruption or Digression Handling, ask directly what the agent should do when interrupted or off-script.`;
 
     if (missingFields.includes(LANGUAGE_FIELD_LABEL)) {
       activeTopicGroup = "Identity, Language & Location";
@@ -539,7 +544,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
     } else if (topic1Fields.length > 0) {
       activeTopicGroup = "Identity, Language & Location";
       targetFields = topic1Fields;
-      topicInstruction = `We are exploring foundational identity, language, and location details: collecting the official clinic/business name, physical location/contact info (address, phone number, website), or the primary language/dialect the agent should speak (e.g., English, Hindi, Hinglish, or multilingual). Do NOT ask about hours, services, policies, or call flow yet. Formulate a friendly, conversational question targeting: ${topic1Fields[0]}.`;
+      topicInstruction = `Ask a guided, conversational question to find out the following missing information: ${targetFields[0]}. Focus ONLY on this specific detail and do not ask about anything else.`;
     } else if (topic2Fields.length > 0) {
       activeTopicGroup = "Schedule & Team Setup";
       targetFields = topic2Fields;
