@@ -181,6 +181,40 @@ Generate the strict JSON array of FSM state nodes now.`;
 
       let nodes = parsed;
 
+      // Safety net: collapse bloated error/silence states into their parent
+      const toRemove = new Set<string>();
+      nodes.forEach((node: any) => {
+        if ((!node.slotsToCollect || node.slotsToCollect.length === 0) && /rephrase|retry|clarify|silence|error/i.test(node.id + " " + node.objective)) {
+          const parents = nodes.filter((p: any) => p.edges?.some((e: any) => e.targetStateId === node.id));
+          if (parents.length === 1) {
+            const parent = parents[0];
+            toRemove.add(node.id);
+            if (!parent.subLoop) {
+              parent.subLoop = { selfLoop: true, triggerCondition: "Error/Silence/Clarification" };
+            }
+            parent.edges = parent.edges.filter((e: any) => e.targetStateId !== node.id);
+          }
+        }
+      });
+      nodes = nodes.filter((n: any) => !toRemove.has(n.id));
+
+      // Infields propagation: append unreferenced infields to the first state
+      const declaredInfields = infieldsList.map((v: any) => v.key).filter(Boolean);
+      for (const key of declaredInfields) {
+        const isReferenced = nodes.some((node: any) => {
+          const str = JSON.stringify({
+            objective: node.objective,
+            speechPrompt: node.speechPrompt,
+            slotsToCollect: node.slotsToCollect,
+          });
+          return str.includes(key);
+        });
+        if (!isReferenced && nodes.length > 0) {
+          nodes[0].notes = nodes[0].notes || [];
+          nodes[0].notes.push(`Personalize using {{${key}}}`);
+        }
+      }
+
       // Post-processing and sanitization
       nodes.forEach((node: any) => {
         if (!node.id) node.id = `state_${Math.random().toString(36).substr(2, 6)}`;

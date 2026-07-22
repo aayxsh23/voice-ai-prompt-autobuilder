@@ -35,40 +35,47 @@ export class ToolPlanner {
       const req = required.has(name) ? '' : ' (optional)';
       return `${name}: ${type}${req}${desc}`;
     });
-    return `\`${tool.name}(${params.join(', ')})\` — ${tool.description}`;
+    let desc = `\`${tool.name}(${params.join(', ')})\` — ${tool.description}`;
+    if (tool.usageProtocol) {
+      desc += `\n*(See CALL FLOW protocol for exact usage rules)*`;
+    }
+    return desc;
   }
 
   /**
    * Extracts robust numeric/email capture protocols to be placed in the prompt.
    */
-  public static resolveProtocols(fsmStates: FsmStateNode[]): string[] {
+  public static resolveProtocols(fsmStates: FsmStateNode[], tools: ToolDefinition[] = []): string[] {
     const protocols = new Set<string>();
+    const activeTools = new Set<string>();
+
     for (const state of fsmStates) {
-      if (state.inTurnTool?.tool === 'validate_digit_input' || state.entryAction?.tool === 'validate_digit_input') {
-        const expected = state.inTurnTool?.args?.expected_digits || state.entryAction?.args?.expected_digits || 'X';
-        const field = state.inTurnTool?.args?.field || state.entryAction?.args?.field || 'unknown';
-        const protocol = `#### NUMERIC CAPTURE PROTOCOL — field="${field}", expected_digits=${expected}
-This protocol governs EVERY turn while ${field} is being collected. Do not improvise.
-
-**RULE 1 — Mandatory Tool-Call Gate:**
-While active, a \`[RUNTIME DIGIT BUFFER]\` system note appears. You MUST execute \`validate_digit_input\` BEFORE generating any spoken response. Map the unmodified user utterance to \`user_text\` and buffer digits to \`previously_collected\`.
-
-**RULE 2 — Response Routing (based strictly on tool output):**
-* **Condition A (Partial Input) \`digits_remaining > 0\`:** Speak ONLY the \`latest_spoken\` digits. NEVER add conversational filler.
-* **Condition B (Complete) \`valid=true\`, \`remaining=0\`:** Instantly read back the complete number using the \`spoken_digits\` tool output.
-* **Condition C (Too Many Digits) \`too_many=true\`:** Inform the user there are too many digits and ask them to start over.
-* **Condition D (No Digits / Error):** Ask the user to repeat the digits clearly.
-
-**RULE 3 — Premature Confirmation Guard:**
-If user says "Yes" / "done" WHILE tool state shows \`digits_remaining > 0\`: Do NOT advance. Respond by asking for the remaining digits.
-
-**RULE 4 — Final Confirmation & Exit:**
-* **User confirms AND \`valid=true\`:** Invoke \`set_capture_mode(keep_buffer=false)\` -> Route to next state.
-* **User rejects:** Buffer auto-clears. Invoke \`set_capture_mode(keep_buffer=true, mode="digits", field="${field}", expected_digits=${expected})\` and ask to restart.
-* **Awaiting-Confirmation Shadow State:** Buffer shows \`status=awaiting_confirmation\`. Number is already complete. Do NOT read back again.`;
-        protocols.add(protocol);
+      if (state.inTurnTool) activeTools.add(state.inTurnTool.tool);
+      if (state.entryAction) activeTools.add(state.entryAction.tool);
+      
+      // Implicit tools
+      if (state.terminal || state.id === 'end_call' || state.id === 'resolution' || state.edges?.some(e => e.targetStateId === 'end_call' || e.action === 'end_call' || !e.targetStateId)) {
+        activeTools.add('end_call');
+      }
+      
+      const slots = state.slotsToCollect || [];
+      if (slots.some(s => /phone|mobile|whatsapp|pin|otp|passcode/i.test(s))) {
+        activeTools.add('validate_digit_input');
+        activeTools.add('set_capture_mode');
+      }
+      if (slots.some(s => /email/i.test(s))) {
+        activeTools.add('set_capture_mode');
+        const emailToolName = tools.find(t => t.name.startsWith('format_email_'))?.name || 'format_email_for_voice';
+        activeTools.add(emailToolName);
       }
     }
+
+    for (const tool of tools) {
+      if (activeTools.has(tool.name) && tool.usageProtocol) {
+        protocols.add(tool.usageProtocol);
+      }
+    }
+
     return Array.from(protocols);
   }
 }

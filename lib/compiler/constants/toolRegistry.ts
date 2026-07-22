@@ -18,6 +18,7 @@ export interface ToolDefinition {
     required?: string[];
   };
   associatedStateId?: string;
+  usageProtocol?: string;
 }
 
 export const SYSTEM_RUNTIME_TOOLS: ToolDefinition[] = [
@@ -61,7 +62,9 @@ export const SYSTEM_RUNTIME_TOOLS: ToolDefinition[] = [
       },
       required: []
     },
-    associatedStateId: "resolution"
+    associatedStateId: "resolution",
+    usageProtocol: `#### CALL TERMINATION PROTOCOL (end_call)
+When the conversation reaches a terminal state or the user asks to disconnect, you MUST invoke the \`end_call\` tool synchronously in the EXACT SAME turn as your closing phrase. Do not wait for the user to respond to your goodbye.`
   }
 ];
 
@@ -76,7 +79,9 @@ export function getEmailTool(toneProfile?: string[]): ToolDefinition {
         properties: { email_text: { type: "string", description: "Email ID as heard from the customer." } },
         required: ["email_text"]
       },
-      associatedStateId: "global_runtime"
+      associatedStateId: "global_runtime",
+      usageProtocol: `#### EMAIL NORMALIZATION PROTOCOL (format_email)
+When collecting an email address, always pass the user's raw utterance into the email formatting tool. Read back the exact \`spoken_email\` string returned by the tool for confirmation. Do not attempt to spell out or format the email manually.`
     };
   }
   return {
@@ -87,7 +92,9 @@ export function getEmailTool(toneProfile?: string[]): ToolDefinition {
       properties: { email_text: { type: "string", description: "Email ID as heard from the customer." } },
       required: ["email_text"]
     },
-    associatedStateId: "global_runtime"
+    associatedStateId: "global_runtime",
+    usageProtocol: `#### EMAIL NORMALIZATION PROTOCOL (format_email)
+When collecting an email address, always pass the user's raw utterance into the email formatting tool. Read back the exact \`spoken_email\` string returned by the tool for confirmation. Do not attempt to spell out or format the email manually.`
   };
 }
 

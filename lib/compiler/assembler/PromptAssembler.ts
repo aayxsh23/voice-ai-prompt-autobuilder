@@ -240,7 +240,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   // Inject FSM protocols via ToolPlanner
   let fsmProtocols = '';
   if (Array.isArray(spec?.callFlowPlan?.fsmStates)) {
-    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates);
+    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates, spec.tools as any);
     if (protocols.length > 0) {
       fsmProtocols = protocols.join('\n\n') + '\n\n';
     }
@@ -690,6 +690,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   if (Array.isArray(spec?.callFlowPlan?.fsmStates) && spec.callFlowPlan.fsmStates.length > 0) {
     flowContent = spec.callFlowPlan.fsmStates.map((state: any) => {
       let block = `#### STATE: ${state.id}\n* **Objective:** ${state.objective}\n`;
+      block += `* **Say:** ${state.speechPrompt ? `"${state.speechPrompt}"` : "(Generate based on objective)"}\n`;
       if (Array.isArray(state.slotsToCollect) && state.slotsToCollect.length > 0) {
         const extractions = state.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
         block += `* **Required Extractions:** Extract and record ${extractions} from the caller's response.\n`;
@@ -714,8 +715,8 @@ OFF-TOPIC REFUSAL PROTOCOL
       // Strictly render retry count ONLY if it exists (no default || 3)
       if (state.retryPolicy?.maxAttempts !== undefined) {
           block += `- Max Retries: ${state.retryPolicy.maxAttempts}\n`;
-          if (state.retryPolicy.onExhausted?.nextState) {
-              block += `  - On Exhausted: Route to ${state.retryPolicy.onExhausted.nextState}\n`;
+          if (state.retryPolicy.onExhausted?.targetStateId) {
+              block += `  - On Exhausted: Route to ${state.retryPolicy.onExhausted.targetStateId}\n`;
           }
       }
 
