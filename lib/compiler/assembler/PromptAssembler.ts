@@ -516,7 +516,7 @@ VOICE RULES
 - Avoid long explanations or verbal lists.
 - Use natural acknowledgements only, like "okay", "got it", "understood".
 - Never end mid-sentence.
-- If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate.
+${policy.mayUseHindi ? "- If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate." : ""}
 
 ${speakabilityContent}${hindiSpeakability ? `\n\n${hindiSpeakability}` : ''}
 

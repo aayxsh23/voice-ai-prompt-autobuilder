@@ -163,7 +163,7 @@ Ensure you return valid JSON with no markdown fences.`;
     let updatedSpec: Partial<BusinessSpecification> = { ...existingSpec };
     try {
       const llmResponse = await geminiClient.generate({
-        systemInstruction: "You are a pure JSON data extraction service. Output ONLY valid JSON.",
+        systemInstruction: "You are a pure JSON data extraction service. Output ONLY valid JSON. Never ask the user about tools, function calls, APIs, or how backend/CRM data is fetched — assume infields exist and telephony tools are added automatically.",
         prompt: patchPrompt
       });
       const patch = safeParseJson(llmResponse.text, {}) as Record<string, Record<string, unknown>>;

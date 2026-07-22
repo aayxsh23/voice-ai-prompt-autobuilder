@@ -284,6 +284,79 @@ export interface BuilderChatTurnResponse {
   missingDetails: string[];
 }
 
+/**
+ * String-aware balanced-brace scanner. Finds the first top-level JSON object/array
+ * that ends at a genuine closing brace (not one inside a string literal).
+ *
+ * The old `substring(firstBrace, lastBrace)` fallback was defeated when a payload
+ * had large string values that themselves contained braces (e.g. a Markdown `script`
+ * field with `{...}` inside), because it cut on the last brace anywhere — including
+ * one inside a string.
+ */
+function extractBalancedJson(src: string): string | null {
+  const openers: Array<'{' | '['> = [];
+  const matches: Record<'{' | '[', '}' | ']'> = { '{': '}', '[': ']' };
+  let start = -1;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') { inString = true; continue; }
+    if (ch === '{' || ch === '[') {
+      if (openers.length === 0) start = i;
+      openers.push(ch);
+      continue;
+    }
+    if (ch === '}' || ch === ']') {
+      const opener = openers.pop();
+      if (!opener || matches[opener] !== ch) return null; // malformed
+      if (openers.length === 0 && start !== -1) return src.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Light JSON repair pass: escape raw newlines/tabs/carriage-returns inside string
+ * literals (LLMs frequently emit multi-line string values unescaped), strip trailing
+ * commas before `}` / `]`. Not a full parser — just the two failure modes seen in
+ * practice.
+ */
+function repairJsonLite(src: string): string {
+  let out = '';
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inString) {
+      if (escape) { out += ch; escape = false; continue; }
+      if (ch === '\\') { out += ch; escape = true; continue; }
+      if (ch === '"') { out += ch; inString = false; continue; }
+      if (ch === '\n') { out += '\\n'; continue; }
+      if (ch === '\r') { out += '\\r'; continue; }
+      if (ch === '\t') { out += '\\t'; continue; }
+      out += ch;
+      continue;
+    }
+    if (ch === '"') { out += ch; inString = true; continue; }
+    if (ch === ',') {
+      // Skip trailing commas before `}` or `]` (whitespace tolerated).
+      let j = i + 1;
+      while (j < src.length && /\s/.test(src[j])) j++;
+      if (src[j] === '}' || src[j] === ']') continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 export function safeParseJson<T>(raw: string, fallback: T): T {
   const cleanedRaw = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
   try {
@@ -300,22 +373,16 @@ export function safeParseJson<T>(raw: string, fallback: T): T {
     cleaned = cleaned.trim();
     return JSON.parse(cleaned) as T;
   } catch (error) {
-    try {
-      // Find the outermost {...} or [...] block
-      const firstObj = cleanedRaw.indexOf('{');
-      const lastObj = cleanedRaw.lastIndexOf('}');
-      const firstArr = cleanedRaw.indexOf('[');
-      const lastArr = cleanedRaw.lastIndexOf(']');
-      
-      if (firstObj !== -1 && lastObj !== -1 && (firstArr === -1 || firstObj < firstArr)) {
-        return JSON.parse(cleanedRaw.substring(firstObj, lastObj + 1)) as T;
-      }
-      if (firstArr !== -1 && lastArr !== -1) {
-        return JSON.parse(cleanedRaw.substring(firstArr, lastArr + 1)) as T;
-      }
-    } catch (e2) {
-      // Ignore fallback extraction errors
+    // 1) String-aware balanced-brace extraction.
+    const extracted = extractBalancedJson(cleanedRaw);
+    if (extracted !== null) {
+      try { return JSON.parse(extracted) as T; } catch {}
+      // 2) Light repair on the extracted region.
+      try { return JSON.parse(repairJsonLite(extracted)) as T; } catch {}
     }
+    // 3) Light repair over the whole payload as a final attempt.
+    try { return JSON.parse(repairJsonLite(cleanedRaw)) as T; } catch {}
+
     if (process.env.NODE_ENV !== 'production') {
       console.warn('safeParseJson failed, returning fallback:', error);
     }

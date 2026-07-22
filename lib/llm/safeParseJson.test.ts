@@ -21,4 +21,25 @@ describe('safeParseJson', () => {
   it('returns the fallback on unparseable input', () => {
     expect(safeParseJson('not json at all', { ok: false })).toEqual({ ok: false });
   });
+
+  // The old brace-substring fallback cut on the LAST brace anywhere — including one
+  // inside a string value — so payloads whose string values contained `{`/`}` (like
+  // a Markdown "script" field) parsed as garbage or fell through to fallback.
+  it('handles JSON whose string values contain braces (string-aware extraction)', () => {
+    const raw = 'preamble {"script":"say: {greet} then {ask}", "n":1} tail';
+    expect(safeParseJson<{ script: string; n: number }>(raw, { script: '', n: 0 }))
+      .toEqual({ script: 'say: {greet} then {ask}', n: 1 });
+  });
+
+  // LLMs often emit raw newlines inside string values. Repair pass escapes them.
+  it('repairs unescaped newlines inside string values', () => {
+    const raw = '{"script":"line one\nline two", "n":2}';
+    expect(safeParseJson<{ script: string; n: number }>(raw, { script: '', n: 0 }))
+      .toEqual({ script: 'line one\nline two', n: 2 });
+  });
+
+  it('repairs trailing commas', () => {
+    expect(safeParseJson('{"a":1,"b":2,}', {})).toEqual({ a: 1, b: 2 });
+    expect(safeParseJson('[1,2,3,]', [])).toEqual([1, 2, 3]);
+  });
 });

@@ -147,7 +147,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "infields", label: "Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)", group: "services",
+    id: "infields", label: "What the system already knows about the caller before the call", group: "services",
     missing: (c) => !(
       (!!c.spec?.dynamicVariables && c.spec.dynamicVariables.length > 0) ||
       /\b(infield|infields|pre-call|pre call|crm variable|crm data|before the call|already know|caller_name|is_business_owner|lead_source|no infield|no infields|zero infield|none required|no pre-call|no pre call|only company name|just company name|only company|just company|no just|only variable|no other variable|no other variables|just variable|any variable|pass along|we will pass|system will pass|out of scope|not required|no CRM|no variables|only pass|just pass)\b/i.test(c.fullUserText) ||
@@ -186,7 +186,7 @@ const COVERAGE_RULES: CoverageRule[] = [
   },
 
   {
-    id: "opening_phrase", label: "Greeting State (objective and pre-call data fetch tools)", group: "callflow",
+    id: "opening_phrase", label: "Opening line / greeting", group: "callflow",
     missing: (c) => !(
       !!c.meta.openingPhrase ||
       /\b(say hello|open with|opening phrase|start by saying|greeting script|greet caller with|opening line|start with)\b/i.test(c.fullUserText) ||
@@ -195,7 +195,7 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "closing_script", label: "Terminal States (closing objective and end_call tool)", group: "callflow",
+    id: "closing_script", label: "How the call should wrap up", group: "callflow",
     missing: (c) => !(
       !!c.spec?.callFlowPlan?.closingScript ||
       /\b(closing script|wrap up|say goodbye|end the call with|closing phrase|closing line|no special closing|standard goodbye|end with|n\/a)\b/i.test(c.fullUserText) ||
@@ -550,9 +550,9 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
       targetFields = topic2Fields;
       topicInstruction = `We are exploring the schedule and team setup: exact operating days/hours, holiday/exception hours, or staff/practitioner roster (names of doctors, specialists, or departments). Do NOT ask about call flow or policies yet. Formulate an engaging question targeting: ${topic2Fields[0]}.`;
     } else if (topic3Fields.length > 0) {
-      activeTopicGroup = "Services, Caller Intake & Pre-Call Infields";
+      activeTopicGroup = "Services, Caller Intake & Pre-Call Variables";
       targetFields = topic3Fields;
-      topicInstruction = `We are exploring core offerings, caller intake requirements, FAQs, or Pre-Call CRM Context Variables (Infields — data passed to the agent before the call begins, such as caller_name, business status, or lead source). If targeting Infields, ask specifically: "Are there any variables our system already knows before the call starts (like their name or segment)?" Do NOT jump into cancellation fees or call flow yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
+      topicInstruction = `We are exploring core offerings, caller intake requirements, FAQs, or what the system already knows about the caller before the call (such as caller_name, business status, or lead source). If targeting variables, ask specifically: "Are there any variables our system already knows before the call starts (like their name or segment)?" Do NOT jump into cancellation fees or call flow yet. Formulate a natural question targeting: ${topic3Fields[0]}.`;
     } else if (topic4Fields.length > 0) {
       activeTopicGroup = "Policies, Edge Cases & Guardrails";
       targetFields = topic4Fields;
@@ -585,7 +585,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 
     try {
       const response = await geminiClient.generate({
-        systemInstruction: "You are an expert conversational AI architect building a Voice AI agent through an interactive interview. CRITICAL BEHAVIORAL RULE: NEVER mention 'Phase 1', 'Phase 2', 'Discovery Stage', 'transition', or any internal phase/stage numbers or names to the user. Never recite summaries of completed steps just to announce moving forward. Simply ask the next logical question in a warm, direct, conversational manner.",
+        systemInstruction: "You are an expert conversational AI architect building a Voice AI agent through an interactive interview. CRITICAL BEHAVIORAL RULE: NEVER mention 'Phase 1', 'Phase 2', 'Discovery Stage', 'transition', or any internal phase/stage numbers or names to the user. Never recite summaries of completed steps just to announce moving forward. Simply ask the next logical question in a warm, direct, conversational manner. Never ask the user about tools, function calls, APIs, or how backend/CRM data is fetched — assume infields exist and telephony tools are added automatically.",
         prompt
       });
       let text = response.text?.trim();

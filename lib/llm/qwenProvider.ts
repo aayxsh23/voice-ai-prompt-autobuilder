@@ -267,9 +267,15 @@ export class QwenProvider implements LlmService {
       ? "\nCRITICAL LANGUAGE MANDATE: Support English, Hindi, and Hinglish. When generating Hindi sentences in dialogue, FAQ answers, or objection responses, they MUST be written in Devanagari script (देवनागरी), not Roman script."
       : "\nLANGUAGE PURITY RULE: This is an English-only deployment. You MUST output strictly in English. Do not include any Devanagari script, Hindi, or Hinglish words, and do not code-switch under any circumstances.";
     const styleExemplars = fewShotBlock({ policy: { mode: languageMode as 'english' | 'hindi' | 'hinglish' | 'multilingual' } });
-    const CALL_FLOW_PLAN_SCHEMA = `{"agentName":"string","primaryGoal":"string","script":"string (Detailed Markdown script detailing all stages, branching, tool calls, and dialogue)","emergencyTriggers":["string"],"outOfScopeTopics":["string"]}`;
+    // Pass 1 emits Markdown as PLAIN TEXT, not JSON. The previous JSON envelope
+    // wrapped a huge quote/newline/brace-heavy script inside a single string field,
+    // which the LLM frequently emitted with unescaped characters — safeParseJson's
+    // brace-scanner was defeated by braces INSIDE that string, and generateWithCoT
+    // threw a fatal PromptCompilationError. Emitting plain text eliminates the
+    // entire failure class; the deterministic fields (agentName, primaryGoal,
+    // emergencyTriggers, outOfScopeTopics) come from the spec or defaults.
     const pass1Prompt = `You are a voice agent call flow architect.
-Output ONLY valid JSON matching:\n${CALL_FLOW_PLAN_SCHEMA}
+Output ONLY a well-structured Markdown script for the entire call flow. Do NOT wrap it in JSON, code fences, or any envelope — plain Markdown text only. Start directly with the first heading.
 
 MANDATORY RULES FOR CALL FLOW GENERATION:
 1. NARRATIVE SCRIPT FORMAT: Do not generate JSON states or arrays for the call flow. Output the entire call flow as a well-structured, cohesive Markdown string in the "script" field. Use sections, bullet points, and clear "Say:" directives.
@@ -287,18 +293,27 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 9. ONE QUESTION PER TURN: Design the dialogue so the agent only asks one question at a time. Group related fields (like Date & Time) logically into conversational stages without interrogating the user.${langNote}${DENSITY_DIRECTIVE}${styleExemplars}
 
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
-    const pass1Raw = await this.generateRaw(pass1Prompt, 0.1, { contextLabel: "WorkflowArchitect Pass 1 (Structure)" });
-    let plan: CallFlowPlan = safeParseJson<CallFlowPlan>(pass1Raw, {
-      agentName: "Voice Assistant",
-      primaryGoal: "Assist callers",
-      script: ""
-    } as any);
-    if (!plan || (!plan.script && !Array.isArray(plan.steps))) {
-      try {
-        plan = JSON.parse(pass1Raw.replace(/```json|```/g, '').trim()) as CallFlowPlan;
-      } catch {
-        throw new PromptCompilationError(`CoT Pass 1 unparseable JSON: ${pass1Raw.substring(0, 300)}`);
-      }
+    // Plain-text pass-1: `json: false`, editor-style system prompt, so the model
+    // returns Markdown directly and we never call JSON.parse on it.
+    const pass1Raw = await this.generateRaw(pass1Prompt, 0.1, {
+      contextLabel: "WorkflowArchitect Pass 1 (Structure)",
+      json: false,
+      systemInstruction: "You are a voice agent call flow architect. Output ONLY well-structured Markdown script for the call flow. Do not wrap the output in JSON, do not use code fences, do not add prose commentary. Start directly with the first heading.",
+    });
+    const scriptRaw = (pass1Raw || '').replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    // Structured fields are derived from the spec (never from a fragile JSON parse).
+    const specMeta = (input as any).businessSpec?.meta || {};
+    const plan: CallFlowPlan = {
+      agentName: specMeta.agentName || (input.business as { agentName?: string } | undefined)?.agentName || "Voice Assistant",
+      primaryGoal: specMeta.primaryGoal || input.mission?.primaryGoal || "Assist callers",
+      script: scriptRaw,
+      emergencyTriggers: [],
+      outOfScopeTopics: [],
+    } as any;
+    if (!scriptRaw) {
+      // Non-fatal: log and continue with an empty script — the deterministic FSM path
+      // in WorkflowArchitect and the assembler's fallbacks still produce a valid prompt.
+      logger.warn("CoT Pass 1 returned empty script; continuing with empty script (deterministic fallbacks apply).");
     }
     const PROMPT_PACKAGE_DRAFT_SCHEMA = `{"systemPrompt":"string","agentPrompt":"string","primaryGoal":"string","callFlowScript":"string","faqCards":[{"question":"string","answer":"string"}],"objectionCards":[{"trigger":"string","response":"string"}],"dynamicVariables":[{"key":"string","label":"string","description":"string","type":"string","fieldDirection":"'infield'|'outfield'","required":true,"defaultValue":"string","source":"string"}],"edgeCaseRules":[{"scenario":"string","action":"string"}],"guardrails":{"emergencyTriggers":["string"],"emergencyAction":"string","prohibitions":["string"]}}`;
     const pass2Prompt = `You are a structured data compiler. Output ONLY valid JSON matching:\n${PROMPT_PACKAGE_DRAFT_SCHEMA}
