@@ -43,7 +43,6 @@ const fixtures: Record<string, { spec: Partial<BusinessSpecification>; hist: Arr
 };
 
 const CALLFLOW = [
-  'Call Flow FSM Logic (states, extractions, conditional routing)',
   'Greeting State (objective and pre-call data fetch tools)',
   'Terminal States (closing objective and end_call tool)',
   'Interruption / Barge-in Behavior (allow interruption vs disallow, or N/A)',
@@ -51,6 +50,7 @@ const CALLFLOW = [
   'Retry Exhaustion Fallback (action after max retries per slot e.g. transfer/hangup)',
   'Confirmation & Read-back Style (character-by-character vs summary, or N/A)',
 ];
+const FSMLOGIC = 'Call Flow FSM Logic (states, extractions, conditional routing)';
 const MARKER = 'Additional In-Depth Operational Detail (interview in progress)';
 const ENTRY = 'Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)';
 const INJECTION = 'Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)';
@@ -70,13 +70,13 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, FSMLOGIC, INJECTION, MARKER,
   ],
   F2_rich: ['Physical Location & Contact Info (address, phone number, or website)', MARKER],
   F3_english_history: [
     'Primary Agent Goal / Use Case',
     'Infields & Pre-Call CRM Context Variables (data provided to the agent before the call begins, e.g. caller name, business status, lead info)',
-    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, FSMLOGIC, INJECTION, MARKER,
   ],
   F4_hindi_history: [
     'Company Name', 'Primary Agent Goal / Use Case',
@@ -88,7 +88,7 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, FSMLOGIC, INJECTION, MARKER,
   ],
   F5_five_turns: [
     'Company Name', 'Primary Agent Goal / Use Case',
@@ -102,7 +102,7 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, FSMLOGIC, INJECTION,
   ],
   F6_partial_spec: [
     'Company Name', 'Primary Agent Goal / Use Case',
@@ -115,7 +115,7 @@ const EXPECTED: Record<string, string[]> = {
     'Common Caller FAQs (frequent questions about pricing, preparation, or services)',
     'Call Transfer & Escalation Protocol (live routing conditions, transfer numbers, or after-hours rules)',
     'Edge Case & Objection Handling (dealing with confused/upset callers, special requests, or pushback)',
-    ...CALLFLOW, VOICE, CONSENT, ENTRY, INJECTION, MARKER,
+    ...CALLFLOW, VOICE, CONSENT, ENTRY, FSMLOGIC, INJECTION, MARKER,
   ],
 };
 

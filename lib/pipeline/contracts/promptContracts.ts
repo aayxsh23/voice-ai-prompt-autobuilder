@@ -502,24 +502,22 @@ const noDuplicateStates: Contract = {
 
 const forwardRouting: Contract = {
   id: 'forward_routing',
-  description: 'All state routing is forward, except the sanctioned readback back-edge.',
+  description: 'All state routing edges must target existing states, with loops safely conditioned.',
   check: ({ spec }) => {
     const steps = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
     if (steps.length === 0) return [];
     
     const stateIds = (steps as any[]).map((s: any) => s.id || s.stateId);
-    const seqMap = new Map((steps as any[]).map((s: any, idx: number) => [s.id || s.stateId, s.sequenceOrder || idx]));
-    const firstCaptureId = (steps as any[]).find((s: any) => s.slotsToCollect?.length > 0)?.id || (steps as any[])[1]?.id || (steps as any[])[0]?.id;
-
+    
     const violations: ContractViolation[] = [];
     
     for (const step of (steps as any[])) {
-      const branches = Array.isArray(step.transitions) ? step.transitions : (Array.isArray(step.branchingConditions) ? step.branchingConditions : []);
+      const branches = Array.isArray(step.edges) ? step.edges : (Array.isArray(step.transitions) ? step.transitions : (Array.isArray(step.branchingConditions) ? step.branchingConditions : []));
       for (const branch of branches) {
-        const target = branch.nextState || branch.goToStep;
+        const target = branch.targetStateId || branch.nextState || branch.goToStep;
         if (!target || target === 'end_call' || target === 'transfer' || (branch as any).action === 'end_call' || (branch as any).action === 'transfer') continue;
         
-        let targetId = typeof target === 'string' ? target : (steps as any[]).find((s: any) => s.sequenceOrder === target)?.id;
+        const targetId = typeof target === 'string' ? target : (steps as any[]).find((s: any) => s.sequenceOrder === target)?.id;
         
         if (!targetId || !stateIds.includes(targetId)) {
           violations.push({
@@ -533,22 +531,18 @@ const forwardRouting: Contract = {
           continue;
         }
 
-        const sourceSeq = seqMap.get(step.id || step.stateId) || 0;
-        const targetSeq = seqMap.get(targetId) || 0;
-
-        if (targetSeq <= sourceSeq) {
-          // Backward routing check. Only allow readback to modify.
-          const isReadback = /confirm|readback/i.test(step.id || step.stateId || '');
-          const isModifyEdge = isReadback && targetId === firstCaptureId;
-          
-          if (!isModifyEdge) {
+        // Graph cycles (backward/sideways routing) are fully supported.
+        // We only flag unbounded self-loops to prevent infinite repetition.
+        if (targetId === (step.id || step.stateId)) {
+          const hasLoopControl = !!(step.subLoop || step.retryPolicy || step.maxTurns);
+          if (!hasLoopControl) {
             violations.push({
               contract: 'forward_routing',
               severity: 'critical' as const,
               category: 'incorrect' as const,
-              description: `State "${step.id || step.stateId}" routes backward to "${targetId}" which is not the sanctioned readback modification edge.`,
+              description: `State "${step.id || step.stateId}" loops back to itself without a retryPolicy or maxTurns. This risks an infinite loop.`,
               whereInPrompt: `state [${step.id || step.stateId}]`,
-              suggestedFix: 'Flow must be linear. Remove backward routing loops.',
+              suggestedFix: 'Ensure self-loops have exit conditions (retryPolicy or maxTurns) to prevent infinite loops.',
             });
           }
         }
@@ -560,17 +554,17 @@ const forwardRouting: Contract = {
 
 const flowBounded: Contract = {
   id: 'flow_bounded',
-  description: 'State machine has no more than 12 states.',
+  description: 'Graph complexity is bounded to a reasonable state count (max 15).',
   check: ({ spec }) => {
     const steps = spec.callFlowPlan?.fsmStates || spec.callFlowPlan?.steps || [];
-    if (steps.length > 12) {
+    if (steps.length > 15) {
       return [{
         contract: 'flow_bounded',
         severity: 'major' as const,
         category: 'incorrect' as const,
-        description: `State machine is too large (${steps.length} states).`,
+        description: `State machine graph is too complex (${steps.length} states).`,
         whereInPrompt: 'CALL FLOW',
-        suggestedFix: 'Bound the number of states to 12 maximum.',
+        suggestedFix: 'Consolidate granular states using orderIndependent fields and shared utility states. Bound to 15 max.',
       }];
     }
     return [];

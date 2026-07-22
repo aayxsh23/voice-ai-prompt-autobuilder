@@ -63,7 +63,7 @@ export class MultiDomainTestHarness {
       // Tier 2 exists to measure. Tier 1 supplies steps and tests the assembler.
       const spec = {
         ...fixture.spec,
-        callFlowPlan: { ...fixture.spec.callFlowPlan, steps: [] },
+        callFlowPlan: { ...fixture.spec.callFlowPlan, steps: [], fsmStates: [] },
       } as BusinessSpecification;
 
       const draft = await compilePromptPackage({
@@ -80,7 +80,8 @@ export class MultiDomainTestHarness {
 
       const required = finalSpec.callFlowPlan?.requiredStages || [];
       const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-      const stateTokens = (finalSpec.callFlowPlan?.steps || []).map(s => norm(`${s.stateId} ${s.stateName}`));
+      const activeStates = finalSpec.callFlowPlan?.fsmStates || finalSpec.callFlowPlan?.steps || [];
+      const stateTokens = activeStates.map((s: any) => norm(`${s.id || s.stateId} ${s.stateName || s.objective}`));
       const covered = required.filter(r => stateTokens.some(t => t.includes(norm(r.id)))).length;
 
       const expectationFailures: string[] = [];

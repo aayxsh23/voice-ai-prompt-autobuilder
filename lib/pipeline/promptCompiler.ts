@@ -25,10 +25,21 @@ import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
 import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
 import { ToolPlanner } from "../compiler/planners/ToolPlanner";
+import { GuardrailOptimizer } from "../compiler/planners/GuardrailOptimizer";
 import { judgePrompt, repairFromJudge } from "./judge/PromptJudge";
 import { JUDGE_ENABLED, JUDGE_MAX_ROUNDS, JUDGE_TIME_BUDGET_MS, JUDGE_HARD_GATE } from "@/lib/config";
 
-
+function resolveVariables(
+  specVars: DynamicVariableSpec[] = [],
+  inputVars: DynamicVariableSpec[] = [],
+  overrideVars: DynamicVariableSpec[] = []
+): DynamicVariableSpec[] {
+  const map = new Map<string, DynamicVariableSpec>();
+  specVars.forEach(v => v.key && map.set(v.key, v));
+  inputVars.forEach(v => v.key && map.set(v.key, v));
+  overrideVars.forEach(v => v.key && map.set(v.key, v));
+  return Array.from(map.values());
+}
 function structurePreserved(newPrompt: string, oldPrompt: string): boolean {
   if (!newPrompt || !oldPrompt) return false;
   const newTrimmed = newPrompt.trim();
@@ -224,11 +235,10 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   const needKnowledge = spec.knowledgeBase.faqs.length === 0 ||
     (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)));
 
-  // WorkflowArchitect and KnowledgeArchitect are independent (Knowledge reads
-  // meta/snapshot/topics, not the call-flow steps), so run them concurrently.
+  // WorkflowArchitect and KnowledgeArchitect are independent, so run them concurrently.
   const [plannedFsmStates, plannedKb] = await Promise.all([
     needWorkflow ? WorkflowArchitect.planWorkflow(spec) : Promise.resolve(spec.callFlowPlan.fsmStates),
-    needKnowledge ? KnowledgeArchitect.planKnowledge(spec) : Promise.resolve(spec.knowledgeBase),
+    needKnowledge ? KnowledgeArchitect.planKnowledge(spec) : Promise.resolve(spec.knowledgeBase)
   ]);
   spec.callFlowPlan.fsmStates = plannedFsmStates;
   spec.knowledgeBase = plannedKb;
@@ -263,27 +273,20 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     parameters: t?.parameters || { type: 'object', properties: {} },
   })).filter((f: any) => !!f.name);
 
-  // Synchronize dynamicVariables with any slots required by call flow steps
-  const steps = (Array.isArray(spec.callFlowPlan?.steps) && spec.callFlowPlan.steps.length > 0)
-    ? spec.callFlowPlan.steps
+  // Synchronize dynamicVariables hierarchy
+  draft.dynamicVariables = resolveVariables(
+    spec.dynamicVariables,
+    input.dynamicVariables,
+    input.overrides?.dynamicVariables
+  );
+
+  const steps = (Array.isArray(spec.callFlowPlan?.fsmStates) && spec.callFlowPlan.fsmStates.length > 0)
+    ? spec.callFlowPlan.fsmStates
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
   const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
   const allSlotsSet = new Set(allSlots);
-
-  // Collect explicitly user-specified infields from input/spec/overrides
-  const userSpecifiedInfields = new Set<string>(
-    [
-      ...(Array.isArray(input.dynamicVariables) ? input.dynamicVariables : []),
-      ...(Array.isArray(spec.dynamicVariables) ? spec.dynamicVariables : []),
-      ...(Array.isArray(input.overrides?.dynamicVariables) ? input.overrides.dynamicVariables : [])
-    ]
-      .filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'))
-      .map((v: any) => v.key)
-      .filter(Boolean)
-  );
-
-  draft.dynamicVariables = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
   const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v?.key).filter(Boolean));
+  
   for (const slot of allSlots) {
     if (!declaredVarKeys.has(slot)) {
       draft.dynamicVariables.push({
@@ -300,19 +303,12 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     }
   }
 
+  // Set missing fieldDirections based on strict usage logic
   draft.dynamicVariables.forEach((v: any) => {
-    // 1) An infield can NEVER be an extraction! If a slot is collected during a call flow step, force outfield.
     if (allSlotsSet.has(v.key) || v.source === 'extraction') {
       v.fieldDirection = 'outfield';
-    } else if (v.fieldDirection === 'infield' && !userSpecifiedInfields.has(v.key)) {
-      // 2) LLM cannot create infields on its own — must be explicitly user-specified only.
-      v.fieldDirection = 'outfield';
     } else if (!v.fieldDirection) {
-      if (userSpecifiedInfields.has(v.key)) {
-        v.fieldDirection = 'infield';
-      } else {
-        v.fieldDirection = 'outfield';
-      }
+      v.fieldDirection = 'infield'; 
     }
   });
 
@@ -339,6 +335,13 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     logger.warn("compilePromptPackage: could not fetch default PromptRules", err);
     draft.appliedRules = draft.appliedRules || [];
   }
+
+  const rawGuardrails = (draft.appliedRules || [])
+    .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
+    .map((r: any) => r.content)
+    .join('\n\n');
+
+  draft.optimizedGuardrails = await GuardrailOptimizer.optimizeGuardrails(rawGuardrails, spec.meta, spec.meta.region);
 
   let finalPrompt = assembleUnifiedPrompt(spec, draft);
   const policy = resolveLanguagePolicy(spec, draft);

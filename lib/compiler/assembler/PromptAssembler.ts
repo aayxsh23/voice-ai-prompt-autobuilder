@@ -170,9 +170,11 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
   logger.debug("assembleUnifiedPrompt()", { specFaqsCount: specFaqs.length, draftFaqsCount: draftFaqs.length });
 
+  const specVars = Array.isArray(spec?.dynamicVariables) ? spec.dynamicVariables : [];
   const draftVars: any[] = Array.isArray(draft?.dynamicVariables) ? draft.dynamicVariables : [];
+  const allVars = [...specVars, ...draftVars];
   const draftVarsMap = new Map<string, any>();
-  draftVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
+  allVars.forEach(v => { if (v?.key) draftVarsMap.set(v.key, v); });
 
   const rawStepsForCheck = (Array.isArray(spec?.callFlowPlan?.steps) && spec!.callFlowPlan!.steps.length > 0)
     ? spec!.callFlowPlan!.steps
@@ -182,10 +184,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   );
 
   const isOutfieldPreCheck = (slot: string): boolean => {
-    if (rawCollectedSlots.has(slot)) return true;
     const v = draftVarsMap.get(slot);
-    if (v?.fieldDirection === 'outfield') return true;
     if (v?.fieldDirection === 'infield') return false;
+    if (rawCollectedSlots.has(slot)) return true;
+    if (v?.fieldDirection === 'outfield') return true;
     if (v && (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static')) return false;
     return true;
   };
@@ -251,7 +253,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
     .map((r: any) => localizeRule(r.content))
     .join('\n\n');
-  const guardrailsContent = guardrailRules || "";
+  const guardrailsContent = draft?.optimizedGuardrails || guardrailRules || "";
 
   const primaryGoal = spec?.meta?.primaryGoal || draft?.primaryGoal || "Assist callers";
   const policy = resolveLanguagePolicy(spec, draft);
@@ -433,7 +435,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
       slotsToCollect,
       branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
       fallbackBehavior: s?.fallbackBehavior || "",
-      maxRetries: s?.maxRetries || 3,
+      maxRetries: typeof s?.maxRetries === 'number' ? s.maxRetries : undefined,
       onFailure: s?.onFailure,
       confirmationRequired: s?.confirmationRequired,
       digressionAllowed: s?.digressionAllowed
@@ -451,9 +453,18 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const agentName = spec?.meta?.agentName || "Agent";
   // AI-disclosure is configurable: some deployments proactively disclose the AI
   // (default), others require the agent to present as a human representative.
-  const disclosureLine = policy.aiDisclosure === 'deny'
+  let disclosureLine = policy.aiDisclosure === 'deny'
     ? `- AI Identity (DO NOT DISCLOSE): Never state, hint, or confirm that you are an AI, bot, or automated system. If asked whether you are a bot/AI/recording, deflect naturally and present yourself as ${agentName}, a representative from ${companyName}. Stay in character as a human representative throughout.`
     : `- AI Identity Disclosure: Always state clearly upfront when ${isInbound ? `answering the call that you are an AI assistant for ${companyName} (e.g., 'Thank you for calling ${companyName}, I am ${agentName}, your AI voice assistant...')` : `initiating the call that you are an AI assistant calling on behalf of ${companyName} before verifying the contact's identity`}. Never conceal your AI status if asked.`;
+  
+  if (spec?.meta?.recordingDisclosure === 'required') {
+    if (policy.aiDisclosure === 'deny') {
+      disclosureLine += `\n- Recording Disclosure: You MUST explicitly state upfront that the call is being recorded for quality and training purposes.`;
+    } else {
+      disclosureLine = disclosureLine.replace(/ Never conceal your AI status if asked\.$/, " and that the call is being recorded for quality and training purposes. Never conceal your AI status if asked.");
+    }
+  }
+
   const identity = `### AGENT IDENTITY & PERSONA
 You are a voice ${policy.aiDisclosure === 'deny' ? '' : 'AI '}agent for phone conversations representing ${companyName}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
 - Name: ${agentName}
@@ -592,15 +603,15 @@ OFF-TOPIC REFUSAL PROTOCOL
 
   const allSlots = Array.from(new Set<string>([
     ...Array.from(stepCollectedSlots),
-    ...draftVars.map(v => v.key)
+    ...allVars.map(v => v.key)
   ])).filter(Boolean);
 
   const isOutfield = (slot: string): boolean => {
+    const v = draftVarsMap.get(slot);
+    if (v?.fieldDirection === 'infield') return false;
     // 1) An infield can NEVER be an extraction! If a slot is collected during a call flow step, force outfield.
     if (stepCollectedSlots.has(slot)) return true;
-    const v = draftVarsMap.get(slot);
     if (v?.fieldDirection === 'outfield') return true;
-    if (v?.fieldDirection === 'infield') return false;
     if (v && (v.source === 'crm' || v.source === 'api' || v.source === 'static' || v.defaultValue || v.type === 'business' || v.type === 'runtime' || v.type === 'static')) return false;
     return true;
   };
@@ -684,21 +695,57 @@ OFF-TOPIC REFUSAL PROTOCOL
         block += `* **Required Extractions:** Extract and record ${extractions} from the caller's response.\n`;
       }
       if (state.entryAction) {
-        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${state.entryAction.tool}(${formatArgs(state.entryAction.args)})\`.\n`;
+        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${buildToolInvocation(state.entryAction.tool, state.entryAction.args, (spec?.tools || []) as any) || state.entryAction.tool}\`.\n`;
       }
       if (state.inTurnTool) {
-        block += `* **If user provides input:** Invoke \`${state.inTurnTool.tool}(${formatArgs(state.inTurnTool.args)})\` in the same turn.\n`;
+        block += `* **If user provides input:** Invoke \`${buildToolInvocation(state.inTurnTool.tool, state.inTurnTool.args, (spec?.tools || []) as any) || state.inTurnTool.tool}\` in the same turn.\n`;
+      }
+
+      // Render State Logic Configuration
+      if (state.orderIndependent) block += `- Order Independent: Fields can be collected in any order.\n`;
+      if (state.optional) block += `- Optional: This state can be skipped.\n`;
+      if (state.skipCondition) block += `- Skip Condition: ${state.skipCondition}\n`;
+      if (state.maxTurns) block += `- Max Turns: ${state.maxTurns}\n`;
+      if (state.subLoop?.selfLoop) block += `- Sub-Loop: Self-correction allowed (Trigger: ${state.subLoop.triggerCondition || 'any'}).\n`;
+      if (state.direction) block += `- Direction: ${state.direction}\n`;
+      if (state.terminal) block += `- Terminal State: True\n`;
+      if (state.spoken) block += `- Spoken: True\n`;
+
+      // Strictly render retry count ONLY if it exists (no default || 3)
+      if (state.retryPolicy?.maxAttempts !== undefined) {
+          block += `- Max Retries: ${state.retryPolicy.maxAttempts}\n`;
+          if (state.retryPolicy.onExhausted?.nextState) {
+              block += `  - On Exhausted: Route to ${state.retryPolicy.onExhausted.nextState}\n`;
+          }
+      }
+
+      // Render dynamic closing scripts
+      if (state.closeVariants && state.closeVariants.length > 0) {
+          block += `- Close Variants:\n`;
+          state.closeVariants.forEach((v: any) => {
+              block += `  - [${v.variant}]: "${v.script}"\n`;
+          });
       }
       
-      const transitions = Array.isArray(state.transitions) ? state.transitions : [];
-      if (transitions.length > 0) {
-        block += `* **Action:**\n`;
-        transitions.forEach((t: any) => {
-          const actionText = t.action ? `Trigger ${t.action} + ` : '';
-          const nextStateText = t.nextState ? `Go to state [${t.nextState}]` : 'end_call';
-          block += `  * If ${t.condition} -> ${actionText}${nextStateText}\n`;
+      const edges = Array.isArray(state.edges) ? state.edges : (Array.isArray(state.transitions) ? state.transitions : []);
+      if (edges.length > 0) {
+        block += `* **Edges & Routing:**\n`;
+        edges.forEach((e: any) => {
+          const actionText = e.action ? `Trigger ${e.action} + ` : '';
+          const targetId = e.targetStateId || e.nextState || e.goToStep;
+          const targetText = targetId ? `Go to state [${targetId}]` : 'end_call';
+          const closeVariantText = e.closeVariant ? ` using closing variant [${e.closeVariant}]` : '';
+          block += `  * If ${e.condition} -> ${actionText}${targetText}${closeVariantText}\n`;
         });
       }
+
+      if (Array.isArray(state.notes) && state.notes.length > 0) {
+        block += `- Notes / Constraints:\n`;
+        state.notes.forEach((note: string) => {
+          block += `  * ${note}\n`;
+        });
+      }
+
       return block.trim();
     }).join('\n\n---\n\n');
   } else if (markdownScript) {
@@ -733,16 +780,23 @@ OFF-TOPIC REFUSAL PROTOCOL
       lines.push(`* **Dialogue Directive:** ${step?.scriptDirective}`);
       lines.push(`* **Routing & Branches:**\n${branchText}`);
       if (step?.fallbackBehavior) {
-        lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior} (Max retries: ${step?.maxRetries || 3})`);
+        const retryText = typeof step?.maxRetries === 'number' ? ` (Max retries: ${step.maxRetries})` : '';
+        lines.push(`* **Fallback & Retries:** ${step.fallbackBehavior}${retryText}`);
       }
       if (step?.onFailure) {
-        lines.push(`* **Exhaustion / Failure Behavior:** On failure after ${step.onFailure?.afterRetries || step.maxRetries || 3} retries -> Action: ${step.onFailure?.action || 'Transfer/Hangup'}${step.onFailure?.target ? ` to ${step.onFailure.target}` : ''}${step.onFailure?.fallbackLine ? ` (Say: "${step.onFailure.fallbackLine}")` : ''}`);
+        const failCount = typeof step.onFailure?.afterRetries === 'number' ? step.onFailure.afterRetries : (typeof step.maxRetries === 'number' ? step.maxRetries : undefined);
+        const countText = failCount !== undefined ? `after ${failCount} retries` : `after retries are exhausted`;
+        lines.push(`* **Exhaustion / Failure Behavior:** On failure ${countText} -> Action: ${step.onFailure?.action || 'Transfer/Hangup'}${step.onFailure?.target ? ` to ${step.onFailure.target}` : ''}${step.onFailure?.fallbackLine ? ` (Say: "${step.onFailure.fallbackLine}")` : ''}`);
       }
       if (step?.confirmationRequired) {
         lines.push(`* **Confirmation Rule:** MUST read back collected slot explicitly and obtain verbal confirmation before advancing.`);
       }
       if (step?.digressionAllowed !== undefined) {
         lines.push(`* **Mid-Flow Digression:** ${step.digressionAllowed ? "Allowed. Answer off-topic question briefly using FAQ/Knowledge Base and return to this step immediately." : "Strictly disallowed. Politely decline off-topic questions and re-prompt for required extractions."}`);
+      }
+      if (Array.isArray(step?.notes) && step.notes.length > 0) {
+        lines.push(`* **Additional Constraints:**`);
+        step.notes.forEach((note: string) => lines.push(`  - ${note}`));
       }
       return lines.join('\n');
     }).join('\n\n---\n\n');
@@ -767,6 +821,15 @@ OFF-TOPIC REFUSAL PROTOCOL
     : "";
   const objectionHandling = `### OBJECTION HANDLING\nHandle pushback with judgment, not a script: (1) acknowledge the concern warmly, (2) address it in one line using a relevant fact or benefit from your context, (3) steer back toward ${primaryGoal}. Keep it to 1-2 sentences, never argue, and respect a firm "no" by closing politely.${knownConcerns}`;
 
+  // 11. AVAILABLE TOOLS
+  let toolsContent = "";
+  if (Array.isArray(spec?.tools) && spec.tools.length > 0) {
+    const descriptions = spec.tools.map(t => ToolPlanner.describeToolForPrompt(t as any)).filter(Boolean);
+    if (descriptions.length > 0) {
+      toolsContent = `### AVAILABLE TOOLS\nYou have access to the following tools. Use them exactly as instructed by the CALL FLOW.\n\n${descriptions.join('\n\n')}`;
+    }
+  }
+
   // FINAL UNIFIED ASSEMBLY IN IDEAL PARSING ORDER (1 -> 11)
   // NOTE: tool *definitions* are intentionally absent — they are registered with the
   // platform from ToolPlanner (see draft.suggestedFunctions -> PlatformAdapter).
@@ -780,6 +843,7 @@ OFF-TOPIC REFUSAL PROTOCOL
     businessContext,
     escalationAndRouting,
     dynamicVariables,
+    toolsContent,
     flow,
     knowledge,
     objectionHandling
@@ -827,7 +891,7 @@ export class PromptAssembler {
           slotsToCollect: Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : [],
           branchingConditions: Array.isArray(s?.branchingConditions) ? s.branchingConditions : [],
           fallbackBehavior: s?.fallbackBehavior || "",
-          maxRetries: s?.maxRetries || 3,
+          maxRetries: typeof s?.maxRetries === 'number' ? s.maxRetries : undefined,
           onFailure: s?.onFailure,
           confirmationRequired: s?.confirmationRequired,
           digressionAllowed: s?.digressionAllowed

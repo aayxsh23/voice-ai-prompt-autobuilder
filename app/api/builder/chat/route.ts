@@ -1,5 +1,3 @@
-// app/api/builder/chat/route.ts
-
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { llmClient as geminiClient } from '@/lib/llm/qwenProvider';
@@ -16,17 +14,9 @@ type CallFlowPolicy = Partial<Pick<BusinessSpecification['callFlowPlan'],
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 
-/**
- * Accepts only the policy keys the extractor is allowed to set, and only when they
- * carry a real value. `closingScript`/`openingPhrase` are additionally rejected when
- * they hold a builder instruction rather than literal speech — otherwise the planner
- * wraps them in `Say: "..."` and the agent recites "Accept immediately, apologize,
- * and close" to the caller.
- */
 function sanitizeCallFlowPolicy(raw: unknown): CallFlowPolicy {
   const src = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw as Record<string, unknown> : {};
   const out: CallFlowPolicy = {};
-
 
   if (isNonEmptyString(src.interruptionPolicy)) out.interruptionPolicy = src.interruptionPolicy.trim();
   if (isNonEmptyString(src.digressionPolicy)) out.digressionPolicy = src.digressionPolicy.trim();
@@ -51,7 +41,6 @@ function sanitizeCallFlowPolicy(raw: unknown): CallFlowPolicy {
   return out;
 }
 
-/** Ordered stages the user described. Never synthesized — an empty list stays empty. */
 function sanitizeRequiredStages(raw: unknown): Array<{ id: string; label: string }> {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -134,7 +123,7 @@ Conversation History:
 ${historyText}
 
 Output ONLY a JSON object with these top-level keys:
-- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal, languageMode: string - e.g. 'english', 'hindi', 'hinglish', or 'multilingual', aiDisclosure: 'disclose' | 'deny', openingPhrase: string, agentGender: 'female' | 'male', callDirection: 'inbound' | 'outbound', scopeExclusions: string[], terminalStates: Array<{ stateId: string, label: string, closingScript?: string }>)
+- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal, languageMode: string - e.g. 'english', 'hindi', 'hinglish', or 'multilingual', aiDisclosure: 'disclose' | 'deny', recordingDisclosure: 'required' | 'none', openingPhrase: string, agentGender: 'female' | 'male', callDirection: 'inbound' | 'outbound', scopeExclusions: string[], terminalStates: Array<{ stateId: string, label: string, closingScript?: string }>)
 - businessSnapshot (operatingHours, servicesOffered, policies)
 - extractedEntities (departments: string[], namedContacts: Array<{ label: string, value: string }>, servicesOrOfferings: string[])
 - resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy', 'language_preference', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script')
@@ -157,6 +146,7 @@ For closingScript and openingPhrase, remember these are LITERAL SPOKEN WORDS. If
 Only include a field if the user has explicitly and specifically stated it. Do not infer, invent, guess, or generalize values the user did not say.
 For meta:
 - aiDisclosure: set to 'deny' if the user requests not revealing or disclosing that the agent is an AI/bot, or 'disclose' if they say to disclose it.
+- recordingDisclosure: set to 'required' if the user explicitly asks to state that the call is being recorded, otherwise 'none'.
 - openingPhrase: extract verbatim when the user provides a fixed or verbatim opening greeting/script.
 - agentGender: extract 'female' or 'male' if persona/gender is specified.
 - callDirection: extract 'inbound' or 'outbound' from the workflow description.
@@ -178,10 +168,6 @@ Ensure you return valid JSON with no markdown fences.`;
       });
       const patch = safeParseJson(llmResponse.text, {}) as Record<string, Record<string, unknown>>;
       if (patch && typeof patch === 'object') {
-        // The planner owns `steps`; the interview owns the policies around them.
-        // (Extracting policies here is what makes answers like "nudge after 10
-        //  seconds" or "voice only, no keypad" actually reach the prompt — they
-        //  previously survived only as prose in capturedTopics and were dropped.)
         const patchPolicy = sanitizeCallFlowPolicy(patch.callFlowPolicy);
         const patchStages = sanitizeRequiredStages(patch.requiredStages);
         const patchScript = patch.callFlowScript || (patch.callFlowPlan as any)?.script;
@@ -246,7 +232,6 @@ Ensure you return valid JSON with no markdown fences.`;
               (s) => s.stateId || s.stateName || ''
             ),
             script: patchScript || existingFlow?.script,
-            // Policies accumulate across turns; a later answer supersedes an earlier one.
             ...patchPolicy,
             ...(patchStages.length > 0 || existingFlow?.requiredStages
               ? { 
@@ -324,8 +309,6 @@ Ensure you return valid JSON with no markdown fences.`;
     if (!updatedSpec.meta) updatedSpec.meta = {} as any;
     if (languageMode) updatedSpec.meta!.languageMode = languageMode;
 
-    // Deterministically capture persona prefs the JSON-patch extraction misses:
-    // whether the agent must NOT reveal it's an AI, and the agent's gender.
     const allUserText = messages
       .filter((m: { role: string; content: string }) => m.role.toLowerCase() === 'user')
       .map((m: { content: string }) => m.content)
@@ -335,10 +318,6 @@ Ensure you return valid JSON with no markdown fences.`;
     const genderPref = detectAgentGender(allUserText);
     if (genderPref) updatedSpec.meta!.agentGender = genderPref;
 
-    // openingPhrase is spoken verbatim by the greeting state. If the user described
-    // what the opening should DO rather than what it should SAY, storing it would
-    // make the agent read the instruction aloud — drop it and let the planner write
-    // a real line instead.
     const opening = updatedSpec.meta!.openingPhrase;
     if (typeof opening === 'string' && isInstructionLike(opening)) {
       console.warn('[builder/chat] discarding openingPhrase that is an instruction, not speech:', opening);
@@ -347,9 +326,6 @@ Ensure you return valid JSON with no markdown fences.`;
 
     const userTurns = messages.filter((m: { role: string }) => m.role.toLowerCase() === 'user').length;
 
-    // Adaptive topics (once, early): decide which checklist topics this particular
-    // agent does not need, so discovery fits the use case instead of asking everyone
-    // the same 27 questions. Cached on the spec, so this costs one call per session.
     if (!updatedSpec.meta!.notApplicableTopics && userTurns >= 2) {
       try {
         const na = await CoverageArchitect.selectNotApplicableTopics(updatedSpec, messages);
@@ -361,9 +337,6 @@ Ensure you return valid JSON with no markdown fences.`;
 
     let coverageReport = CoverageArchitect.evaluate(updatedSpec, messages);
 
-    // Coverage adjudication (once, at the boundary): the rules match keywords, so
-    // they can believe a topic is answered when the user never decided it. Verify
-    // before we let the interview end — the only moment a false "covered" hurts.
     if (coverageReport.isReadyForCompilation) {
       const unanswered = await CoverageArchitect.adjudicateCoverage(updatedSpec, messages, coverageReport.missingFields);
       if (unanswered.length > 0) {
@@ -372,8 +345,6 @@ Ensure you return valid JSON with no markdown fences.`;
       }
     }
 
-    // Language now comes from the chat itself (no pre-chat selector), so drive the
-    // follow-up question language off whatever the interview has resolved so far.
     const resolvedLanguageMode = (updatedSpec.meta?.languageMode as 'english' | 'hindi' | 'multilingual' | undefined) || languageMode;
     const reply = await CoverageArchitect.generateNextQuestion(coverageReport.missingFields, messages, updatedSpec, resolvedLanguageMode);
 
@@ -387,6 +358,7 @@ Ensure you return valid JSON with no markdown fences.`;
       extractedBlueprint: {
         ...(currentBlueprint || {}),
         languageMode: languageMode || updatedSpec.meta?.languageMode || currentBlueprint?.languageMode || 'english',
+        dynamicVariables: updatedSpec.dynamicVariables || [], // Ensure dynamic variables are natively surfaced
         businessSpec: updatedSpec,
         business: {
           ...(currentBlueprint?.business || {}),

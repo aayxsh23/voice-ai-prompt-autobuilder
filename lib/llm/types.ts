@@ -340,6 +340,7 @@ export interface BusinessSpecification {
     agentGender?: 'female' | 'male';
     formality?: 'aap' | 'tum';
     aiDisclosure?: 'disclose' | 'deny';
+    recordingDisclosure?: 'required' | 'none';
     targetTTS?: string;
     voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
     scopeExclusions?: string[];

@@ -49,26 +49,26 @@ export class WorkflowArchitect {
         speechPrompt: meta.openingPhrase || (isInbound 
           ? `Thank you for calling ${companyStr}. My name is ${agentStr}. How can I help you today?`
           : `Hello, I'm ${agentStr} calling from ${companyStr}. Am I speaking with the right contact?`),
-        transitions: [
-          { condition: "Identity verified / ready to proceed", nextState: "capture_intent" },
-          { condition: "Wrong number / caller busy", nextState: "end_call", speechPrompt: "I will call back later. Goodbye." }
+        edges: [
+          { condition: "Identity verified / ready to proceed", targetStateId: "capture_intent" },
+          { condition: "Wrong number / caller busy", targetStateId: "end_call", speechPrompt: "I will call back later. Goodbye." }
         ]
       },
       {
         id: "capture_intent",
         objective: "Capture caller intent and route accordingly.",
         slotsToCollect: ["caller_intent"],
-        transitions: [
-          { condition: "Intent provided", nextState: "confirmation_readback" }
+        edges: [
+          { condition: "Intent provided", targetStateId: "confirmation_readback" }
         ]
       },
       {
         id: "confirmation_readback",
         objective: "Read back and confirm all collected details before closing.",
         slotsToCollect: [],
-        transitions: [
-          { condition: "Caller confirms accuracy", nextState: "end_call" },
-          { condition: "Caller wants to modify details", nextState: "capture_intent" }
+        edges: [
+          { condition: "Caller confirms accuracy", targetStateId: "end_call" },
+          { condition: "Caller wants to modify details", targetStateId: "capture_intent" }
         ]
       },
       {
@@ -76,7 +76,7 @@ export class WorkflowArchitect {
         objective: "Close the call politely.",
         slotsToCollect: [],
         entryAction: { tool: "end_call", args: {}, speechPrompt: "Thank you for your time. Have a great day!" },
-        transitions: []
+        edges: []
       }
     ];
 
@@ -84,8 +84,8 @@ export class WorkflowArchitect {
       ? `\nLANGUAGE DIRECTIVE: Write all 'speechPrompt' lines inside the FSM nodes in Devanagari script (देवनागरी) Hindi. English terminology should be romanized.`
       : "";
 
-    const prompt = `You are a WorkflowArchitect specializing in designing deterministic voice AI call flow state machines.
-Given the following business goal, metadata, and operational topics, design a comprehensive, multi-step Finite State Machine (FSM).${langDirective}
+    const prompt = `You are a WorkflowArchitect specializing in designing robust voice AI call flow state machines using a Graph-Based FSM topology.
+Given the business goal, metadata, and operational topics, design a comprehensive, multi-step Finite State Machine (FSM).${langDirective}
 
 BUSINESS SNAPSHOT:
 - **Company Name:** ${meta.companyName || "N/A"}
@@ -103,36 +103,62 @@ ${requiredStages.length > 0 ? `MANDATORY STAGES: ${JSON.stringify(requiredStages
 
 MANDATORY STATE MACHINE DESIGN RULES:
 1. OUTPUT FORMAT: Return ONLY a valid JSON array of FsmStateNode objects.
-2. FSM NODE SCHEMA:
+2. GRAPH TOPOLOGY: The FSM is a directed graph, NOT a linear pipeline. Design states to be REUSABLE:
+   - Create shared utility states (e.g., one 'escalation' state, one 'confirmation_readback' state) reachable from MULTIPLE other states via edges.
+   - Allow correction loops: the confirmation state should route BACK to any collection state the caller wants to fix.
+   - Allow early termination: EVERY non-greeting state must have an edge to 'end_call' for when the caller wants to disconnect.
+   - Allow re-entry: if verification fails, route back to the verification state, don't create a separate "re-verify" state.
+3. FSM NODE SCHEMA:
    {
      "id": "STEP_1_GREETING",
      "objective": "Clear description of what this state achieves",
-     "slotsToCollect": ["slot_key"], // Optional: fields to extract from transcript
+     "slotsToCollect": ["field_a_category", "field_b_id"],
+     "orderIndependent": true,
+     "optional": false,
+     "skipCondition": "User already provided info",
+     "maxTurns": 3,
+     "retryPolicy": {
+       "maxAttempts": 2,
+       "onExhausted": {
+         "targetStateId": "ESCALATION_STATE"
+       }
+     },
+     "subLoop": {
+       "selfLoop": true,
+       "triggerCondition": "User corrects previous input"
+     },
+     "closeVariants": [
+       { "variant": "success", "script": "Thank you, we are done here." }
+     ],
+     "direction": "agent calls customer",
+     "terminal": false,
+     "spoken": true,
+     "notes": ["Ensure the user has their documentation ready before proceeding."],
      "speechPrompt": "Optional: Specific phrase to speak if no tool is invoked.",
-     "entryAction": { // Optional: Tool to invoke BEFORE speaking
+     "entryAction": {
        "tool": "tool_name",
-       "args": { "param": "value" },
-       "speechPrompt": "The spoken phrase the agent should say immediately after the tool."
+       "args": { "param_name": "value" }
      },
-     "inTurnTool": { // Optional: Tool to invoke when the user speaks in this state
+     "inTurnTool": {
        "tool": "tool_name",
-       "args": {}
+       "args": { "param_name": "value" }
      },
-     "transitions": [
-       { "condition": "valid=true", "nextState": "STEP_2", "speechPrompt": "Great, thanks." },
-       { "condition": "error=true", "nextState": "STEP_1_GREETING" }
+     "edges": [
+       { "condition": "valid=true", "targetStateId": "STEP_2", "closeVariant": "success" }
      ]
    }
-3. DEDICATED STATES: If multiple variables must be collected, generate ONE dedicated state for each slot! Never collect more than one slot in a single state unless they are inherently paired.
-4. CALL DIRECTION & IDENTITY:
-   - If Inbound: State 1 MUST greet and ask how to help. Do NOT ask "Am I speaking with...".
+4. STATE CONSOLIDATION: NEVER create separate states for error handling, silence rephrase, or segment clarification. These are handled WITHIN the parent state's retryPolicy and subLoop. A state that ONLY handles an error condition of another state is ALWAYS wrong.
+   - Group ALL related data collection into the MINIMUM number of states.
+   - A single state with slotsToCollect: ['center', 'date', 'time'] and orderIndependent: true is ALWAYS preferred over three separate states.
+5. FLEXIBLE VALIDATION: For data types with variable formats (phone numbers, locations, dates), add a notes entry instructing the agent to accept reasonable variations. Never reject input outright — confirm with the caller instead.
+6. CALL DIRECTION & IDENTITY:
+   - If Inbound: State 1 MUST greet and ask how to help.
    - If Outbound: State 1 MUST introduce the agent and verify the caller's identity.
    - AI DISCLOSURE: ${denyAiDisclosure ? "DO NOT disclose AI identity. Present as a human." : "Proactively disclose that the agent is an AI."}
-5. ROUTING & TRANSITIONS: Every state MUST have transitions indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. ${spec.callFlowPlan?.script ? "CRITICAL: You MUST strictly translate the user's detailed script/flow into FSM nodes exactly as written, preserving all branches, sub-behaviors, and conditions. DO NOT use generic 'If Completed -> Go to state [end_call]' placeholders unless the user explicitly requested a simple linear flow." : "You must generate the complete call flow spanning ALL specified stages in detail. Do NOT summarize the logic into a single generic end step. Detail all extraction points, conditional branches, and sub-behaviors."}
-6. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
-7. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date'). CRITICAL: If a state collects a date, time, or phone number, YOU MUST explicitly include the field in the 'slotsToCollect' array (e.g. ['booking_date']).
-8. SYSTEM VARIABLES: The variables 'current_day', 'current_date', and 'current_time' are reserved system variables. They MUST NOT be shortened, renamed, or modified under any circumstances. When collecting scheduling details, you must instruct the agent to use {{current_day}}, {{current_date}} and {{current_time}} as reference points.
-9. VARIABLE USAGE & HALLUCINATION (CRITICAL): You MUST incorporate the defined pre-call infields (using '{{variable_name}}' syntax) into your FSM state objectives or speech prompts where appropriate. YOU ARE STRICTLY FORBIDDEN from inventing, guessing, or hallucinating variables that are not explicitly provided in 'Known Pre-Call Infields' or 'Required Extractions'. Do NOT invent redundant variants (e.g. do not invent 'customer_name' if 'name' is provided).
+7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
+8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
+9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
+10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
 
 Generate the strict JSON array of FSM state nodes now.`;
 
@@ -148,51 +174,34 @@ Generate the strict JSON array of FSM state nodes now.`;
       });
       let parsed = safeParseJson(response.text, fallbackStates);
       
-      let nodes: any[] = Array.isArray(parsed) && parsed.length >= 2 ? parsed : [];
-
-      if (nodes.length === 0) {
-        if (requiredStages && requiredStages.length > 0) {
-          nodes = requiredStages.map((s: any) => ({
-            id: s.id || `stage_${Math.random().toString(36).substr(2, 6)}`,
-            objective: s.label || s.id || "Execute required stage",
-            transitions: [{ condition: "Completed", nextState: "end_call" }]
-          }));
-          nodes.push({
-            id: "end_call",
-            objective: "Close the call",
-            entryAction: { tool: "end_call", args: {}, speechPrompt: "Thank you, goodbye." },
-            transitions: []
-          });
-        } else {
-          nodes = fallbackStates;
-        }
+      if (!parsed || !Array.isArray(parsed) || parsed.length < 1) {
+        logger.warn('WorkflowArchitect FSM generation failed or returned empty states. Falling back to default template.');
+        parsed = fallbackStates;
       }
 
-      // Sanitize nodes
+      let nodes = parsed;
+
+      // Post-processing and sanitization
       nodes.forEach((node: any) => {
         if (!node.id) node.id = `state_${Math.random().toString(36).substr(2, 6)}`;
         if (node.slotsToCollect) {
           node.slotsToCollect = semanticDedupSlots(node.slotsToCollect.filter((slot: string) => !isDerivedSlot(slot)));
+        }
+        
+        // Auto-populate skip conditions and order-independence
+        if (Array.isArray(node.slotsToCollect) && node.slotsToCollect.length > 0) {
+          if (!node.skipCondition) {
+            node.skipCondition = `All fields (${node.slotsToCollect.join(', ')}) already provided in prior turns`;
+          }
+          if (node.slotsToCollect.length > 1 && node.orderIndependent === undefined) {
+            node.orderIndependent = true;
+          }
         }
       });
       
       return nodes;
     } catch (err) {
       logger.warn("WorkflowArchitect fallback triggered", err);
-      if (requiredStages && requiredStages.length > 0) {
-        const nodes = requiredStages.map((s: any) => ({
-          id: s.id || `stage_${Math.random().toString(36).substr(2, 6)}`,
-          objective: s.label || s.id || "Execute required stage",
-          transitions: [{ condition: "Completed", nextState: "end_call" }]
-        }));
-        nodes.push({
-          id: "end_call",
-          objective: "Close the call",
-          entryAction: { tool: "end_call", args: {}, speechPrompt: "Thank you, goodbye." },
-          transitions: []
-        });
-        return nodes;
-      }
       return fallbackStates;
     }
   }

@@ -1,3 +1,58 @@
+export interface ToolInvocation {
+  tool: string;
+  args: Record<string, any>;
+  executeBeforeSpeech?: boolean;
+  speechPrompt?: string;
+}
+
+export interface FsmEdge {
+  condition: string;
+  targetStateId: string;
+  action?: string;
+  speechPrompt?: string;
+  closeVariant?: string;
+}
+
+export interface FsmSubProtocol {
+  name: string;
+  args?: Record<string, any>;
+  rules?: any[];
+}
+
+export interface FsmStateNode {
+  id: string;
+  objective: string;
+  speechPrompt?: string;
+  
+  // Graph edges routing to other state IDs
+  edges: FsmEdge[];
+  
+  // Graph-centric error/retry loops that can point to other states
+  retryPolicy?: {
+    maxAttempts?: number;
+    onExhausted?: { targetStateId: string };
+  };
+  
+  slotsToCollect?: string[];
+  orderIndependent?: boolean;
+  skipCondition?: string;
+  
+  entryAction?: ToolInvocation;
+  inTurnTool?: ToolInvocation;
+  
+  subProtocol?: string | FsmSubProtocol;
+  subLoop?: { selfLoop?: boolean; triggerCondition?: string };
+  closeVariants?: Array<{ variant: string; script: string }>;
+  
+  optional?: boolean;
+  maxTurns?: number;
+  direction?: string;
+  isTerminal?: boolean;
+  spoken?: boolean;
+  notes?: string[];
+}
+
+// Legacy step interface, kept strictly for backward compatibility
 export interface CallFlowStep {
   stepNumber?: number;
   sequenceOrder?: number;
@@ -19,49 +74,20 @@ export interface CallFlowStep {
   onFailure?: { afterRetries?: number; action?: string; target?: string; fallbackLine?: string };
   confirmationRequired?: boolean;
   digressionAllowed?: boolean;
-}
-
-export interface ToolInvocation {
-  tool: string;
-  args: Record<string, any>;
-  executeBeforeSpeech?: boolean;
-  speechPrompt?: string;
-}
-
-export interface StateTransition {
-  condition: string;
-  action?: string;
-  speechPrompt?: string;
-  nextState?: string;
-}
-
-export interface FsmSubProtocol {
-  name: string;
-  args?: Record<string, any>;
-  rules?: any[];
-}
-
-export interface FsmStateNode {
-  id: string;
-  objective: string;
-  speechPrompt?: string;
-  entryAction?: ToolInvocation;
-  inTurnTool?: ToolInvocation;
-  subProtocol?: string | FsmSubProtocol;
-  transitions: StateTransition[];
-  slotsToCollect?: string[];
+  notes?: string[];
 }
 
 export interface CallFlowPlan {
   agentName: string;
   primaryGoal: string;
-  script?: string;
-  steps?: CallFlowStep[]; // Legacy
-  fsmStates?: FsmStateNode[]; // New FSM structure
+  fsmStates?: FsmStateNode[]; // Primary structure: Graph-based FSM
+  steps?: CallFlowStep[]; // Legacy structure
+  
   emergencyTriggers: string[];
   outOfScopeTopics: string[];
+  
+  entryRouting?: Array<{ trigger: string; targetStateId: string }>;
   userDefinedSteps?: any[];
-  entryRouting?: Array<{ trigger: string; goToStep: string | number }>;
 
   interruptionPolicy?: string;
   digressionPolicy?: string;

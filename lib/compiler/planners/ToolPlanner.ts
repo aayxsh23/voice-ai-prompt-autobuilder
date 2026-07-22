@@ -1,8 +1,11 @@
 import { BusinessSpecification } from "@/lib/llm/types";
-import { SYSTEM_RUNTIME_TOOLS, getEmailTool } from "@/lib/compiler/constants/toolRegistry";
+import { SYSTEM_RUNTIME_TOOLS, getEmailTool, ToolDefinition } from "@/lib/compiler/constants/toolRegistry";
 import { FsmStateNode } from "@/lib/llm/types/CallFlowPlan";
 
 export class ToolPlanner {
+  /**
+   * Plans tools for a prompt compilation, returning the system tools plus the user-provided tools.
+   */
   public static async planTools(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['tools']> {
     const meta = spec.meta || {} as any;
     const toneList = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
@@ -18,6 +21,26 @@ export class ToolPlanner {
     return [...immutableSystemTools, ...existingTools] as BusinessSpecification['tools'];
   }
 
+  /**
+   * Renders a prompt-friendly tool definition from the tool's JSON Schema.
+   * Example output:
+   *   `validate_digit_input(field: string — "field name", expected_digits: integer — "digit count", ...)`
+   */
+  public static describeToolForPrompt(tool: ToolDefinition): string {
+    const props = tool.parameters?.properties || {};
+    const required = new Set(tool.parameters?.required || []);
+    const params = Object.entries(props).map(([name, schema]: [string, any]) => {
+      const type = schema?.type || 'any';
+      const desc = schema?.description ? ` — "${schema.description}"` : '';
+      const req = required.has(name) ? '' : ' (optional)';
+      return `${name}: ${type}${req}${desc}`;
+    });
+    return `\`${tool.name}(${params.join(', ')})\` — ${tool.description}`;
+  }
+
+  /**
+   * Extracts robust numeric/email capture protocols to be placed in the prompt.
+   */
   public static resolveProtocols(fsmStates: FsmStateNode[]): string[] {
     const protocols = new Set<string>();
     for (const state of fsmStates) {
@@ -40,7 +63,7 @@ While active, a \`[RUNTIME DIGIT BUFFER]\` system note appears. You MUST execute
 If user says "Yes" / "done" WHILE tool state shows \`digits_remaining > 0\`: Do NOT advance. Respond by asking for the remaining digits.
 
 **RULE 4 — Final Confirmation & Exit:**
-* **User confirms AND \`valid=true\`:** Invoke \`set_capture_mode(keep_buffer=false)\` -> Go to next step.
+* **User confirms AND \`valid=true\`:** Invoke \`set_capture_mode(keep_buffer=false)\` -> Route to next state.
 * **User rejects:** Buffer auto-clears. Invoke \`set_capture_mode(keep_buffer=true, mode="digits", field="${field}", expected_digits=${expected})\` and ask to restart.
 * **Awaiting-Confirmation Shadow State:** Buffer shows \`status=awaiting_confirmation\`. Number is already complete. Do NOT read back again.`;
         protocols.add(protocol);

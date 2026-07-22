@@ -138,4 +138,26 @@ describe('assembleUnifiedPrompt', () => {
     const outWithSignal = assembleUnifiedPrompt(specWithToolSignal, { dynamicVariables: [] });
     expect(outWithSignal).toContain('**Required Extractions:** Extract and record [phone_number]');
   });
+
+  it('renders FSM new schema fields correctly without hardcoding retries', () => {
+    const specWithFsm: BusinessSpecification = {
+      ...spec,
+      callFlowPlan: {
+        fsmStates: [
+          {
+            id: 'TEST_FSM',
+            objective: 'Test FSM schema',
+            slotsToCollect: ['test_slot'],
+            orderIndependent: true,
+            notes: ['Test note'],
+            transitions: []
+          }
+        ]
+      }
+    };
+    const outFsm = assembleUnifiedPrompt(specWithFsm, { dynamicVariables: [] });
+    expect(outFsm).toContain('- Order Independent: Fields can be collected in any order.');
+    expect(outFsm).toContain('* Test note');
+    expect(outFsm).not.toContain('Max Retries: 3');
+  });
 });
