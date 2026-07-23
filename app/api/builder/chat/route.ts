@@ -123,7 +123,7 @@ Conversation History:
 ${historyText}
 
 Output ONLY a JSON object with these top-level keys:
-- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal, languageMode: string - e.g. 'english', 'hindi', 'hinglish', or 'multilingual', aiDisclosure: 'disclose' | 'deny', recordingDisclosure: 'required' | 'none', openingPhrase: string, agentGender: 'female' | 'male', callDirection: 'inbound' | 'outbound', scopeExclusions: string[], terminalStates: Array<{ stateId: string, label: string, closingScript?: string }>)
+- meta (companyName, agentName, industry, isRegulated, toneProfile, primaryGoal, region: string (2-letter country code), languageMode: string - e.g. 'english', 'hindi', 'hinglish', or 'multilingual', aiDisclosure: 'disclose' | 'deny', recordingDisclosure: 'required' | 'none', openingPhrase: string, agentGender: 'female' | 'male', callDirection: 'inbound' | 'outbound', scopeExclusions: string[], terminalStates: Array<{ stateId: string, label: string, closingScript?: string }>)
 - businessSnapshot (operatingHours, servicesOffered, policies)
 - extractedEntities (departments: string[], namedContacts: Array<{ label: string, value: string }>, servicesOrOfferings: string[])
 - resolvedTopics (string[]: short snake_case tags of answered sub-topics, e.g. 'cancellation_policy', 'refund_policy', 'language_preference', 'digression_handling', 'silence_handling', 'interruption_policy', 'opening_phrase', 'closing_script')
@@ -227,6 +227,7 @@ Ensure you return valid JSON with no markdown fences.`;
           businessSnapshot: safePatch(existingSnap, patchSnap) as BusinessSpecification['businessSnapshot'],
           callFlowPlan: {
             ...(existingFlow || {}),
+            ...((patchScript || patchStages.length > 0 || Object.keys(patchPolicy).length > 0 || patchFlow?.steps?.length) ? { fsmStates: undefined } : {}),
             steps: dedupeBy(
               [...(existingFlow?.steps || []), ...(patchFlow?.steps || [])],
               (s) => s.stateId || s.stateName || ''

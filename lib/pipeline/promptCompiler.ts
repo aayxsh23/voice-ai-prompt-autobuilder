@@ -1,4 +1,4 @@
-import { assembleUnifiedPrompt } from "../compiler/assembler/PromptAssembler";
+import { assembleUnifiedPrompt, resolveRegion } from "../compiler/assembler/PromptAssembler";
 import { getLlmClient } from "../llm/llmClient";
 
 import {
@@ -341,7 +341,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     .map((r: any) => r.content)
     .join('\n\n');
 
-  draft.optimizedGuardrails = await GuardrailOptimizer.optimizeGuardrails(rawGuardrails, spec.meta, spec.meta.region);
+  draft.optimizedGuardrails = await GuardrailOptimizer.optimizeGuardrails(rawGuardrails, spec.meta, resolveRegion(spec, draft));
 
   let finalPrompt = assembleUnifiedPrompt(spec, draft);
   const policy = resolveLanguagePolicy(spec, draft);

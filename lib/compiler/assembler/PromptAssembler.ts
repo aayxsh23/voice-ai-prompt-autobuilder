@@ -328,6 +328,10 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     // (see lib/llm/language/LanguagePolicy.ts). We do NOT transliterate directives
     // here — blind word-level regex substitution corrupts already-correct text.
     let directive = s?.scriptDirective || s?.explicitDialogueScript || (s?.generatedLine ? `Say: "${s.generatedLine}"` : `Say: "How can I help you?"`);
+    
+    // Convert extracted slot variables from {var} to [[var]], ignoring infields {{var}}
+    directive = directive.replace(/(?<!\{)\{([^}]+)\}(?!\})/g, '[[$1]]');
+
     if ((idx === 0 || s?.stateId === 'identity_gate') && nameInfieldKey) {
       if (/right contact today|account holder|right contact/i.test(directive)) {
         directive = directive.replace(/right contact today|account holder|right contact/gi, `{{${nameInfieldKey}}}`);
@@ -807,7 +811,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   // 9. FAQS — context-driven, not an exhaustive scripted dump. Give the agent a
   // handling rule plus a capped set of specific facts; it answers from BUSINESS
   // CONTEXT & STATIC FACTS above and reasons over these reference points.
-  const FAQ_CAP = 5;
+  const FAQ_CAP = 50;
   const faqReference = faqs.length > 0
     ? `\n\nReference points (paraphrase, don't recite):\n${faqs.slice(0, FAQ_CAP).map((faq: any) => `- Q: ${faq?.question || faq?.q || ''} → A: ${faq?.answer || faq?.a || ''}`).join('\n')}`
     : "";

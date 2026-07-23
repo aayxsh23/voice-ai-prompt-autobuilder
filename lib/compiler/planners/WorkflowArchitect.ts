@@ -94,7 +94,7 @@ BUSINESS SNAPSHOT:
 - **Operating Hours:** ${snap.operatingHours || "N/A"}
 - **Services:** ${snap.servicesOffered?.join(', ') || "N/A"}
 - **Call Direction:** ${isInbound ? "INBOUND (Customer calls us)" : "OUTBOUND (We call customer)"}
-${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes:\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
+${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
 
 CONTEXT VARIABLES & EXTRACTIONS:
 ${infieldsList.length > 0 ? `Known Pre-Call Infields (Available before call): ${JSON.stringify(infieldsList.map((v: any) => v.key))}\n` : ""}
@@ -159,8 +159,9 @@ MANDATORY STATE MACHINE DESIGN RULES:
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
 10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
+11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`). If the user defined logic using curly braces like \`{date}\`, convert it to \`[[date]]\`. Do NOT use curly braces for derived variables.
 
-Generate the strict JSON array of FSM state nodes now.`;
+Generate the strict JSON array of FSM state nodes now.\`;
 
     try {
       if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {
