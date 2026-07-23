@@ -6,7 +6,18 @@ import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { detectAiDisclosure, detectAgentGender } from '@/lib/llm/language/personaExtract';
 import { isInstructionLike } from '@/lib/pipeline/dialogue/dialogueLint';
-import { semanticDedupSlots } from '@/lib/compiler/assembler/PromptAssembler';
+
+function semanticDedupSlots(slots: string[]): string[] {
+  const normalized = new Map<string, string>();
+  for (const s of slots) {
+    if (!s) continue;
+    const clean = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!normalized.has(clean)) {
+      normalized.set(clean, s);
+    }
+  }
+  return Array.from(normalized.values());
+}
 
 type CallFlowPolicy = Partial<Pick<BusinessSpecification['callFlowPlan'],
   'interruptionPolicy' | 'digressionPolicy' | 'confirmationStyle' |
@@ -170,7 +181,9 @@ Ensure you return valid JSON with no markdown fences.`;
       if (patch && typeof patch === 'object') {
         const patchPolicy = sanitizeCallFlowPolicy(patch.callFlowPolicy);
         const patchStages = sanitizeRequiredStages(patch.requiredStages);
-        const patchScript = patch.callFlowScript || (patch.callFlowPlan as any)?.script;
+        const patchScript = typeof patch.callFlowScript === 'string' 
+          ? patch.callFlowScript 
+          : (typeof (patch.callFlowPlan as any)?.script === 'string' ? (patch.callFlowPlan as any)?.script : undefined);
         
         delete patch.callFlowPlan;
         delete patch.knowledgeBase;

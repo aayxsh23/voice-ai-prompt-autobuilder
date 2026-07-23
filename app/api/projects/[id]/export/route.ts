@@ -5,7 +5,7 @@ import { assertProjectOwner } from '@/lib/auth';
 import { PlatformAdapter, TargetPlatform } from '@/lib/compiler/adapters/PlatformAdapter';
 import type { PromptPackageDraft } from '@/lib/llm/types';
 
-const PLATFORMS: TargetPlatform[] = ['bland', 'retell', 'vapi', 'generic'];
+const PLATFORMS: TargetPlatform[] = ['custom'];
 
 function parseJsonArray(raw: string | null | undefined): unknown[] {
   if (!raw) return [];
@@ -36,7 +36,7 @@ export const GET = apiHandler(async (req: Request, { params }: { params: Promise
   await assertProjectOwner(id);
 
   const requested = new URL(req.url).searchParams.get('platform') as TargetPlatform | null;
-  const platform: TargetPlatform = requested && PLATFORMS.includes(requested) ? requested : 'generic';
+  const platform: TargetPlatform = 'custom';
 
   const project = await prisma.promptProject.findUnique({
     where: { id },
@@ -69,6 +69,6 @@ export const GET = apiHandler(async (req: Request, { params }: { params: Promise
     })),
   } as unknown as PromptPackageDraft;
 
-  const payload = new PlatformAdapter().formatForPlatform(draft, platform);
+  const payload = new PlatformAdapter().formatForPlatform(draft);
   return NextResponse.json(payload);
 });

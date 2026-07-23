@@ -14,9 +14,9 @@ CRITICAL RULES:
 3. Define exact JSON schemas for tools required by the collector and closer.
   `;
 
-  let userPrompt = \`Business Specification:\n\${JSON.stringify(state.spec)}\n\`;
+  let userPrompt = `Business Specification:\n${JSON.stringify(state.spec)}\n`;
   if (state.judgeFeedback && state.judgeFeedback.length > 0) {
-    userPrompt += \`\nFIX PREVIOUS ERRORS:\n\${JSON.stringify(state.judgeFeedback)}\`;
+    userPrompt += `\nFIX PREVIOUS ERRORS:\n${JSON.stringify(state.judgeFeedback)}`;
   }
 
   // Uses JSON schema enforcement matching MultiAgentManifest
@@ -25,5 +25,19 @@ CRITICAL RULES:
     json: true 
   });
   
-  return JSON.parse(rawResponse) as MultiAgentManifest;
+  const rawObj = JSON.parse(rawResponse);
+  
+  // Normalize if LLM output a dictionary of agents instead of an array
+  if (rawObj && !rawObj.agents) {
+    const agents = [];
+    const roles: AgentRole[] = ['router', 'opener', 'pitch', 'collector', 'closer'];
+    for (const role of roles) {
+      if (rawObj[role]) {
+        agents.push({ role, ...rawObj[role] });
+      }
+    }
+    rawObj.agents = agents;
+  }
+  
+  return rawObj as MultiAgentManifest;
 }

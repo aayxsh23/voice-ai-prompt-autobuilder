@@ -342,10 +342,10 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
     // gets a modest temperature bump for more natural spoken lines. JSON validity
     // is still enforced by response_format.
     const pass2Raw = await this.generateRaw(pass2Prompt, 0.35, { contextLabel: "WorkflowArchitect Pass 2 (Draft)" });
-    let draft: PromptPackageDraft = safeParseJson<PromptPackageDraft>(pass2Raw, {} as any);
+    let draft: any = safeParseJson<any>(pass2Raw, {} as any);
     if (!draft || (!draft.systemPrompt && !draft.faqCards)) {
       try {
-        draft = JSON.parse(pass2Raw.replace(/```json|```/g, '').trim()) as PromptPackageDraft;
+        draft = JSON.parse(pass2Raw.replace(/```json|```/g, '').trim()) as any;
       } catch {
         throw new PromptCompilationError(`CoT Pass 2 unparseable JSON: ${pass2Raw.substring(0, 300)}`);
       }
@@ -354,7 +354,7 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
     draft.faqCards = Array.isArray(draft.faqCards) ? draft.faqCards : [];
     draft.objectionCards = Array.isArray(draft.objectionCards) ? draft.objectionCards : [];
     draft.dynamicVariables = Array.isArray(draft.dynamicVariables) ? draft.dynamicVariables : [];
-    draft.callFlowSteps = Array.isArray(plan.steps) ? plan.steps.map((s: any, idx: number) => ({
+    draft.callFlowSteps = Array.isArray((plan as any).steps) ? (plan as any).steps.map((s: any, idx: number) => ({
       sequenceOrder: s.sequenceOrder || s.stepNumber || idx + 1,
       stateId: s.stateId || `step_${idx + 1}`,
       stateName: s.stateName || s.label || `Step ${idx + 1}`,
@@ -386,12 +386,12 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
   }
 
   async generateAgentPrompt(input: BlueprintJson): Promise<string> {
-    const draft = await this.generateReviewDraft(input);
+    const draft: any = await this.generateReviewDraft(input);
     return draft.finalPrompt || draft.agentPrompt || "";
   }
 
   async generateSystemPrompt(input: BlueprintJson): Promise<string> {
-    const draft = await this.generateReviewDraft(input);
+    const draft: any = await this.generateReviewDraft(input);
     return draft.finalPrompt || draft.systemPrompt || "";
   }
 

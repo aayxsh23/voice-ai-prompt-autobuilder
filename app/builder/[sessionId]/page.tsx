@@ -471,25 +471,10 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
               {/* Tabs Bar */}
               <div className="bg-[#121212] px-3 pt-2 border-b border-[#252525] flex items-center gap-1 overflow-x-auto">
                 <button
-                  onClick={() => setActiveTab('agent')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'agent' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
+                  className="px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]"
                 >
-                  <span>Agent Prompt.tab</span>
-                  {activeTab === 'agent' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
-                </button>
-                <button
-                  onClick={() => setActiveTab('system')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'system' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
-                >
-                  <span>System Prompt.tab</span>
-                  {activeTab === 'system' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
-                </button>
-                <button
-                  onClick={() => setActiveTab('combined')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'combined' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
-                >
-                  <span>Combined Final.tab</span>
-                  {activeTab === 'combined' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
+                  <span>MultiAgentManifest.json</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />
                 </button>
               </div>
 
@@ -625,9 +610,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
               {/* Tab Content Window */}
               <div className="p-5 flex-1 flex flex-col gap-4 bg-[#0c0c0c]">
                 <div className="flex-1 bg-[#040404] border border-[#252525] rounded-[8px] p-4 font-mono text-xs text-[#dedede] overflow-y-auto max-h-[500px] whitespace-pre-wrap leading-relaxed selection:bg-[#ff6c02] selection:text-[#040404]">
-                  {activeTab === 'agent' && draft.finalPrompt}
-                  {activeTab === 'system' && draft.finalPrompt}
-                  {activeTab === 'combined' && draft.finalPrompt}
+                  {draft.multiAgentManifest ? JSON.stringify(draft.multiAgentManifest, null, 2) : (draft.finalPrompt || '// No output generated.')}
                 </div>
 
                 {/* Tool Registry Badge List */}

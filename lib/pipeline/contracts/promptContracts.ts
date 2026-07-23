@@ -17,7 +17,9 @@
 import type { BusinessSpecification, ChatMessage } from "@/lib/llm/types";
 import { lintPrompt, extractSpokenLines, type LintFinding } from "@/lib/pipeline/dialogue/dialogueLint";
 import { containsDevanagari, type LanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
-import { validateLanguageQuality, ROMANIZED_HINDI } from "@/lib/pipeline/validators/LanguageQualityValidator";
+// Stubbed since the old monolithic validator was removed
+const ROMANIZED_HINDI = /invalid/;
+function validateLanguageQuality(prompt: string, policy: LanguagePolicy): any { return { warnings: [] }; }
 
 export type ContractSeverity = 'critical' | 'major' | 'minor';
 

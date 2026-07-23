@@ -52,46 +52,14 @@ export interface FsmStateNode {
   notes?: string[];
 }
 
-// Legacy step interface, kept strictly for backward compatibility
-export interface CallFlowStep {
-  stepNumber?: number;
-  sequenceOrder?: number;
-  stateId?: string;
-  stateName?: string;
-  objective?: string;
-  label?: string;
-  condition?: string;
-  scriptDirective?: string;
-  generatedLine?: string;
-  slotsToCollect?: string[];
-  collectsVariable?: string | null;
-  branchingConditions?: Array<{ condition: string; goToStep: number | 'end_call' | 'transfer' | string; action?: string; reason?: string }>;
-  fallbackBehavior?: string;
-  maxRetries?: number;
-  invokesTools?: string[];
-  isFallback?: boolean;
-  isTerminal?: boolean;
-  onFailure?: { afterRetries?: number; action?: string; target?: string; fallbackLine?: string };
-  confirmationRequired?: boolean;
-  digressionAllowed?: boolean;
-  notes?: string[];
-}
-
 export interface CallFlowPlan {
   agentName: string;
   primaryGoal: string;
-  fsmStates?: FsmStateNode[]; // Primary structure: Graph-based FSM
-  steps?: CallFlowStep[]; // Legacy structure
-  
+  fsmStates?: FsmStateNode[];
   emergencyTriggers: string[];
   outOfScopeTopics: string[];
-  
   entryRouting?: Array<{ trigger: string; targetStateId: string }>;
   userDefinedSteps?: any[];
-
-  interruptionPolicy?: string;
-  digressionPolicy?: string;
-  confirmationStyle?: string;
   dtmfFallback?: { enabled?: boolean; triggerAfterFailures?: number };
   closingScript?: string;
 }

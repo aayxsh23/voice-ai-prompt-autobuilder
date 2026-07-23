@@ -159,11 +159,12 @@ export interface TestScenarioSpec {
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
 }
 
+import { MultiAgentManifest } from './types/MetaAgentSchemas';
+
 export interface PromptPackageDraft {
-  finalPrompt: string;
+  finalPrompt: string; // Left for generic platforms
+  multiAgentManifest?: MultiAgentManifest;
   businessSpec?: BusinessSpecification;
-  agentPrompt?: string;
-  systemPrompt?: string;
   dynamicVariables: DynamicVariableSpec[];
   suggestedFunctions: SuggestedFunctionSpec[];
   knowledgeBaseSuggestions: { title: string; content: string; category: string }[];
@@ -176,18 +177,9 @@ export interface PromptPackageDraft {
   languageMode?: string;
   verbatimLines?: { stepLabel: string; exactLine: string }[];
   transferConditions?: TransferCondition[];
-  callFlowScript?: string;
-  callFlowSteps?: any[];
   emergencyTriggers?: string[];
   outOfScopeTopics?: string[];
-  guardrails?: {
-    emergencyTriggers?: string[];
-    emergencyAction?: string;
-    prohibitions?: string[];
-  };
-  systemPromptCompiled?: boolean;
   operationalContext?: Record<string, string>;
-  appliedRules?: any[];
   validationStatus?: 'success' | 'warning' | 'failed_review_required';
   validationErrors?: string[];
   validationWarnings?: string[];
@@ -283,6 +275,8 @@ export interface BuilderChatTurnResponse {
   extractedBlueprint: Partial<BlueprintJson>;
   missingDetails: string[];
 }
+
+export type CompileInput = Partial<BlueprintJson> & { businessSpec?: BusinessSpecification };
 
 /**
  * String-aware balanced-brace scanner. Finds the first top-level JSON object/array
