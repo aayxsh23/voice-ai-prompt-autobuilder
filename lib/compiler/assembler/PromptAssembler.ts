@@ -1,7 +1,7 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { ToolPlanner } from "@/lib/compiler/planners/ToolPlanner";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
-import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
+import { buildToolInvocation, buildHydratedInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
 import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { logger } from "@/lib/logger";
 
@@ -669,9 +669,26 @@ OFF-TOPIC REFUSAL PROTOCOL
   if (spec?.callFlowPlan?.closingScript) {
     callFlowPolicies.push(`* **Global Closing Script Directive:** "${spec.callFlowPlan.closingScript}"`);
   }
+  // Global objection & escalation policy — rendered once, applies to every state.
+  // This exists so the LLM does NOT need to duplicate "if caller upset / not
+  // interested / wants to end" edges on every collection state (previously produced
+  // 14-state prompts where 7 were per-emotion handler stubs). Individual states may
+  // override by declaring an edge with the same action verb.
+  const globalObjectionPolicy = `#### GLOBAL OBJECTION & ESCALATION POLICY (applies to every state)
+Handle these caller reactions the SAME way in every state — do not wait for a state-specific edge, and do not require the caller to say them exactly as written:
+* **not_interested / stop calling / remove me:** Acknowledge briefly ("Understood, thank you for letting me know."), then close via \`acknowledge_and_close\` — do not re-pitch, do not push back.
+* **already_have_it / already a customer:** Acknowledge, offer to add to their profile if relevant, close politely.
+* **why_are_you_calling / who is this:** Briefly restate the call reason using pre-call context, then return to the current state's objective.
+* **upset / angry / frustrated:** Apologize once, offer a callback, close via \`acknowledge_and_close\`. Do not try to continue the pitch.
+* **confused / didn't catch that / can you repeat:** Rephrase the previous line ONCE in simpler language and return to the same state (\`rephrase_and_return\`). If still confused, offer a callback.
+* **hang up / bye / gotta go / end call:** Acknowledge briefly, then \`end_call\`.
+* **language switch / cannot understand English:** Apologize once in the deployment language, offer a callback in the requested language, close.
+
+Edge \`action\` verbs in the CALL FLOW STATES below are shorthand for these responses. If a state below does not list an edge for one of these caller reactions, apply the global response above.\n\n`;
+
   const callFlowPolicyHeader = callFlowPolicies.length > 0
-    ? `#### CONVERSATIONAL & CALL FLOW POLICIES\n${callFlowPolicies.join('\n')}\n\n#### CALL FLOW STATES\n`
-    : "";
+    ? `#### CONVERSATIONAL & CALL FLOW POLICIES\n${callFlowPolicies.join('\n')}\n\n${globalObjectionPolicy}#### CALL FLOW STATES\n`
+    : `${globalObjectionPolicy}#### CALL FLOW STATES\n`;
 
   // Branch targets reference states by their stateId, not a "Step N" ordinal —
   // the flow is a set of named states, not a numbered list.
@@ -699,11 +716,29 @@ OFF-TOPIC REFUSAL PROTOCOL
         const extractions = state.slotsToCollect.map((s: string) => `[${s}]`).join(', ');
         block += `* **Required Extractions:** Extract and record ${extractions} from the caller's response.\n`;
       }
+      // Hydrator injects region-correct + slot-derived params the LLM omitted.
+      // Falls back to whatever it was given so tools with fully-specified args are
+      // untouched. Entry-action closes on the exit branch (keep_buffer=false).
+      const primarySlot = Array.isArray(state.slotsToCollect) && state.slotsToCollect.length > 0
+        ? String(state.slotsToCollect[0])
+        : undefined;
       if (state.entryAction) {
-        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${buildToolInvocation(state.entryAction.tool, state.entryAction.args, (spec?.tools || []) as any) || state.entryAction.tool}\`.\n`;
+        const invocation = buildHydratedInvocation(
+          state.entryAction.tool,
+          state.entryAction.args,
+          { stateSlot: primarySlot, region, onEntry: true },
+          (spec?.tools || []) as any,
+        ) || state.entryAction.tool;
+        block += `* **Entry Action (CRITICAL - TOOL CALL FIRST):** Before generating any spoken text, silently invoke \`${invocation}\`.\n`;
       }
       if (state.inTurnTool) {
-        block += `* **If user provides input:** Invoke \`${buildToolInvocation(state.inTurnTool.tool, state.inTurnTool.args, (spec?.tools || []) as any) || state.inTurnTool.tool}\` in the same turn.\n`;
+        const invocation = buildHydratedInvocation(
+          state.inTurnTool.tool,
+          state.inTurnTool.args,
+          { stateSlot: primarySlot, region, onEntry: true },
+          (spec?.tools || []) as any,
+        ) || state.inTurnTool.tool;
+        block += `* **If user provides input:** Invoke \`${invocation}\` in the same turn.\n`;
       }
 
       // Render State Logic Configuration

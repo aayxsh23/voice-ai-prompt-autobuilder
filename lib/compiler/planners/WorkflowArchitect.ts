@@ -103,11 +103,11 @@ ${requiredStages.length > 0 ? `MANDATORY STAGES: ${JSON.stringify(requiredStages
 
 MANDATORY STATE MACHINE DESIGN RULES:
 1. OUTPUT FORMAT: Return ONLY a valid JSON array of FsmStateNode objects.
-2. GRAPH TOPOLOGY: The FSM is a directed graph, NOT a linear pipeline. Design states to be REUSABLE:
-   - Create shared utility states (e.g., one 'escalation' state, one 'confirmation_readback' state) reachable from MULTIPLE other states via edges.
-   - Allow correction loops: the confirmation state should route BACK to any collection state the caller wants to fix.
-   - Allow early termination: EVERY non-greeting state must have an edge to 'end_call' for when the caller wants to disconnect.
-   - Allow re-entry: if verification fails, route back to the verification state, don't create a separate "re-verify" state.
+2. GRAPH TOPOLOGY & OBJECTION HANDLING: The FSM is a directed graph, NOT a linear pipeline. Design states to be REUSABLE and MINIMAL:
+   - Reactions to caller emotion or objection (not_interested, already_have_it, why_are_you_calling, upset, confused, wants_to_hang_up) are per-state EDGE CONDITIONS with an action verb, NOT dedicated states. Use edge \`action\` values like "acknowledge_and_close", "acknowledge_and_redirect", "rephrase", "escalate", "end_call". A state whose only purpose is to react to an emotion/objection is ALWAYS wrong — the global OBJECTION & ESCALATION POLICY (rendered above the state list) tells the agent HOW to handle each action verb uniformly.
+   - You may create ONE shared "confirmation_readback" state reachable from every collection state; correction loops route BACK to the specific collection state the caller wants to fix.
+   - Allow re-entry: if verification fails, route back to the verification state via \`retryPolicy.onExhausted.targetStateId\` — do NOT create a separate "re-verify" state.
+   - Do NOT add "if caller upset / confused / not interested / wants to end" edges to every single state. State those globally once (they apply everywhere); only enumerate an edge on a state when its resolution differs from the global policy.
 3. FSM NODE SCHEMA:
    {
      "id": "STEP_1_GREETING",
@@ -158,10 +158,10 @@ MANDATORY STATE MACHINE DESIGN RULES:
 7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
-10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
+10. TOOL ARGS: For common runtime tools (set_capture_mode, validate_digit_input, format_email_*, end_call), specify only \`entryAction: { tool: "<name>" }\` or \`inTurnTool: { tool: "<name>" }\` — leave \`args\` empty. The compiler injects region-correct arguments (expected_digits by country, mode by field type, keep_buffer by entry vs. exit, field name from slotsToCollect[0]). Only pass explicit \`args\` when a schema-required parameter cannot be inferred from the state's slot or the deployment region (e.g. a business-specific enum on a domain tool).
 11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`). If the user defined logic using curly braces like \`{date}\`, convert it to \`[[date]]\`. Do NOT use curly braces for derived variables.
 
-Generate the strict JSON array of FSM state nodes now.\`;
+Generate the strict JSON array of FSM state nodes now.`;
 
     try {
       if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {
@@ -182,22 +182,85 @@ Generate the strict JSON array of FSM state nodes now.\`;
 
       let nodes = parsed;
 
-      // Safety net: collapse bloated error/silence states into their parent
-      const toRemove = new Set<string>();
+      // Handler-state collapse.
+      //
+      // We classify a node as a handler stub (a state whose only job is to react to
+      // a caller emotion / objection / error) by SHAPE, not by id-regex. A state is
+      // a handler stub when ALL of these hold:
+      //   1. It has no slotsToCollect (nothing to collect from the caller).
+      //   2. Its only outgoing edges terminate the call (route to end_call, or the
+      //      final terminal state) or route back to a single collection state.
+      //   3. It has no unique tool call other than end_call.
+      //
+      // When a handler stub is found, we rewrite every inbound edge to carry a
+      // canonical action verb (acknowledge_and_close, escalate, rephrase) that the
+      // assembler renders under the global OBJECTION and ESCALATION POLICY, and we
+      // remove the handler node. Generic by construction — reacts to the state's
+      // graph shape, so it catches any per-emotion / per-objection handler
+      // regardless of naming.
+      const terminalIds = new Set<string>(
+        nodes.filter((n: any) => n.terminal || n.isTerminal || n.id === 'end_call' || n.entryAction?.tool === 'end_call').map((n: any) => n.id),
+      );
+
+      const classifyHandler = (node: any): { kind: 'close' | 'redirect' | 'rephrase'; redirectTo?: string } | null => {
+        const slots = Array.isArray(node.slotsToCollect) ? node.slotsToCollect.length : 0;
+        if (slots > 0) return null;
+        const edges = Array.isArray(node.edges) ? node.edges : [];
+        if (edges.length === 0) return null;
+
+        // Only end_call / terminal targets => closer.
+        const targets = edges.map((e: any) => e.targetStateId).filter(Boolean);
+        const uniqueTargets = new Set<string>(targets);
+        const allTerminal = targets.length > 0 && targets.every((t: string) => terminalIds.has(t) || t === 'end_call');
+        if (allTerminal) return { kind: 'close' };
+
+        // All edges point to the SAME single non-terminal state => a "rephrase then
+        // return" pattern that belongs in the parent's subLoop.
+        if (uniqueTargets.size === 1) {
+          const only = targets[0];
+          if (!terminalIds.has(only) && only !== 'end_call') return { kind: 'rephrase', redirectTo: only };
+        }
+        return null;
+      };
+
+      const removed = new Set<string>();
+      const handlerActionById = new Map<string, { action: string; redirectTo?: string }>();
       nodes.forEach((node: any) => {
-        if ((!node.slotsToCollect || node.slotsToCollect.length === 0) && /rephrase|retry|clarify|silence|error/i.test(node.id + " " + node.objective)) {
-          const parents = nodes.filter((p: any) => p.edges?.some((e: any) => e.targetStateId === node.id));
-          if (parents.length === 1) {
-            const parent = parents[0];
-            toRemove.add(node.id);
-            if (!parent.subLoop) {
-              parent.subLoop = { selfLoop: true, triggerCondition: "Error/Silence/Clarification" };
-            }
-            parent.edges = parent.edges.filter((e: any) => e.targetStateId !== node.id);
-          }
+        const cls = classifyHandler(node);
+        if (!cls) return;
+        // Skip the canonical end_call terminal itself.
+        if (terminalIds.has(node.id)) return;
+        removed.add(node.id);
+        if (cls.kind === 'close') {
+          handlerActionById.set(node.id, { action: 'acknowledge_and_close' });
+        } else if (cls.kind === 'rephrase') {
+          handlerActionById.set(node.id, { action: 'rephrase_and_return', redirectTo: cls.redirectTo });
         }
       });
-      nodes = nodes.filter((n: any) => !toRemove.has(n.id));
+
+      // Rewrite every inbound edge that pointed at a removed handler into an action
+      // verb (kept on the parent so the intent isn't lost), targeting either end_call
+      // (for close) or the rephrase parent (for rephrase-and-return).
+      nodes.forEach((node: any) => {
+        if (!Array.isArray(node.edges)) return;
+        node.edges = node.edges
+          .map((e: any) => {
+            const handler = e.targetStateId && handlerActionById.get(e.targetStateId);
+            if (!handler) return e;
+            const newTarget = handler.action === 'rephrase_and_return' ? (handler.redirectTo || node.id) : 'end_call';
+            return { ...e, action: e.action || handler.action, targetStateId: newTarget };
+          });
+        // Collapse duplicate edges the rewrite may have produced.
+        const seen = new Set<string>();
+        node.edges = node.edges.filter((e: any) => {
+          const key = String(e.condition) + '|' + String(e.targetStateId) + '|' + String(e.action || '');
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      });
+
+      nodes = nodes.filter((n: any) => !removed.has(n.id));
 
       // Infields propagation: append unreferenced infields to the first state
       const declaredInfields = infieldsList.map((v: any) => v.key).filter(Boolean);

@@ -1,4 +1,5 @@
 import { PromptPackageDraft } from "@/lib/llm/types";
+import { MultiAgentManifest } from "@/lib/llm/types/MetaAgentSchemas";
 
 export type TargetPlatform = 'bland' | 'retell' | 'vapi' | 'generic';
 
@@ -81,13 +82,49 @@ export class PlatformAdapter {
       };
     }
 
-    return {
       platform: 'generic',
       systemPrompt: fullPrompt,
       configPayload: {
         rawMarkdown: fullPrompt,
         variables: draft.dynamicVariables || []
       }
+    };
+  }
+
+  formatMultiAgent(manifest: MultiAgentManifest, platform: TargetPlatform = 'vapi'): PlatformFormattedPayload {
+    if (platform === 'vapi') {
+      return {
+        platform: 'vapi',
+        systemPrompt: manifest.agents.find(a => a.role === 'router')?.systemPrompt || '',
+        configPayload: {
+          type: 'squad',
+          members: manifest.agents.map(agent => ({
+            role: agent.role,
+            model: {
+              provider: 'openai',
+              model: 'gpt-4o',
+              messages: [{ role: 'system', content: agent.systemPrompt }],
+              functions: (agent.tools || []).map(t => ({
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters
+              }))
+            },
+            transitionConditions: agent.ownedStates.flatMap(s => 
+              (s.edges || []).filter(e => e.targetAgent && e.targetAgent !== agent.role)
+                     .map(e => ({ condition: e.condition, toRole: e.targetAgent }))
+            )
+          }))
+        }
+      };
+    }
+    
+    // Fallback for non-multi-agent capable platforms, just dump router prompt for now
+    const fallbackPrompt = manifest.agents.find(a => a.role === 'router')?.systemPrompt || 'Router Prompt Missing';
+    return {
+      platform,
+      systemPrompt: fallbackPrompt,
+      configPayload: { prompt: fallbackPrompt }
     };
   }
 }
