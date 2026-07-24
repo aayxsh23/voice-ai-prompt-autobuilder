@@ -162,7 +162,7 @@ function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
 }
 
 export const llmClient = {
-  async generate({ systemInstruction, prompt, responseMimeType, contextLabel }: { systemInstruction: string, prompt: string, responseMimeType?: string, contextLabel?: string }) {
+  async generate({ systemInstruction, prompt, responseMimeType, contextLabel, temperature }: { systemInstruction: string, prompt: string, responseMimeType?: string, contextLabel?: string, temperature?: number }) {
     const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
     const client = getOpenAIClient();
     const model = llmConfig.model;
@@ -176,7 +176,7 @@ export const llmClient = {
     const response = await client.chat.completions.create({
       model,
       messages,
-      temperature: 0.1,
+      temperature: temperature ?? 0.1,
       ...(isJson ? { response_format: { type: "json_object" as const } } : {}),
       chat_template_kwargs: { enable_thinking: true },
     } as any);

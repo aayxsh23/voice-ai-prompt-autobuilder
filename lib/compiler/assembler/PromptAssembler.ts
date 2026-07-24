@@ -1,7 +1,7 @@
 import { BusinessSpecification } from "@/lib/llm/types";
-import { ToolPlanner } from "@/lib/compiler/planners/ToolPlanner";
+
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
-import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
+import { buildToolInvocation, describeToolForPrompt, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
 import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { logger } from "@/lib/logger";
 
@@ -237,14 +237,8 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     .map((r: any) => localizeRule(r.content))
     .join('\n\n');
 
-  // Inject FSM protocols via ToolPlanner
+  // ToolPlanner was removed in Multi-Agent refactor
   let fsmProtocols = '';
-  if (Array.isArray(spec?.callFlowPlan?.fsmStates)) {
-    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates, spec.tools as any);
-    if (protocols.length > 0) {
-      fsmProtocols = protocols.join('\n\n') + '\n\n';
-    }
-  }
 
   const combinedSpeakability = [fsmProtocols, speakabilityRules, ...codeLevelSpeakability].filter(Boolean).join('\n\n');
   const speakabilityContent = combinedSpeakability || "No special speakability rules defined.";
@@ -362,50 +356,14 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
       const specMatch = resolveSlotDigitSpec(slot, region);
       if (!specMatch) return;
 
-      if (specMatch.mode === 'digits') {
-        // expected_digits is only asserted when the region makes it knowable —
-        // otherwise omit it rather than force a wrong length onto the validator.
-        const digits = specMatch.expectedDigits;
-        const open = invoke('set_capture_mode', digits !== undefined
-          ? { keep_buffer: true, mode: 'digits', field: slot, expected_digits: digits }
-          : { keep_buffer: true, mode: 'digits', field: slot });
-        const validate = invoke('validate_digit_input', {
-          field: slot,
-          ...(digits !== undefined ? { expected_digits: digits } : {}),
-          user_text: { raw: 'caller_utterance' },
-          previously_collected: { raw: 'all_digits_collected_so_far' },
-        });
-        const close = invoke('set_capture_mode', { keep_buffer: false });
-        if (open) requiredToolActions.push(`- Before asking: Invoke \`${open}\` in the SAME turn you ask for ${slot}.`);
-        if (validate) requiredToolActions.push(`- On response: Call \`${validate}\` to verify and accumulate digits. If \`is_valid: false\`, speak the prompt returned by the tool or ask specifically for remaining digits. Retry up to 3 times.`);
-        if (close) requiredToolActions.push(`- On completion: Call \`${close}\` before proceeding to the next state.`);
-      } else if (specMatch.mode === 'email') {
-        const emailToolName = registeredTools.find((t: any) => t?.name?.startsWith("format_email_"))?.name;
-        const open = invoke('set_capture_mode', { keep_buffer: true, mode: 'email', field: slot });
-        const format = emailToolName ? invoke(emailToolName, { email_text: { raw: 'caller_utterance' } }) : null;
-        const close = invoke('set_capture_mode', { keep_buffer: false });
-        if (open) requiredToolActions.push(`- Before asking: Invoke \`${open}\` in the SAME turn you ask for ${slot}.`);
-        if (format) requiredToolActions.push(`- On response: Call \`${format}\` and read back \`spoken_email\` exactly for confirmation.`);
-        if (close) requiredToolActions.push(`- On completion: Call \`${close}\` before proceeding to the next state.`);
-      }
-    });
-
-    const isUnconditionalTerminal = s?.isTerminal === true || s?.stateId === "resolution" || s?.stateId === "closing" || s?.stateId === "end_call";
-    const hasConditionalEndCall = Array.isArray(s?.branchingConditions) && s.branchingConditions.some((b: any) => b?.goToStep === 'end_call' || b?.action === 'end_call');
-
-    if (isUnconditionalTerminal) {
-      const call = invoke('end_call', { reason: s?.stateId === "resolution" ? "closing_complete" : "flow_terminal" });
-      if (call) requiredToolActions.push(`- Call Termination: Invoke \`${call}\` synchronously in the exact same turn as your closing sentence.`);
-    } else if (hasConditionalEndCall) {
-      const termBranches = (s.branchingConditions as any[] || []).filter(b => b?.goToStep === 'end_call' || b?.action === 'end_call');
-      termBranches.forEach(tb => {
-        const call = invoke('end_call', { reason: tb?.reason || tb?.condition || "flow_terminal" });
-        if (call) requiredToolActions.push(`- Conditional Call Termination: IF caller triggers condition "${tb?.condition}", speak your closing line and invoke \`${call}\` synchronously in that same turn.`);
+      // Dynamic tool hydration using defaultArgs
+      registeredTools.forEach((toolDef: any) => {
+        if (toolDef.defaultArgs) {
+          const call = invoke(toolDef.name, toolDef.defaultArgs);
+          if (call) requiredToolActions.push(`- Dynamically injected tool call: \`${call}\``);
+        }
       });
-    } else if (Array.isArray(s?.invokesTools) && s.invokesTools.includes("end_call")) {
-      const call = invoke('end_call', { reason: "flow_terminal" });
-      if (call) requiredToolActions.push(`- Conditional Call Termination: If caller asks to disconnect or terminate during this state, speak your closing response and invoke \`${call}\` in that same turn.`);
-    }
+    });
 
     if (Array.isArray(s?.invokesTools)) {
       s.invokesTools.forEach((tName: string) => {
@@ -829,7 +787,7 @@ OFF-TOPIC REFUSAL PROTOCOL
   // 11. AVAILABLE TOOLS
   let toolsContent = "";
   if (Array.isArray(spec?.tools) && spec.tools.length > 0) {
-    const descriptions = spec.tools.map(t => ToolPlanner.describeToolForPrompt(t as any)).filter(Boolean);
+    const descriptions = spec.tools.map(t => describeToolForPrompt(t as any)).filter(Boolean);
     if (descriptions.length > 0) {
       toolsContent = `### AVAILABLE TOOLS\nYou have access to the following tools. Use them exactly as instructed by the CALL FLOW.\n\n${descriptions.join('\n\n')}`;
     }

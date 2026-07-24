@@ -1,3 +1,4 @@
+import { ArchitectOutput } from "../types";
 import { BusinessSpecification, safeParseJson } from "@/lib/llm/types";
 import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
 import { FsmStateNode } from "@/lib/llm/types/CallFlowPlan";
@@ -6,8 +7,8 @@ import { isDerivedSlot } from "@/lib/compiler/constants/slotRegistry";
 import { SYSTEM_RUNTIME_TOOLS, getEmailTool } from "@/lib/compiler/constants/toolRegistry";
 import { logger } from "@/lib/logger";
 
-export class WorkflowArchitect {
-  public static async planWorkflow(spec: Partial<BusinessSpecification>): Promise<FsmStateNode[]> {
+export class LogicArchitect {
+  public static async planWorkflow(spec: Partial<BusinessSpecification>): Promise<ArchitectOutput> {
     const meta = spec.meta || {} as any;
     const snap = spec.businessSnapshot || {} as any;
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
@@ -16,6 +17,8 @@ export class WorkflowArchitect {
     const primaryGoal = meta.primaryGoal || meta.description || "Assist callers professionally";
 
     const toneListForTools = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
+    
+    // Q1 Fix: explicitly merge all tools and make them available to the Architect.
     const registeredToolNames = Array.from(new Set<string>([
       ...SYSTEM_RUNTIME_TOOLS.map(t => t.name),
       getEmailTool(toneListForTools).name,
@@ -84,7 +87,8 @@ export class WorkflowArchitect {
       ? `\nLANGUAGE DIRECTIVE: Write all 'speechPrompt' lines inside the FSM nodes in Devanagari script (देवनागरी) Hindi. English terminology should be romanized.`
       : "";
 
-    const prompt = `You are a WorkflowArchitect specializing in designing robust voice AI call flow state machines using a Graph-Based FSM topology.
+    // Q2 Fix: Tell LLM to utilize notes and closeVariants explicitly
+    const prompt = `You are a Logic Architect specializing in designing robust voice AI call flow state machines using a Graph-Based FSM topology.
 Given the business goal, metadata, and operational topics, design a comprehensive, multi-step Finite State Machine (FSM).${langDirective}
 
 BUSINESS SNAPSHOT:
@@ -94,7 +98,7 @@ BUSINESS SNAPSHOT:
 - **Operating Hours:** ${snap.operatingHours || "N/A"}
 - **Services:** ${snap.servicesOffered?.join(', ') || "N/A"}
 - **Call Direction:** ${isInbound ? "INBOUND (Customer calls us)" : "OUTBOUND (We call customer)"}
-${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
+${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic using edges, notes, or closeVariants.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
 
 CONTEXT VARIABLES & EXTRACTIONS:
 ${infieldsList.length > 0 ? `Known Pre-Call Infields (Available before call): ${JSON.stringify(infieldsList.map((v: any) => v.key))}\n` : ""}
@@ -158,14 +162,14 @@ MANDATORY STATE MACHINE DESIGN RULES:
 7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
-10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
-11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`). If the user defined logic using curly braces like \`{date}\`, convert it to \`[[date]]\`. Do NOT use curly braces for derived variables.
+10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool.
+11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`).
 
-Generate the strict JSON array of FSM state nodes now.\`;
+Generate the strict JSON array of FsmStateNode objects now.`;
 
     try {
       if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {
-        return (spec.callFlowPlan as any).fsmStates || spec.callFlowPlan?.userDefinedSteps;
+        return { fsmStates: (spec.callFlowPlan as any).fsmStates || spec.callFlowPlan?.userDefinedSteps };
       }
 
       const response = await geminiClient.generate({
@@ -176,7 +180,7 @@ Generate the strict JSON array of FSM state nodes now.\`;
       let parsed = safeParseJson(response.text, fallbackStates);
       
       if (!parsed || !Array.isArray(parsed) || parsed.length < 1) {
-        logger.warn('WorkflowArchitect FSM generation failed or returned empty states. Falling back to default template.');
+        logger.warn('LogicArchitect FSM generation failed or returned empty states. Falling back to default template.');
         parsed = fallbackStates;
       }
 
@@ -199,7 +203,7 @@ Generate the strict JSON array of FSM state nodes now.\`;
       });
       nodes = nodes.filter((n: any) => !toRemove.has(n.id));
 
-      // Infields propagation: append unreferenced infields to the first state
+      // Infields propagation
       const declaredInfields = infieldsList.map((v: any) => v.key).filter(Boolean);
       for (const key of declaredInfields) {
         const isReferenced = nodes.some((node: any) => {
@@ -234,10 +238,10 @@ Generate the strict JSON array of FSM state nodes now.\`;
         }
       });
       
-      return nodes;
+      return { fsmStates: nodes as FsmStateNode[] };
     } catch (err) {
-      logger.warn("WorkflowArchitect fallback triggered", err);
-      return fallbackStates;
+      logger.warn("LogicArchitect fallback triggered", err);
+      return { fsmStates: fallbackStates as FsmStateNode[] };
     }
   }
 }

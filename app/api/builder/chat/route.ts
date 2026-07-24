@@ -72,10 +72,10 @@ function canonicalizeVars(vars: any[]): any[] {
   const validVars = vars.filter(v => v && v.key);
   const allKeys = validVars.map(v => v.key);
   const dedupedKeys = new Set(semanticDedupSlots(allKeys));
-  
+
   const result: any[] = [];
   const seen = new Set<string>();
-  
+
   for (const v of validVars) {
     if (dedupedKeys.has(v.key) && !seen.has(v.key)) {
       seen.add(v.key);
@@ -166,12 +166,12 @@ Ensure you return valid JSON with no markdown fences.`;
         systemInstruction: "You are a pure JSON data extraction service. Output ONLY valid JSON. Never ask the user about tools, function calls, APIs, or how backend/CRM data is fetched — assume infields exist and telephony tools are added automatically.",
         prompt: patchPrompt
       });
-      const patch = safeParseJson(llmResponse.text, {}) as Record<string, Record<string, unknown>>;
+      const patch = safeParseJson(llmResponse.text, {}) as Record<string, any>;
       if (patch && typeof patch === 'object') {
         const patchPolicy = sanitizeCallFlowPolicy(patch.callFlowPolicy);
         const patchStages = sanitizeRequiredStages(patch.requiredStages);
         const patchScript = patch.callFlowScript || (patch.callFlowPlan as any)?.script;
-        
+
         delete patch.callFlowPlan;
         delete patch.knowledgeBase;
         delete patch.tools;
@@ -235,22 +235,22 @@ Ensure you return valid JSON with no markdown fences.`;
             script: patchScript || existingFlow?.script,
             ...patchPolicy,
             ...(patchStages.length > 0 || existingFlow?.requiredStages
-              ? { 
-                  requiredStages: (() => {
-                    const combined = [...(existingFlow?.requiredStages || []), ...patchStages].filter(s => s && s.id);
-                    const allIds = combined.map(s => s.id);
-                    const dedupedIds = new Set(semanticDedupSlots(allIds));
-                    const result = [];
-                    const seen = new Set<string>();
-                    for (const s of combined) {
-                      if (dedupedIds.has(s.id) && !seen.has(s.id)) {
-                        seen.add(s.id);
-                        result.push(s);
-                      }
+              ? {
+                requiredStages: (() => {
+                  const combined = [...(existingFlow?.requiredStages || []), ...patchStages].filter(s => s && s.id);
+                  const allIds = combined.map(s => s.id);
+                  const dedupedIds = new Set(semanticDedupSlots(allIds));
+                  const result = [];
+                  const seen = new Set<string>();
+                  for (const s of combined) {
+                    if (dedupedIds.has(s.id) && !seen.has(s.id)) {
+                      seen.add(s.id);
+                      result.push(s);
                     }
-                    return result.slice(0, 8);
-                  })()
-                }
+                  }
+                  return result.slice(0, 8);
+                })()
+              }
               : {}),
           },
           knowledgeBase: {

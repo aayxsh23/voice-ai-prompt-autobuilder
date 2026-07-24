@@ -19,6 +19,7 @@ export interface ToolDefinition {
   };
   associatedStateId?: string;
   usageProtocol?: string;
+  defaultArgs?: Record<string, any>;
 }
 
 export const SYSTEM_RUNTIME_TOOLS: ToolDefinition[] = [
@@ -135,4 +136,19 @@ export function buildToolInvocation(
   const ordered = declared.filter(k => k in args);
   const rendered = ordered.map(k => `${k}: ${renderArgValue(args[k])}`);
   return `${toolName}(${rendered.join(', ')})`;
+}
+
+export function describeToolForPrompt(tool: ToolDefinition): string {
+  const params = Object.entries(tool.parameters?.properties || {}).map(([name, prop]: [string, any]) => {
+    const type = prop.type || 'string';
+    const desc = prop.description ? ` (${prop.description})` : '';
+    const required = new Set(tool.parameters?.required || []);
+    const req = required.has(name) ? '' : ' (optional)';
+    return `${name}: ${type}${req}${desc}`;
+  });
+  let desc = `\`${tool.name}(${params.join(', ')})\` — ${tool.description}`;
+  if (tool.usageProtocol) {
+    desc += `\n*(See CALL FLOW protocol for exact usage rules)*`;
+  }
+  return desc;
 }
