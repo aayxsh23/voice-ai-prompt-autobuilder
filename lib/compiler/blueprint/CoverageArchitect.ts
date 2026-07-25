@@ -1,5 +1,5 @@
 import { BusinessSpecification, safeParseJson } from "@/lib/llm/types";
-import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
+import { llmClient } from "@/lib/llm/llmProvider";
 import { logger } from "@/lib/logger";
 
 export interface CoverageReport {
@@ -420,7 +420,7 @@ ${covered.map(r => `- ${r.id}: ${r.label}`).join('\n')}
 Return ONLY valid JSON: { "unanswered": ["topic_id", ...] }`;
 
     try {
-      const res = await geminiClient.generate({
+      const res = await llmClient.generate({
         systemInstruction: 'You are a strict interview auditor. Return ONLY valid JSON.',
         prompt,
         responseMimeType: 'application/json',
@@ -479,7 +479,7 @@ requirement.
 Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
 
     try {
-      const res = await geminiClient.generate({
+      const res = await llmClient.generate({
         systemInstruction: 'You are an interview planner. Return ONLY valid JSON.',
         prompt,
         responseMimeType: 'application/json',
@@ -584,7 +584,7 @@ CRITICAL RULES FOR YOUR RESPONSE:
 4. AVOID REPETITION: Review the conversation history carefully. NEVER ask about a topic, policy, procedure, or detail that the user has already answered or explained.${langInstruction}`;
 
     try {
-      const response = await geminiClient.generate({
+      const response = await llmClient.generate({
         systemInstruction: "You are an expert conversational AI architect building a Voice AI agent through an interactive interview. CRITICAL BEHAVIORAL RULE: NEVER mention 'Phase 1', 'Phase 2', 'Discovery Stage', 'transition', or any internal phase/stage numbers or names to the user. Never recite summaries of completed steps just to announce moving forward. Simply ask the next logical question in a warm, direct, conversational manner. Never ask the user about tools, function calls, APIs, or how backend/CRM data is fetched — assume infields exist and telephony tools are added automatically.",
         prompt
       });

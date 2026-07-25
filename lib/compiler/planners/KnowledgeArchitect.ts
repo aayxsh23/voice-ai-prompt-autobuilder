@@ -1,5 +1,5 @@
 import { BusinessSpecification } from "@/lib/llm/types";
-import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
+import { llmClient } from "@/lib/llm/llmProvider";
 import { safeParseJson } from "@/lib/llm/types";
 import { logger } from "@/lib/logger";
 
@@ -79,7 +79,7 @@ Return a JSON object with:
 - objections: array of { trigger: string, response: string (in exact target language) }`;
 
     try {
-      const response = await geminiClient.generate({
+      const response = await llmClient.generate({
         systemInstruction: `You are a knowledge base curation specialist. Return ONLY valid JSON.${isHindiOrHinglish ? " All FAQ answers and objection responses MUST be written in Devanagari script (देवनागरी). ENGLISH WORDS RULE: Any word originating from English (WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, etc.) MUST remain in Roman/English script inside the Devanagari sentence. NEVER transliterate English words to Devanagari." : ""}`,
         prompt,
         responseMimeType: "application/json"

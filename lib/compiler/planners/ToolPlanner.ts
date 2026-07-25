@@ -23,10 +23,8 @@ export class ToolPlanner {
 
   /**
    * Renders a prompt-friendly tool definition from the tool's JSON Schema.
-   * Example output:
-   *   `validate_digit_input(field: string — "field name", expected_digits: integer — "digit count", ...)`
    */
-  public static describeToolForPrompt(tool: ToolDefinition): string {
+  public static describeToolForPrompt(tool: ToolDefinition, index: number): string {
     const props = tool.parameters?.properties || {};
     const required = new Set(tool.parameters?.required || []);
     const params = Object.entries(props).map(([name, schema]: [string, any]) => {
@@ -35,9 +33,16 @@ export class ToolPlanner {
       const req = required.has(name) ? '' : ' (optional)';
       return `${name}: ${type}${req}${desc}`;
     });
-    let desc = `\`${tool.name}(${params.join(', ')})\` — ${tool.description}`;
+    
+    let desc = `${index}. ${tool.name}\nPurpose: ${tool.description}\nUsage:`;
+    if (params.length > 0) {
+      desc += `\nParameters:\n- ${params.join('\n- ')}`;
+    }
+    
     if (tool.usageProtocol) {
-      desc += `\n*(See CALL FLOW protocol for exact usage rules)*`;
+      // Strip markdown headers from usageProtocol to fit nicely under Usage:
+      const cleanUsage = tool.usageProtocol.replace(/^#+\s.*?\n/gm, '').trim();
+      desc += `\n\n${cleanUsage}`;
     }
     return desc;
   }
@@ -54,7 +59,7 @@ export class ToolPlanner {
       if (state.entryAction) activeTools.add(state.entryAction.tool);
       
       // Implicit tools
-      if (state.terminal || state.id === 'end_call' || state.id === 'resolution' || state.edges?.some(e => e.targetStateId === 'end_call' || e.action === 'end_call' || !e.targetStateId)) {
+      if (state.isTerminal || state.id === 'end_call' || state.id === 'resolution' || state.edges?.some(e => e.targetStateId === 'end_call' || e.action === 'end_call' || !e.targetStateId)) {
         activeTools.add('end_call');
       }
       

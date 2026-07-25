@@ -19,14 +19,14 @@ const llmConfigSchema = z.object({
 
 export const llmConfig = llmConfigSchema.parse({
   baseUrl:
-    process.env.QWEN_BASE_URL_FOR_LLM ||
-    process.env.QWEN_BASE_URL ||
-    'http://localhost:8000/v1',
-  apiKey: process.env.QWEN_API_KEY || 'EMPTY',
-  model: process.env.QWEN_MODEL || 'Qwen/Qwen3.6-35B-A3B-FP8',
-  timeoutMs: Number(process.env.QWEN_TIMEOUT_MS) || 60_000,
-  maxRetries: Number.isFinite(Number(process.env.QWEN_MAX_RETRIES))
-    ? Number(process.env.QWEN_MAX_RETRIES)
+    process.env.GEMINI_BASE_URL_FOR_LLM ||
+    process.env.GEMINI_BASE_URL ||
+    'https://generativelanguage.googleapis.com/v1beta/openai/',
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || 'EMPTY',
+  model: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
+  timeoutMs: Number(process.env.GEMINI_TIMEOUT_MS) || 60_000,
+  maxRetries: Number.isFinite(Number(process.env.GEMINI_MAX_RETRIES))
+    ? Number(process.env.GEMINI_MAX_RETRIES)
     : 3,
 });
 

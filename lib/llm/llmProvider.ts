@@ -140,7 +140,7 @@ function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string
   
   const extractedThinking = nativeThinking || tagThinking;
   if (extractedThinking) {
-    logger.debug(`Qwen thinking tokens (${contextLabel})`, extractedThinking);
+    logger.debug(`Gemini thinking tokens (${contextLabel})`, extractedThinking);
   }
 
   if (response.usage) {
@@ -178,7 +178,7 @@ export const llmClient = {
       messages,
       temperature: 0.1,
       ...(isJson ? { response_format: { type: "json_object" as const } } : {}),
-      chat_template_kwargs: { enable_thinking: true },
+      
     } as any);
 
     const rawContent = extractAndLogThinking(response, contextLabel || "llmClient.generate");
@@ -194,7 +194,7 @@ export const llmClient = {
 // Backward-compatibility alias so any existing code importing geminiClient still works seamlessly
 export const geminiClient = llmClient;
 
-export class QwenProvider implements LlmService {
+export class llmProvider implements LlmService {
   private client: OpenAI;
   private modelName: string;
 
@@ -212,14 +212,14 @@ export class QwenProvider implements LlmService {
       ],
       temperature: 0.1,
       response_format: { type: "json_object" as const },
-      chat_template_kwargs: { enable_thinking: true },
+      
     } as any);
 
     const rawContent = extractAndLogThinking(response, "generateJson");
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent) {
-      throw new Error("Qwen API returned empty response.");
+      throw new Error("Gemini API returned empty response.");
     }
     return safeParseJson<T>(cleanContent, {} as T);
   }
@@ -242,7 +242,7 @@ export class QwenProvider implements LlmService {
       ],
       temperature,
       ...(isJsonRequest ? { response_format: { type: "json_object" as const } } : {}),
-      chat_template_kwargs: { enable_thinking: true },
+      
     } as any);
 
     const label = options?.contextLabel || "generateRaw";

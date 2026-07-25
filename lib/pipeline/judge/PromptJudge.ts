@@ -3,7 +3,7 @@ import { ChatMessage, BusinessSpecification, safeParseJson } from "@/lib/llm/typ
 import { LanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { checkContracts, type ContractViolation } from "@/lib/pipeline/contracts/promptContracts";
 import { getLlmClient } from "@/lib/llm/llmClient";
-import { PROMPT_EDITOR_INSTRUCTION } from "@/lib/llm/qwenProvider";
+import { PROMPT_EDITOR_INSTRUCTION } from "@/lib/llm/llmProvider";
 import { logger } from "@/lib/logger";
 
 /** Contract violations and judge issues carry the same information. */

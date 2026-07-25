@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { llmClient as geminiClient } from '@/lib/llm/qwenProvider';
+import { llmClient } from '@/lib/llm/llmProvider';
 import { safeParseJson, BusinessSpecification } from '@/lib/llm/types';
 import { CoverageArchitect } from '@/lib/compiler/blueprint/CoverageArchitect';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
@@ -162,11 +162,12 @@ Ensure you return valid JSON with no markdown fences.`;
 
     let updatedSpec: Partial<BusinessSpecification> = { ...existingSpec };
     try {
-      const llmResponse = await geminiClient.generate({
+      const llmResponse = await llmClient.generate({
         systemInstruction: "You are a pure JSON data extraction service. Output ONLY valid JSON. Never ask the user about tools, function calls, APIs, or how backend/CRM data is fetched — assume infields exist and telephony tools are added automatically.",
-        prompt: patchPrompt
+        prompt: patchPrompt,
+        responseMimeType: "application/json"
       });
-      const patch = safeParseJson(llmResponse.text, {}) as Record<string, Record<string, unknown>>;
+      const patch = safeParseJson(llmResponse.text, {}) as Record<string, any>;
       if (patch && typeof patch === 'object') {
         const patchPolicy = sanitizeCallFlowPolicy(patch.callFlowPolicy);
         const patchStages = sanitizeRequiredStages(patch.requiredStages);

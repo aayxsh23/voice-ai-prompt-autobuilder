@@ -1,5 +1,5 @@
 import { BusinessSpecification, safeParseJson } from "@/lib/llm/types";
-import { llmClient as geminiClient } from "@/lib/llm/qwenProvider";
+import { llmClient } from "@/lib/llm/llmProvider";
 import { FsmStateNode } from "@/lib/llm/types/CallFlowPlan";
 import { semanticDedupSlots } from "@/lib/compiler/assembler/PromptAssembler";
 import { isDerivedSlot } from "@/lib/compiler/constants/slotRegistry";
@@ -161,14 +161,14 @@ MANDATORY STATE MACHINE DESIGN RULES:
 10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
 11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`). If the user defined logic using curly braces like \`{date}\`, convert it to \`[[date]]\`. Do NOT use curly braces for derived variables.
 
-Generate the strict JSON array of FSM state nodes now.\`;
+Generate the strict JSON array of FSM state nodes now.`;
 
     try {
       if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {
         return (spec.callFlowPlan as any).fsmStates || spec.callFlowPlan?.userDefinedSteps;
       }
 
-      const response = await geminiClient.generate({
+      const response = await llmClient.generate({
         systemInstruction: `You are a structured JSON FSM planning specialist. Return ONLY a valid JSON array of FsmStateNode objects.`,
         prompt,
         responseMimeType: "application/json"

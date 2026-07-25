@@ -7,7 +7,7 @@ import { BusinessSpecification } from '@/lib/llm/types';
 import { WorkflowArchitect } from '@/lib/compiler/planners/WorkflowArchitect';
 import { KnowledgeArchitect } from '@/lib/compiler/planners/KnowledgeArchitect';
 import { ToolPlanner } from '@/lib/compiler/planners/ToolPlanner';
-import { llmClient as qwenLlmClient } from '@/lib/llm/qwenProvider';
+import { llmClient as qwenLlmClient } from '@/lib/llm/llmProvider';
 import { prisma } from '@/lib/db';
 import { JUDGE_MAX_ROUNDS } from '@/lib/config';
 
@@ -530,8 +530,8 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
       } as any);
 
       vi.spyOn(WorkflowArchitect, 'planWorkflow').mockResolvedValue([
-        { id: 'opening', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Hi' } },
-        { id: 'cross_sell_pitch', objective: 'Pitch', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'May I share?' } },
+        { id: '1', objective: 'Collect input', edges: [{ condition: 'always', targetStateId: 'end_call' }], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Hi' } },
+        { id: 'cross_sell_pitch', objective: 'Pitch', slotsToCollect: [], edges: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'May I share?' } },
       ] as any);
 
       const input = {

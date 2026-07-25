@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { CoverageArchitect } from './CoverageArchitect';
-import * as qwen from '@/lib/llm/qwenProvider';
+import * as llmProvider from '@/lib/llm/llmProvider';
 
 describe('CoverageArchitect language-aware detection', () => {
   it('recognizes operating hours answered in Hindi/Devanagari', () => {
@@ -72,7 +72,7 @@ describe('CoverageArchitect behavior (characterization)', () => {
 afterEach(() => vi.restoreAllMocks());
 
 const mockLlm = (payload: unknown) =>
-  vi.spyOn(qwen.llmClient, 'generate').mockResolvedValue({ text: JSON.stringify(payload) });
+  vi.spyOn(llmProvider.llmClient, 'generate').mockResolvedValue({ text: JSON.stringify(payload) });
 
 // 1c — the interview adapts to the use case instead of asking a fixed checklist,
 // but never at the cost of the safety/identity floor.
@@ -109,7 +109,7 @@ describe('adaptive topics (notApplicableTopics)', () => {
   });
 
   it('treats everything as applicable when the LLM fails', async () => {
-    vi.spyOn(qwen.llmClient, 'generate').mockRejectedValue(new Error('down'));
+    vi.spyOn(llmProvider.llmClient, 'generate').mockRejectedValue(new Error('down'));
     expect(await CoverageArchitect.selectNotApplicableTopics({}, hist)).toEqual([]);
   });
 });
@@ -136,7 +136,7 @@ describe('coverage adjudication', () => {
   });
 
   it('fails open so a judge outage cannot block the interview', async () => {
-    vi.spyOn(qwen.llmClient, 'generate').mockRejectedValue(new Error('down'));
+    vi.spyOn(llmProvider.llmClient, 'generate').mockRejectedValue(new Error('down'));
     expect(await CoverageArchitect.adjudicateCoverage({}, hist, [])).toEqual([]);
   });
 });
