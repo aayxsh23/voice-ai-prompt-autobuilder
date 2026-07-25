@@ -105,7 +105,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 1. OUTPUT FORMAT: Return ONLY a valid JSON array of FsmStateNode objects.
 2. GRAPH TOPOLOGY: The FSM is a directed graph, NOT a linear pipeline. Design states to be REUSABLE:
    - Create shared utility states (e.g., one 'escalation' state, one 'confirmation_readback' state) reachable from MULTIPLE other states via edges.
-   - Allow correction loops: the confirmation state should route BACK to any collection state the caller wants to fix.
+   - Allow IN-PLACE correction loops: the confirmation/readback state should NOT route back to the collection state for minor corrections. It MUST use a 'subLoop' to update the field and repeat the read-back within the SAME state. Only route out of the state if the correction fails repeatedly.
    - Allow early termination: EVERY non-greeting state must have an edge to 'end_call' for when the caller wants to disconnect.
    - Allow re-entry: if verification fails, route back to the verification state, don't create a separate "re-verify" state.
 3. FSM NODE SCHEMA:
@@ -128,7 +128,10 @@ MANDATORY STATE MACHINE DESIGN RULES:
        "triggerCondition": "User corrects previous input"
      },
      "closeVariants": [
-       { "variant": "success", "script": "Thank you, we are done here." }
+       { "variant": "success", "script": "Thank you, your booking is confirmed." },
+       { "variant": "declined", "script": "No problem, thank you for your time." },
+       { "variant": "opt_out", "script": "I understand, we will remove you from our list." },
+       { "variant": "callback_handoff", "script": "Our team will call you back shortly." }
      ],
      "direction": "agent calls customer",
      "terminal": false,
@@ -155,11 +158,11 @@ MANDATORY STATE MACHINE DESIGN RULES:
    - If Inbound: State 1 MUST greet and ask how to help.
    - If Outbound: State 1 MUST introduce the agent and verify the caller's identity.
    - AI DISCLOSURE: ${denyAiDisclosure ? "DO NOT disclose AI identity. Present as a human." : "Proactively disclose that the agent is an AI."}
-7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool.
+7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. For the closing state (or any state preceding end_call), you MUST provide distinct closeVariants for different outcomes (e.g., success, declined, opt_out, callback_handoff) so the agent's sign-off matches the actual conversation outcome (e.g. not saying 'see you soon' to someone who opted out).
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
 10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
-11. VARIABLE FORMATTING: When referencing derived variables or slots (like dates, centers, numbers) inside \`speechPrompt\`, \`script\`, or \`closeVariants\`, you MUST wrap them in double square brackets like \`[[slot_name]]\` (e.g. \`[[date]]\`). If the user defined logic using curly braces like \`{date}\`, convert it to \`[[date]]\`. Do NOT use curly braces for derived variables.
+11. VARIABLE FORMATTING: You must explicitly distinguish between variables. All pre-fed infield variables MUST be wrapped in double curly braces (e.g. {{customer_name}}). All variables collected during the call (extracted slots) MUST be wrapped in single square brackets (e.g. [booking_date]). Do not mix these up.
 
 Generate the strict JSON array of FSM state nodes now.`;
 

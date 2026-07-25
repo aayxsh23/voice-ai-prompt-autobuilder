@@ -29,13 +29,15 @@ Language Mode: ${meta.languageMode || 'english'}
 Industry: ${meta.industry || 'Unknown'}
 Is Regulated: ${meta.isRegulated ? 'Yes' : 'No'}
 Domain/Goal: ${meta.primaryGoal || 'Unknown'}
+Scope Exclusions / Forbidden Actions: ${JSON.stringify(meta.scopeExclusions || [])}
 
 RULES FOR OPTIMIZATION:
 1. PRUNE irrelevant rules: Remove rules that do not apply to this deployment context. Aggressively drop rules that don't make sense for the current Domain/Goal or Industry. For example, if the agent is voice-only, remove rules about DTMF.
 2. MODIFY rules to match context: If a rule mentions generic "currency", rewrite it to use the specific currency for the Region Code (e.g., "Indian Rupees (₹/INR)" for IN, "US Dollars ($/USD)" for US, "Qatari Riyals (QR/QAR)" for QA). If it mentions generic emergency numbers, rewrite to use the correct local emergency number (e.g. 112 for IN, 999 for QA, 911 for US).
-3. KEEP and REWRITE relevant rules: Any rule that applies to the industry or PII handling should be kept, BUT explicitly rewritten to mention the context of the user's business (e.g., instead of generic "PII", specify "patient records" if the domain is a clinic, or "credit card details" if it's retail).
-4. DO NOT ADD new rules that weren't in the input list.
-5. DO NOT TOUCH canonical safety concepts like self-harm, suicide, hallucination, or user abuse. These are handled elsewhere.
+3. KEEP and REWRITE relevant rules: Any rule that applies to the Industry should be kept and rewritten to match the context of the user's business.
+4. ANTI-CONTRADICTION RULE: If the user's business context, forbidden actions, or scope exclusions explicitly state that an action or data collection is forbidden, you MUST completely drop any guardrails or examples that contradict those constraints. Do not include examples (like 'OTP', 'SSN', 'credit card') in generic guardrails if the business explicitly forbids collecting them.
+5. DO NOT ADD new rules that weren't in the input list.
+6. DO NOT TOUCH canonical safety concepts like self-harm, suicide, hallucination, or user abuse. These are handled elsewhere.
 
 Output ONLY the optimized guardrail text. Format as a markdown bulleted list.`;
 
