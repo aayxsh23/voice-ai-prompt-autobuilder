@@ -1,6 +1,7 @@
 import { BusinessSpecification } from "@/lib/llm/types";
 import { SYSTEM_RUNTIME_TOOLS, getEmailTool, ToolDefinition } from "@/lib/compiler/constants/toolRegistry";
 import { FsmStateNode } from "@/lib/llm/types/CallFlowPlan";
+import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
 
 export class ToolPlanner {
   /**
@@ -9,8 +10,28 @@ export class ToolPlanner {
   public static async planTools(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['tools']> {
     const meta = spec.meta || {} as any;
     const toneList = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
-    const emailTool = getEmailTool(toneList);
-    const immutableSystemTools = [...SYSTEM_RUNTIME_TOOLS, emailTool];
+    
+    // Always inject end_call (every flow terminates)
+    const immutableSystemTools = [...SYSTEM_RUNTIME_TOOLS.filter(t => t.name === 'end_call')];
+    
+    const allSlots = Array.from(new Set<string>((spec.callFlowPlan?.fsmStates || []).flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])))).filter(Boolean);
+    const hasEmailSlot = allSlots.some(s => resolveSlotDigitSpec(s)?.mode === 'email');
+    const hasDigitSlot = allSlots.some(s => resolveSlotDigitSpec(s)?.mode === 'digits');
+    
+    if (hasDigitSlot) {
+      const validateDigitTool = SYSTEM_RUNTIME_TOOLS.find(t => t.name === 'validate_digit_input');
+      if (validateDigitTool) immutableSystemTools.push(validateDigitTool);
+    }
+    
+    if (hasDigitSlot || hasEmailSlot) {
+      const setCaptureModeTool = SYSTEM_RUNTIME_TOOLS.find(t => t.name === 'set_capture_mode');
+      if (setCaptureModeTool) immutableSystemTools.push(setCaptureModeTool);
+    }
+    
+    if (hasEmailSlot) {
+      const emailTool = getEmailTool(toneList);
+      immutableSystemTools.push(emailTool);
+    }
 
     // Only return already available/configured tools; never generate new tools via LLM
     // or inject hardcoded fallbacks like transfer_call.
@@ -64,11 +85,11 @@ export class ToolPlanner {
       }
       
       const slots = state.slotsToCollect || [];
-      if (slots.some(s => /phone|mobile|whatsapp|pin|otp|passcode/i.test(s))) {
+      if (slots.some(s => resolveSlotDigitSpec(s)?.mode === 'digits')) {
         activeTools.add('validate_digit_input');
         activeTools.add('set_capture_mode');
       }
-      if (slots.some(s => /email/i.test(s))) {
+      if (slots.some(s => resolveSlotDigitSpec(s)?.mode === 'email')) {
         activeTools.add('set_capture_mode');
         const emailToolName = tools.find(t => t.name.startsWith('format_email_'))?.name || 'format_email_for_voice';
         activeTools.add(emailToolName);

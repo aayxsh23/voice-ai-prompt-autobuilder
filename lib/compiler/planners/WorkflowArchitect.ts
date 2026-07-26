@@ -163,8 +163,13 @@ MANDATORY STATE MACHINE DESIGN RULES:
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
 10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
 11. VARIABLE FORMATTING: You must explicitly distinguish between variables. All pre-fed infield variables MUST be wrapped in double curly braces (e.g. {{customer_name}}). All variables collected during the call (extracted slots) MUST be wrapped in single square brackets (e.g. [booking_date]). Do not mix these up.
+12. EXACT MAPPING RULE: If MANDATORY STAGES are provided, you MUST use the exact string values from that list as the \`id\` or \`objective\` for the corresponding states, so downstream validators can map them.
+13. DATA LOSS IN PARAPHRASING: You may paraphrase user scripts for natural conversational flow, but you MUST NOT DROP any specific instructions, facts, policies, disclosures (like call recording), or identity checks that the user provided in their script. If the user said 'confirm identity first', your generated speechPrompt MUST include a question confirming identity. If the user said 'state the call is recorded', your generated speechPrompt MUST state the call is recorded.
+14. COMPLEX PUSHBACK ROUTING: If a specific branch requires a multi-step response (e.g., 'acknowledge -> note follow-up -> redirect once -> close if still declined'), you MUST encode this exactly using a combination of a \`subLoop\` (for the redirect) and a terminal \`edge\` (for the close). Do not simplify it to a single edge.
+15. SYNC PROSE AND EDGES: If the user specified handling for objections, digressions, or edge cases (like 'customer busy' or 'why are you calling'), you MUST create explicit conditional edges or a subLoop in the relevant states to handle these paths structurally. Do not rely entirely on implicit LLM reasoning for explicit business rules.
+16. END_CALL REASONS: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number.
 
-Generate the strict JSON array of FSM state nodes now.`;
+Generate the strict JSON array of FsmStateNode now.`;
 
     try {
       if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {

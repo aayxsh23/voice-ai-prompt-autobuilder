@@ -440,14 +440,22 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const toneList = Array.isArray(spec?.meta?.toneProfile) ? spec.meta.toneProfile : [String(spec?.meta?.toneProfile || "Professional")];
   const companyName = spec?.meta?.companyName || "the company";
   const agentName = spec?.meta?.agentName || "Agent";
+  const openingPhraseLower = (spec?.meta?.openingPhrase || "").toLowerCase();
+  let aiDisclosureMode = policy.aiDisclosure;
+  
+  // Override AI Disclosure if the user provided an opening script that explicitly reveals AI identity or recording status
+  if (openingPhraseLower.includes('ai') || openingPhraseLower.includes('bot') || openingPhraseLower.includes('virtual') || openingPhraseLower.includes('automated') || openingPhraseLower.includes('record')) {
+    aiDisclosureMode = 'disclose';
+  }
+
   // AI-disclosure is configurable: some deployments proactively disclose the AI
   // (default), others require the agent to present as a human representative.
-  let disclosureLine = policy.aiDisclosure === 'deny'
+  let disclosureLine = aiDisclosureMode === 'deny'
     ? `- AI Identity (DO NOT DISCLOSE): Never state, hint, or confirm that you are an AI, bot, or automated system. If asked whether you are a bot/AI/recording, deflect naturally and present yourself as ${agentName}, a representative from ${companyName}. Stay in character as a human representative throughout.`
     : `- AI Identity Disclosure: Always state clearly upfront when ${isInbound ? `answering the call that you are an AI assistant for ${companyName} (e.g., 'Thank you for calling ${companyName}, I am ${agentName}, your AI voice assistant...')` : `initiating the call that you are an AI assistant calling on behalf of ${companyName} before verifying the contact's identity`}. Never conceal your AI status if asked.`;
   
-  if (spec?.meta?.recordingDisclosure === 'required') {
-    if (policy.aiDisclosure === 'deny') {
+  if (spec?.meta?.recordingDisclosure === 'required' || openingPhraseLower.includes('record')) {
+    if (aiDisclosureMode === 'deny') {
       disclosureLine += `\n- Recording Disclosure: You MUST explicitly state upfront that the call is being recorded for quality and training purposes.`;
     } else {
       disclosureLine = disclosureLine.replace(/ Never conceal your AI status if asked\.$/, " and that the call is being recorded for quality and training purposes. Never conceal your AI status if asked.");
@@ -455,7 +463,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   }
 
   const identity = `### AGENT IDENTITY & PERSONA
-You are a voice ${policy.aiDisclosure === 'deny' ? '' : 'AI '}agent for phone conversations representing ${companyName}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
+You are a voice ${aiDisclosureMode === 'deny' ? '' : 'AI '}agent for phone conversations representing ${companyName}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
 - Name: ${agentName}
 - Company: ${companyName}
 - Call Direction: ${isInbound ? "INBOUND (Customer calling into the business/helpline)" : "OUTBOUND (Agent calling out to the customer/lead)"}

@@ -21,7 +21,7 @@ const LANGUAGE_FIELD_LABEL = "Primary Agent Language & Dialect (English, Hindi, 
  * the adaptive-topic filter is never allowed to skip them.
  */
 const ALWAYS_ASK = new Set<string>([
-  'company_name', 'primary_goal', 'language', 'services', 'policies', 'disclosures', 'injection',
+  'company_name', 'primary_goal', 'language', 'services', 'policies', 'disclosures', 'infields',
 ]);
 
 /** Topic buckets used to sequence the discovery interview (see generateNextQuestion). */
@@ -155,7 +155,7 @@ const COVERAGE_RULES: CoverageRule[] = [
       c.capturedHas("infield", "pre-call", "pre_call", "crm", "variable", "dynamic") ||
       /* Strictly check for "only X" or "just Y" bounding phrases using proximity regex rather than arbitrary .includes() to avoid false positives */
       /\b(only|just)\s+(the\s+)?(name|variable|data|company|pass|field|infield)s?\b/i.test(c.fullUserText) ||
-      /\b(no just|only just|nothing else|no other|that's all|only [a-z0-9_]+|just [a-z0-9_]+)\b/i.test(c.fullUserText)
+      /\b(no just|only just|nothing else|no other|that's all|only (variable|name|company|infield)s?|just (variable|name|company|infield)s?)\b/i.test(c.fullUserText)
     ),
   },
   {
@@ -276,15 +276,6 @@ const COVERAGE_RULES: CoverageRule[] = [
       /\b(call flow|flow skeleton|step 1|greeting then|template|branching|first step|next step|walk through|standard flow|user defined)\b/i.test(c.fullUserText) ||
       c.resolvedHas("flow", "skeleton", "template", "steps") ||
       c.capturedHas("flow", "skeleton", "template", "steps")
-    ),
-  },
-  {
-    id: "injection", label: "Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)", group: "policies",
-    missing: (c) => !(
-      !!c.spec?.guardrails?.injectionResistance ||
-      /\b(injection|jailbreak|override|ignore instructions|reveal prompt|bypass rules|security prompt|default guardrails|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("injection", "jailbreak", "resistance", "override") ||
-      c.capturedHas("injection", "jailbreak", "resistance", "override")
     ),
   },
 ];
