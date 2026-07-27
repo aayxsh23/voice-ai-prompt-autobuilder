@@ -244,9 +244,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   spec.knowledgeBase = plannedKb;
 
   // ToolPlanner consumes the finalized call-flow states, so it must run afterwards.
-  if (spec.tools.length === 0) {
-    spec.tools = await ToolPlanner.planTools(spec);
-  }
+  spec.tools = await ToolPlanner.planTools(spec);
 
   const llm = getLlmClient();
   let draft: PromptPackageDraft = input.extractedIR

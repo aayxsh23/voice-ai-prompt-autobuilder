@@ -636,7 +636,7 @@ VOICE RULES & TOOL SILENCE
   const markdownScript = spec?.callFlowPlan?.script || draft?.callFlowScript || "";
   const needsDatetime = /date|time|appointment|schedule|booking/i.test(spec?.meta?.primaryGoal || "") || /date|time|appointment/i.test(markdownScript || JSON.stringify(steps));
   if (needsDatetime) {
-    const sysVars = `#### SYSTEM VARIABLES\nThe following variables are automatically injected by the system. Use them exactly as formatted if you need to reference the current date/time:\nCURRENT_DAY      : "{{current_day}}"\nCURRENT_DATE     : "{{current_date}}"\nCURRENT_TIME     : "{{current_time}}"`;
+    const sysVars = `#### SYSTEM VARIABLES\nThe following variables are automatically injected by the system. Use them exactly as formatted if you need to reference the current date/time:\nCURRENT_DAY      : "{{current_day}}"\nCURRENT_DATE     : "{{current_date}}"\nCURRENT_TIME     : "{{current_time}}"\n\n- **Date/Time Validation**: Always validate any user-provided booking dates or times against these system variables. Politely reject requests for past dates or times that have already passed, and ask the caller for a valid future slot.`;
     dynamicVariables = dynamicVariables ? `${dynamicVariables}\n\n${sysVars}` : `### DYNAMIC VARIABLES\n\n${sysVars}`;
   }
 
