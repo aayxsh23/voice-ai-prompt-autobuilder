@@ -2,7 +2,7 @@ import { BusinessSpecification } from "@/lib/llm/types";
 import { ToolPlanner } from "@/lib/compiler/planners/ToolPlanner";
 import { resolveSlotDigitSpec } from "@/lib/compiler/constants/slotRegistry";
 import { buildToolInvocation, type ToolArgValue } from "@/lib/compiler/constants/toolRegistry";
-import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
+import { resolveLanguagePolicy, type LanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { logger } from "@/lib/logger";
 
 function formatOperatingHours(hours: any): string {
@@ -150,6 +150,83 @@ function buildGlobalInterrupts(customRules?: string, region?: string): string {
   return lines.join("\n");
 }
 
+function buildLanguageHandlingTemplate(policy: LanguagePolicy): string {
+  if (policy.mode === 'english') {
+    return `### LANGUAGE HANDLING
+- Speak clearly in natural conversational English.
+- NEVER switch languages into Arabic, Hindi, or any other language under any circumstance, even if the caller speaks in another language.
+- CRITICAL SCRIPT RULE: Your spoken output must consist ONLY of English words using the Latin alphabet.
+- Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`;
+  }
+
+  const isMulti = policy.mode === 'multilingual';
+  const baseLang = 'English';
+  
+  let targetLang = 'another language';
+  let targetScript = 'the appropriate script';
+  let targetAffirmations = 'affirmations in that language';
+  let targetGendered = 'gendered terms in that language';
+  let neutralAddress = 'neutral pronouns in that language';
+
+  if (policy.mode === 'hindi' || policy.mode === 'hinglish' || isMulti) {
+     targetLang = isMulti ? 'the user\'s language' : (policy.mode === 'hinglish' ? 'Hinglish' : 'Hindi');
+     targetScript = policy.script === 'devanagari' ? 'Devanagari' : 'Latin';
+     targetAffirmations = 'जी, हाँ, ठीक है (yes, okay)';
+     targetGendered = 'सर, मैडम, भाई, बहन';
+     neutralAddress = policy.formality === 'aap' ? 'आप (Aap)' : 'तुम (Tum)';
+  } else if ((policy.mode as string) !== 'english') {
+     targetLang = policy.mode.charAt(0).toUpperCase() + policy.mode.slice(1);
+  }
+
+  return `### [2.0.0] OPERATING LANGUAGE (ABSOLUTE RULES)
+**CORE LAW: Language follows the USER. Never let the language of this prompt, or your own previous replies, dictate your next turn.**
+
+**1. LANGUAGE SELECTION PRIORITY (Check every turn):**
+* **#1 Explicit Lock (Sticky):** If the user explicitly asks to speak a certain language, lock into it. Only unlock if they request a new language or speak in a new language for two consecutive turns.
+* **#2 Mirror (Dynamic):** If no lock exists, match the user's last substantive utterance. If they speak ${targetLang}, you reply in ${targetLang} on your *very next turn*.
+* **#3 Default (Temporary):** Use ${baseLang} ONLY for the opening greeting or if the user hasn't spoken yet. The moment they speak, default to Rule #2.
+
+**2. RESOLVING EDGE CASES:**
+* **Transliteration is ${targetLang}:** If the user speaks ${targetLang} but the speech-to-text writes it in English/Latin characters, treat it as ${targetLang}. Reply in **${targetScript}**.
+* **Ambiguity:** If the user mixes languages heavily or you cannot tell, default to ${targetLang}.
+* **Neutral Tokens:** One-word replies (yes, ok, ${targetAffirmations}, numbers, cities) **do not** trigger a language switch. Stickiness protects the established language.
+
+**3. EXECUTION & DRIFT PREVENTION:**
+* **Seamless Switching:** When switching languages, **NEVER** narrate the switch (e.g., "Since you asked..."), re-greet, or restart the flow. Translate your current step and continue exactly where you left off.
+* **Beware the 4 Drift Traps:** Do NOT accidentally revert to ${baseLang} when:
+  1. Reading system facts, prices, or knowledge-base notes.
+  2. Saying closing/goodbye statements.
+  3. Making short acknowledgments (Don't say "Got it" in a ${targetLang} call).
+  4. Responding immediately after a system note, tool execution, or error (Metadata is not a user turn).
+
+* **Gender-Neutral Address:** NEVER use "Sir", "Ma'am", or ${targetGendered}. Always use ${neutralAddress}. Do not mirror gendered titles even if the user uses them.
+* **Script Purity:** Before outputting, verify that ${baseLang} responses contain zero ${targetScript} characters, and vice versa.`;
+}
+
+function buildSpeakabilityTemplate(policy: LanguagePolicy): string {
+  if (policy.mode === 'english' || policy.mode === 'multilingual') {
+    return "";
+  }
+
+  const targetLang = policy.mode.charAt(0).toUpperCase() + policy.mode.slice(1);
+  const isHindi = policy.mode === 'hindi' || policy.mode === 'hinglish';
+  
+  // Hindi gets specific digit/time translation rules as requested originally
+  const specificRules = isHindi 
+    ? `- अंक शब्दों में बोलें: कीमत/मात्रा हिंदी शब्दों में कहें (जैसे "पैंतालीस", "दो हज़ार")। बड़ी रकम लाख/करोड़ में बोलें (₹2,50,000 → "दो लाख पचास हज़ार रुपये")।
+- फ़ोन नंबर, OTP, पिन कोड एक-एक अंक करके हिंदी में बोलें (शून्य, एक, दो…); "शून्य" कहें, "ओ" नहीं।
+- तारीख़ और समय हिंदी में बोलें (जैसे "सोमवार, चौदह जुलाई", "शाम छह बजे") — कभी अंक-दर-अंक न पढ़ें।`
+    : `- Ensure all numbers, dates, and times are spoken in natural conversational ${targetLang}.
+- Respect all specific character and script constraints when synthesizing speech in ${targetLang}.`;
+
+  const scriptName = policy.script === 'devanagari' ? 'Devanagari' : (policy.script === 'latin' ? 'Latin' : 'its native script');
+
+  return `${targetLang.toUpperCase()} SPEAKABILITY RULES:
+${specificRules}
+- ENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the ${targetLang} sentence. NEVER transliterate English words into ${scriptName}. Example: Keep "WhatsApp" as "WhatsApp", do not force it into ${scriptName}.`;
+}
+
+
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
   const specFaqs = Array.isArray(spec?.knowledgeBase?.faqs) ? spec.knowledgeBase.faqs : [];
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
@@ -245,13 +322,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const languageMode = policy.mode;
   const isHindiOrHinglish = policy.isHindiOrHinglish;
 
-  const hindiSpeakability = policy.mayUseHindi
-    ? `HINDI/HINGLISH SPEAKABILITY RULES:
-- अंक शब्दों में बोलें: कीमत/मात्रा हिंदी शब्दों में कहें (जैसे "पैंतालीस", "दो हज़ार")। बड़ी रकम लाख/करोड़ में बोलें (₹2,50,000 → "दो लाख पचास हज़ार रुपये")।
-- फ़ोन नंबर, OTP, पिन कोड एक-एक अंक करके हिंदी में बोलें (शून्य, एक, दो…); "शून्य" कहें, "ओ" नहीं।
-- तारीख़ और समय हिंदी में बोलें (जैसे "सोमवार, चौदह जुलाई", "शाम छह बजे") — कभी अंक-दर-अंक न पढ़ें।
-- ENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "क्या आपका registered नंबर WhatsApp पर reach करने योग्य है?" NOT "क्या आपका रजिस्टर्ड नंबर व्हाट्सएप पर रीच करने योग्य है?"`
-    : "";
+  const dynamicSpeakability = buildSpeakabilityTemplate(policy);
 
   let allFaqCandidates = [
     ...specFaqs.map((f: any) => ({ question: f?.question || f?.q || '', answer: f?.answer || f?.a || '' })),
@@ -471,38 +542,7 @@ You are a voice ${aiDisclosureMode === 'deny' ? '' : 'AI '}agent for phone conve
 - Tone Profile: ${toneList.join(', ')}
 ${disclosureLine}`.trim();
 
-  let languageHandling = "";
-  if (isHindiOrHinglish) {
-    languageHandling = `### LANGUAGE HANDLING
-All Hindi sentences across spoken dialogue, call flow lines, FAQ answers, and objection responses MUST be written in Devanagari script (देवनागरी), NOT English/Roman script.
-- ONLY specific English domain/business terms (such as 'online demo', 'software', 'pincode', 'team', 'business owner', 'Marg ERP') can be written in English characters inside the Devanagari sentence.
-- Use natural, polite Hindi phrasing suitable for Indian business calls.
-- Greetings: 'नमस्ते', acknowledgments: 'जी', 'ठीक है', 'बिल्कुल', 'ज़रूर'.
-- Never write Hindi sentences using Romanized English letters. Keep all grammatical structure and sentence text strictly in Devanagari.
-- If caller speaks English → respond in English.
-- If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
-- If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
-- NEVER switch languages mid-sentence unless the caller does.
-- If uncertain, default to the language of the caller's last message.
-- Always use natural phrasing suitable for Indian business calls.`.trim();
-  } else if (languageMode === 'multilingual') {
-    languageHandling = `### LANGUAGE HANDLING
-LANGUAGE DETECTION & RESPONSE PROTOCOL:
-- DEFAULT: open the call and greet in English. All scripted lines below are written in English; treat English as the default unless the caller indicates otherwise.
-- Detect the caller's language from their first 1-2 utterances, then mirror it for the rest of the call.
-- If caller speaks English → respond in English.
-- If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
-- If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
-- NEVER switch languages mid-sentence unless the caller does.
-- If uncertain, default to the language of the caller's last message.
-- All variable collection (names, dates, numbers) should be confirmed back in the caller's detected language.`.trim();
-  } else {
-    languageHandling = `### LANGUAGE HANDLING
-- Speak clearly in natural conversational English.
-- NEVER switch languages into Arabic, Hindi, or any other language under any circumstance, even if the caller speaks in another language.
-- CRITICAL SCRIPT RULE: Your spoken output must consist ONLY of English words using the Latin alphabet. NEVER output sentences in Devanagari (देवनागरी), Arabic script, or any other non-Latin script.
-- Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`.trim();
-  }
+  const languageHandling = buildLanguageHandlingTemplate(policy);
 
   // 2. OUTPUT / VOICE MECHANICS
   const outputMechanics = `### OUTPUT & VOICE MECHANICS
@@ -515,7 +555,7 @@ VOICE RULES
 - Never end mid-sentence.
 ${policy.mayUseHindi ? "- If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate." : ""}
 
-${speakabilityContent}${hindiSpeakability ? `\n\n${hindiSpeakability}` : ''}
+${speakabilityContent}${dynamicSpeakability ? `\n\n${dynamicSpeakability}` : ''}
 
 AUDIO & HELLO HANDLING
 Conversation State Awareness: Track whether the conversation has been initiated. The conversation is considered "started" only after a substantive exchange has occurred beyond the initial greeting.
