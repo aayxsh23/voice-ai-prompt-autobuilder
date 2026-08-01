@@ -1,0 +1,589 @@
+import React, { useState } from "react";
+import { Plus, Trash2 } from "lucide-react";
+
+/* ---------------------------------------------------------
+   STATIC OPTION LISTS
+--------------------------------------------------------- */
+const GOAL_PRESETS = [
+  "Appointment booking",
+  "Lead qualification",
+  "Customer support",
+  "Order tracking / status",
+  "Sales & upsell",
+  "Survey / feedback collection",
+  "Other",
+];
+const SUB_LANGUAGES = [
+  "English",
+  "Hindi",
+  "Tamil",
+  "Telugu",
+  "Marathi",
+  "Bengali",
+  "Gujarati",
+  "Kannada",
+];
+const INTAKE_OPTIONS = [
+  "Full name",
+  "Date of birth",
+  "Insurance / member ID",
+  "Referral source",
+  "New vs. returning",
+  "Preferred payment method",
+];
+const PRECALL_OPTIONS = [
+  "Caller name",
+  "Phone number",
+  "CRM segment / tag",
+  "Appointment history",
+  "Past purchase history",
+  "None — cold call",
+];
+const TRANSFER_CONDITIONS = [
+  "Caller explicitly asks for a human",
+  "Caller sounds angry or distressed",
+  "Issue is outside the agent's scope",
+  "Call is after business hours",
+];
+
+const TONE_WORDS = [
+  "Warm",
+  "Empathetic",
+  "Confident",
+  "Enthusiastic",
+  "Efficient & neutral",
+  "Formal",
+];
+
+const emptyStaff = { name: "", role: "", availability: "" };
+const emptyService = { name: "", desc: "" };
+const emptyPolicy = { type: "Cancellation", desc: "" };
+const emptyTransferNum = { label: "", number: "" };
+
+const initialData = {
+  companyName: "",
+  goalPreset: "",
+  goalOther: "",
+  language: "English",
+  subLanguages: [],
+  languageMode: "Ask caller preference at start",
+  isRemote: false,
+  address: "",
+  phone: "",
+  website: "",
+
+  staffList: [{ ...emptyStaff }],
+  
+  services: [{ ...emptyService }],
+  intakeReqs: [],
+  intakeOther: "",
+  preCallFields: [],
+  faqsBlob: "", // Changed to a text blob as per requirements
+
+  policies: [{ ...emptyPolicy }],
+  transferEnabled: false,
+  transferNumbers: [{ ...emptyTransferNum }],
+  transferConditions: [],
+  afterHoursBehavior: "",
+  
+  pacing: "Natural / conversational",
+  formality: "Professional",
+  toneWords: [],
+  accentNote: "",
+  aiDisclosure: true,
+  recordingConsent: false,
+  disclosureText: "",
+
+  openingLine: "",
+  closingScript: "",
+  callFlowDescription: "",
+  interruption: true,
+  digression: "Answer briefly, then resume the script",
+  retryFallback: "Transfer to a human agent",
+  maxRetries: 2,
+  confirmationStyle: "Summary / paraphrase back",
+};
+
+/* ---------------------------------------------------------
+   PIRSCH UI COMPONENTS
+--------------------------------------------------------- */
+
+function Field({ label, hint, required, children }: { label: string, hint?: string, required?: boolean, children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 mb-6">
+      <label className="text-[16px] font-medium text-[var(--color-ink)] flex items-center gap-1">
+        {label}
+        {required && <span className="text-red-500">*</span>}
+      </label>
+      {hint && <div className="text-[14px] text-[var(--color-graphite)] mb-1 leading-[1.5]">{hint}</div>}
+      {children}
+    </div>
+  );
+}
+
+function TextInput({ value, onChange, placeholder, mono = false }: { value: string, onChange: (v: string) => void, placeholder?: string, mono?: boolean }) {
+  return (
+    <input
+      type="text"
+      className={`w-full bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[6px] px-3 py-2 text-[16px] text-[var(--color-ink)] placeholder-[var(--color-graphite)] focus:outline-none focus:ring-1 focus:ring-[var(--color-ink)] ${mono ? "font-mono" : ""}`}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+function TextArea({ value, onChange, placeholder, rows = 3 }: { value: string, onChange: (v: string) => void, placeholder?: string, rows?: number }) {
+  return (
+    <textarea
+      className="w-full bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[6px] px-3 py-2 text-[16px] text-[var(--color-ink)] placeholder-[var(--color-graphite)] focus:outline-none focus:ring-1 focus:ring-[var(--color-ink)] resize-y leading-[1.5]"
+      value={value}
+      rows={rows}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+function Select({ value, onChange, options }: { value: string, onChange: (v: string) => void, options: string[] }) {
+  return (
+    <div className="relative">
+      <select 
+        className="w-full appearance-none bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[6px] px-3 py-2 text-[16px] text-[var(--color-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--color-ink)]"
+        value={value} 
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o} value={o}>{o}</option>
+        ))}
+      </select>
+      <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-[var(--color-ink)]">
+        <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+          <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ checked, onChange, onLabel = "Enabled", offLabel = "Disabled" }: { checked: boolean, onChange: (v: boolean) => void, onLabel?: string, offLabel?: string }) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-3 focus:outline-none"
+      onClick={() => onChange(!checked)}
+    >
+      <div className={`w-10 h-6 rounded-[9999px] border border-[var(--color-ink)] flex items-center px-0.5 transition-colors ${checked ? 'bg-[var(--color-mint-signal)]' : 'bg-transparent'}`}>
+        <div className={`w-4 h-4 rounded-full bg-[var(--color-ink)] transform transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      </div>
+      <span className="text-[16px] text-[var(--color-ink)]">{checked ? onLabel : offLabel}</span>
+    </button>
+  );
+}
+
+function RadioGroup({ value, onChange, options }: { value: string, onChange: (v: string) => void, options: string[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {options.map((opt) => (
+        <button
+          type="button"
+          key={opt}
+          className="flex items-center gap-3 text-left focus:outline-none group"
+          onClick={() => onChange(opt)}
+        >
+          <div className="w-5 h-5 rounded-full border border-[var(--color-ink)] flex items-center justify-center shrink-0">
+            {value === opt && <div className="w-2.5 h-2.5 rounded-full bg-[var(--color-ink)]" />}
+          </div>
+          <span className="text-[16px] text-[var(--color-ink)] group-hover:text-[var(--color-graphite)] transition-colors">{opt}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CheckboxChips({ values, onToggle, options }: { values: string[], onToggle: (v: string) => void, options: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {options.map((opt) => (
+        <button
+          type="button"
+          key={opt}
+          className={`rounded-[9999px] border border-[var(--color-ink)] px-4 py-1.5 text-[14px] font-medium transition-colors focus:outline-none ${
+            values.includes(opt) 
+              ? 'bg-[var(--color-ink)] text-[var(--color-cream-paper)]' 
+              : 'bg-[var(--color-cream-paper)] text-[var(--color-ink)] hover:bg-[var(--color-ink)]/5'
+          }`}
+          onClick={() => onToggle(opt)}
+        >
+          {opt}
+          {values.includes(opt) && <span className="ml-2">×</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RepeatRow({ children, onRemove, removable = true }: { children: React.ReactNode, onRemove: () => void, removable?: boolean }) {
+  return (
+    <div className="flex items-start gap-3 w-full mb-3">
+      <div className="flex-1 flex flex-col sm:flex-row gap-3">
+        {children}
+      </div>
+      {removable && (
+        <button 
+          type="button" 
+          className="p-2 text-[var(--color-graphite)] hover:text-[var(--color-ink)] transition-colors mt-0.5" 
+          onClick={onRemove} 
+          aria-label="Remove"
+        >
+          <Trash2 size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AddRowButton({ onClick, label }: { onClick: () => void, label: string }) {
+  return (
+    <button 
+      type="button" 
+      className="flex items-center gap-2 text-[14px] font-medium text-[var(--color-ink)] border border-transparent hover:border-[var(--color-ink)] px-3 py-1.5 rounded-[9999px] transition-all self-start mt-2"
+      onClick={onClick}
+    >
+      <Plus size={16} /> {label}
+    </button>
+  );
+}
+
+function SectionCard({ title, badge, children }: { title: string, badge: string, children: React.ReactNode }) {
+  return (
+    <div className="w-full flex flex-col mb-16 max-w-[800px] mx-auto">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center border border-[var(--color-ink)] rounded-[9999px] overflow-hidden bg-[var(--color-cream-paper)] h-8">
+          <div className="w-8 h-full bg-[var(--color-cream-paper)] flex items-center justify-center font-medium text-[14px] border-r border-[var(--color-ink)]">
+            {badge.split(' ')[0]}
+          </div>
+          <div className="px-4 text-[14px] font-medium tracking-[0.286em] uppercase">
+            {badge.split(' ').slice(1).join(' ')}
+          </div>
+        </div>
+      </div>
+      
+      <h2 className="text-[28px] font-medium leading-[1.25] text-[var(--color-ink)] mb-8">
+        {title}
+      </h2>
+      
+      <div className="bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[24px] p-6 sm:p-8 flex flex-col gap-6 w-full">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   MAIN BUILDER FORM
+--------------------------------------------------------- */
+export default function BuilderForm({ onSubmit, loading, initial }: { onSubmit: (data: any) => void, loading: boolean, initial?: any }) {
+  const [data, setData] = useState(initial || initialData);
+
+  const set = (key: string, val: any) => setData((d: any) => ({ ...d, [key]: val }));
+  const addRow = (key: string, empty: any) => setData((d: any) => ({ ...d, [key]: [...(d as any)[key], { ...empty }] }));
+  const updateRow = (key: string, idx: number, field: string, val: any) =>
+    setData((d: any) => {
+      const arr = [...(d as any)[key]];
+      arr[idx] = { ...arr[idx], [field]: val };
+      return { ...d, [key]: arr };
+    });
+  const removeRow = (key: string, idx: number) =>
+    setData((d: any) => ({ ...d, [key]: (d as any)[key].filter((_: any, i: number) => i !== idx) }));
+  const toggleInArray = (key: string, val: string) =>
+    setData((d: any) => {
+      const arr = (d as any)[key] as string[];
+      const has = arr.includes(val);
+      return { ...d, [key]: has ? arr.filter((v) => v !== val) : [...arr, val] };
+    });
+
+  return (
+    <div className="w-full flex flex-col items-center pb-24 font-['DM_Sans']">
+      
+      {/* 1. IDENTITY SECTION */}
+      <SectionCard title="Who is this agent representing?" badge="1 IDENTITY">
+        <Field label="Company name" required>
+          <TextInput value={data.companyName} onChange={(v) => set("companyName", v)} placeholder="e.g. Meridian Dental Care" />
+        </Field>
+        
+        <Field label="Primary agent goal" required hint="Pick the closest match — this shapes the whole prompt structure.">
+          <Select value={data.goalPreset} onChange={(v) => set("goalPreset", v)} options={["", ...GOAL_PRESETS]} />
+        </Field>
+        {data.goalPreset === "Other" && (
+          <Field label="Describe the goal">
+            <TextInput value={data.goalOther} onChange={(v) => set("goalOther", v)} placeholder="What should the agent accomplish on a call?" />
+          </Field>
+        )}
+        
+        <Field label="Primary language & dialect" required>
+          <Select value={data.language} onChange={(v) => set("language", v)} options={["English", "Hindi", "Hinglish", "Multilingual"]} />
+        </Field>
+        
+        {data.language === "Multilingual" && (
+          <>
+            <Field label="Which languages?" hint="Select all that the agent should be able to speak.">
+              <CheckboxChips values={data.subLanguages} onToggle={(v) => toggleInArray("subLanguages", v)} options={SUB_LANGUAGES} />
+            </Field>
+            <Field label="How is the language chosen?">
+              <RadioGroup
+                value={data.languageMode}
+                onChange={(v) => set("languageMode", v)}
+                options={["Ask caller preference at start", "Auto-detect from caller's speech", "Fixed per phone number / campaign"]}
+              />
+            </Field>
+          </>
+        )}
+
+        <Field label="Physical location">
+          <Toggle checked={data.isRemote} onChange={(v) => set("isRemote", v)} onLabel="Remote / no address" offLabel="Has a physical location" />
+        </Field>
+        
+        {!data.isRemote && (
+          <Field label="Address">
+            <TextArea value={data.address} onChange={(v) => set("address", v)} rows={2} placeholder="Street, city, state" />
+          </Field>
+        )}
+        
+        <div className="flex flex-col sm:flex-row gap-6">
+          <div className="flex-1">
+            <Field label="Phone">
+              <TextInput mono value={data.phone} onChange={(v) => set("phone", v)} placeholder="+91 98xxxxxxx" />
+            </Field>
+          </div>
+          <div className="flex-1">
+            <Field label="Website">
+              <TextInput mono value={data.website} onChange={(v) => set("website", v)} placeholder="www.example.com" />
+            </Field>
+          </div>
+        </div>
+      </SectionCard>
+
+      {/* 2. TEAM & SCHEDULE */}
+      <SectionCard title="Who works here?" badge="2 TEAM">
+        <Field label="Staff & practitioner roster" hint="Add any staff members the caller might ask for by name.">
+          {data.staffList.map((s: any, i: number) => (
+            <RepeatRow key={i} onRemove={() => removeRow("staffList", i)} removable={data.staffList.length > 1}>
+              <TextInput value={s.name} onChange={(v) => updateRow("staffList", i, "name", v)} placeholder="Name" />
+              <TextInput value={s.role} onChange={(v) => updateRow("staffList", i, "role", v)} placeholder="Role / specialty" />
+              <TextInput value={s.availability} onChange={(v) => updateRow("staffList", i, "availability", v)} placeholder="Availability (optional)" />
+            </RepeatRow>
+          ))}
+          <AddRowButton onClick={() => addRow("staffList", emptyStaff)} label="Add staff member" />
+        </Field>
+      </SectionCard>
+
+      {/* 3. SERVICES & KNOWLEDGE */}
+      <SectionCard title="What do you offer and know?" badge="3 KNOWLEDGE">
+        <Field label="Services offered">
+          {data.services.map((s: any, i: number) => (
+            <RepeatRow key={i} onRemove={() => removeRow("services", i)} removable={data.services.length > 1}>
+              <TextInput value={s.name} onChange={(v) => updateRow("services", i, "name", v)} placeholder="Service name" />
+              <TextInput value={s.desc} onChange={(v) => updateRow("services", i, "desc", v)} placeholder="Brief description" />
+            </RepeatRow>
+          ))}
+          <AddRowButton onClick={() => addRow("services", emptyService)} label="Add service" />
+        </Field>
+
+        <Field label="Intake & qualification requirements" hint="What must be collected or verified before the agent can help.">
+          <CheckboxChips values={data.intakeReqs} onToggle={(v) => toggleInArray("intakeReqs", v)} options={INTAKE_OPTIONS} />
+          <div className="mt-3">
+            <TextInput value={data.intakeOther} onChange={(v) => set("intakeOther", v)} placeholder="Other requirement (optional)" />
+          </div>
+        </Field>
+
+        <Field label="Pre-call infields" hint="What the system already knows about the caller before the call starts.">
+          <CheckboxChips values={data.preCallFields} onToggle={(v) => toggleInArray("preCallFields", v)} options={PRECALL_OPTIONS} />
+        </Field>
+
+        <Field label="Common caller FAQs" hint="Paste or type in any FAQs, policies, or general knowledge. The AI will parse this automatically into an optimized knowledge base.">
+          <TextArea 
+            value={data.faqsBlob} 
+            onChange={(v) => set("faqsBlob", v)} 
+            rows={8} 
+            placeholder={"Q: Do you take walk-ins?\nA: Yes, but appointments get priority.\n\nQ: Where to park?\nA: Free parking in the rear lot."} 
+          />
+        </Field>
+      </SectionCard>
+
+      {/* 4. POLICIES & ESCALATION */}
+      <SectionCard title="Rules and guardrails" badge="4 POLICIES">
+        <Field label="Key business policies">
+          {data.policies.map((p: any, i: number) => (
+            <RepeatRow key={i} onRemove={() => removeRow("policies", i)} removable={data.policies.length > 1}>
+              <div className="w-full sm:w-1/3">
+                <Select value={p.type} onChange={(v) => updateRow("policies", i, "type", v)} options={["Cancellation", "Late fee", "Refund", "Rescheduling", "Other"]} />
+              </div>
+              <div className="w-full sm:w-2/3">
+                <TextInput value={p.desc} onChange={(v) => updateRow("policies", i, "desc", v)} placeholder="Describe the rule" />
+              </div>
+            </RepeatRow>
+          ))}
+          <AddRowButton onClick={() => addRow("policies", emptyPolicy)} label="Add policy" />
+        </Field>
+
+        <Field label="Live transfer / escalation">
+          <Toggle checked={data.transferEnabled} onChange={(v) => set("transferEnabled", v)} onLabel="Enabled" offLabel="Disabled" />
+        </Field>
+        
+        {data.transferEnabled && (
+          <>
+            <Field label="Transfer numbers">
+              {data.transferNumbers.map((t: any, i: number) => (
+                <RepeatRow key={i} onRemove={() => removeRow("transferNumbers", i)} removable={data.transferNumbers.length > 1}>
+                  <TextInput value={t.label} onChange={(v) => updateRow("transferNumbers", i, "label", v)} placeholder="Label (e.g. Manager)" />
+                  <TextInput mono value={t.number} onChange={(v) => updateRow("transferNumbers", i, "number", v)} placeholder="Phone number" />
+                </RepeatRow>
+              ))}
+              <AddRowButton onClick={() => addRow("transferNumbers", emptyTransferNum)} label="Add number" />
+            </Field>
+            <Field label="Transfer when...">
+              <CheckboxChips values={data.transferConditions} onToggle={(v) => toggleInArray("transferConditions", v)} options={TRANSFER_CONDITIONS} />
+            </Field>
+            <Field label="After-hours behavior if no one can take the transfer">
+              <TextArea value={data.afterHoursBehavior} onChange={(v) => set("afterHoursBehavior", v)} rows={2} placeholder="e.g. Take a message and confirm a callback window" />
+            </Field>
+          </>
+        )}
+      </SectionCard>
+
+      {/* 5. TONE & MECHANICS */}
+      <SectionCard title="How it sounds & works" badge="5 VOICE">
+        <div className="flex flex-col sm:flex-row gap-6 mb-6">
+          <div className="flex-1">
+            <Field label="Pacing">
+              <Select value={data.pacing} onChange={(v) => set("pacing", v)} options={["Slow / measured", "Natural / conversational", "Brisk / efficient"]} />
+            </Field>
+          </div>
+          <div className="flex-1">
+            <Field label="Formality">
+              <Select value={data.formality} onChange={(v) => set("formality", v)} options={["Casual", "Professional", "Formal"]} />
+            </Field>
+          </div>
+        </div>
+        
+        <Field label="Tone words">
+          <CheckboxChips values={data.toneWords} onToggle={(v) => toggleInArray("toneWords", v)} options={TONE_WORDS} />
+        </Field>
+        
+        <Field label="Accent / voice notes (optional)">
+          <TextInput value={data.accentNote} onChange={(v) => set("accentNote", v)} placeholder="e.g. Neutral Indian-English accent" />
+        </Field>
+
+        <div className="flex flex-col sm:flex-row gap-6 mt-6">
+          <div className="flex-1">
+            <Field label="Disclose AI identity to caller">
+              <Toggle checked={data.aiDisclosure} onChange={(v) => set("aiDisclosure", v)} />
+            </Field>
+          </div>
+          <div className="flex-1">
+            <Field label="Recording consent required">
+              <Toggle checked={data.recordingConsent} onChange={(v) => set("recordingConsent", v)} />
+            </Field>
+          </div>
+        </div>
+        
+        {data.recordingConsent && (
+          <Field label="Exact disclosure line">
+            <TextInput value={data.disclosureText} onChange={(v) => set("disclosureText", v)} placeholder="This call may be recorded for quality and training purposes." />
+          </Field>
+        )}
+      </SectionCard>
+
+      {/* 6. CALL FLOW */}
+      <SectionCard title="The exact words and flow" badge="6 FLOW">
+        <Field label="Opening line" required>
+          <TextArea value={data.openingLine} onChange={(v) => set("openingLine", v)} rows={2} placeholder='e.g. "Thanks for calling Meridian Dental, this is Ava — how can I help today?"' />
+        </Field>
+        
+        <Field label="Closing script" required>
+          <TextArea value={data.closingScript} onChange={(v) => set("closingScript", v)} rows={2} placeholder='e.g. "Thanks for calling — have a great day!"' />
+        </Field>
+        
+        <Field
+          label="Describe the basic call flow"
+          hint='Walk through the expected path. The AI will translate this into exact logic branching, and handle the unexpected edge cases automatically.'
+        >
+          <TextArea
+            value={data.callFlowDescription}
+            onChange={(v) => set("callFlowDescription", v)}
+            rows={5}
+            placeholder="After the greeting, most callers either want to book, reschedule, or ask a question. Handle booking by collecting date and service, then confirm and end. For anything else, answer from the FAQs and offer to transfer if needed."
+          />
+        </Field>
+        
+        <Field label="Interruption / barge-in">
+          <Toggle checked={data.interruption} onChange={(v) => set("interruption", v)} onLabel="Allowed" offLabel="Disallowed" />
+        </Field>
+        
+        <Field label="Mid-flow digression handling">
+          <RadioGroup
+            value={data.digression}
+            onChange={(v) => set("digression", v)}
+            options={["Answer briefly, then resume the script", "Note it and continue the script only", "Refuse and redirect to the script"]}
+          />
+        </Field>
+        
+        <div className="flex flex-col sm:flex-row gap-6 mt-6">
+          <div className="flex-1">
+            <Field label="Retry exhaustion fallback">
+              <Select
+                value={data.retryFallback}
+                onChange={(v) => set("retryFallback", v)}
+                options={["Transfer to a human agent", "End the call politely", "Offer a callback", "Repeat the request differently"]}
+              />
+            </Field>
+          </div>
+          <div className="flex-1">
+            <Field label="Max retries before fallback">
+              <input
+                type="number"
+                min={1}
+                max={5}
+                className="w-full bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[6px] px-3 py-2 text-[16px] text-[var(--color-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--color-ink)] font-mono"
+                value={data.maxRetries}
+                onChange={(e) => set("maxRetries", Number(e.target.value))}
+              />
+            </Field>
+          </div>
+        </div>
+        
+        <Field label="Confirmation / read-back style">
+          <RadioGroup
+            value={data.confirmationStyle}
+            onChange={(v) => set("confirmationStyle", v)}
+            options={["Character-by-character spelling", "Summary / paraphrase back", "Hybrid — spell critical data, summarize the rest"]}
+          />
+        </Field>
+      </SectionCard>
+
+      {/* FINAL CTA */}
+      <div className="py-8 flex flex-col items-center max-w-[600px] text-center mb-16">
+        <div className="w-12 h-12 bg-[var(--color-cream-paper)] border border-[var(--color-ink)] rounded-[12px] flex items-center justify-center mb-6">
+           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 17L12 22L22 17" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M2 12L12 17L22 12" stroke="var(--color-ink)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+           </svg>
+        </div>
+        <h2 className="text-[64px] font-medium leading-[1.25] text-[var(--color-ink)] tracking-[-1.02px]">Ready to compile?</h2>
+        <p className="text-[18px] text-[var(--color-graphite)] mt-4 mb-8">
+          The AI will audit your setup for missing pieces before generating the final prompt package.
+        </p>
+        <button
+          onClick={() => onSubmit(data)}
+          disabled={loading}
+          className="bg-[var(--color-sunshine-highlight)] text-[var(--color-ink)] font-medium text-[16px] px-8 py-4 rounded-[24px] hover:brightness-95 transition-all flex items-center justify-center min-w-[200px] shadow-none disabled:opacity-50"
+        >
+          {loading ? "Analyzing..." : "Review & Compile"}
+        </button>
+      </div>
+
+    </div>
+  );
+}

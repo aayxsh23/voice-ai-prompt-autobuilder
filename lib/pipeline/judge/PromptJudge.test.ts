@@ -36,7 +36,7 @@ describe('PromptJudge & Transcript-Aware Compilation Pipeline', () => {
     },
     callFlowPlan: {
       fsmStates: [
-        { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Say hello' } }
+        { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], edges: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'Say hello' } }
       ]
     },
     knowledgeBase: { faqs: [], objections: [] },
@@ -64,7 +64,7 @@ Say: "Hello! Welcome to TestCorp. How can I assist you with scheduling an appoin
     } as any);
     vi.spyOn(qwenLlmClient, 'generate').mockResolvedValue({ text: '[]' } as any);
     vi.spyOn(WorkflowArchitect, 'planWorkflow').mockResolvedValue([
-      { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], transitions: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'नमस्ते, TestCorp में आपका स्वागत है।' } }
+      { id: 'GREETING', objective: 'Greet caller', slotsToCollect: [], edges: [], entryAction: { tool: 'speak', args: {}, speechPrompt: 'नमस्ते, TestCorp में आपका स्वागत है।' } }
     ]);
     vi.spyOn(KnowledgeArchitect, 'planKnowledge').mockResolvedValue({
       faqs: [{ question: 'समय क्या है?', answer: 'सुबह 9 से शाम 5 बजे तक।' }],

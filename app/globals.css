@@ -1,66 +1,97 @@
 @import "tailwindcss";
 
 :root {
-  /* ── BaseHub Color Palette ── */
-  --color-ember-orange: #ff6c02;
-  --color-ember-glow: #ff9b51;
-  --color-glacier-blue: #55c2ff;
-  --color-bone-white: #f3f3f3;
-  --color-ash-gray: #dedede;
-  --color-fog-gray: #909090;
-  --color-slate-gray: #646464;
-  --color-iron-border: #303030;
-  --color-charcoal-edge: #252525;
-  --color-graphite: #1b1b1b;
-  --color-obsidian: #121212;
-  --color-onyx: #0c0c0c;
-  --color-void: #040404;
-  --color-black: #000000;
+  /* Colors */
+  --color-sunshine-highlight: #ffda6e;
+  --color-mint-signal: #6ece9d;
+  --color-cream-paper: #f8f5ed;
+  --color-ink: #000000;
+  --color-graphite: #707070;
 
-  /* ── Surfaces & Text ── */
-  --background: var(--color-void);
-  --foreground: var(--color-bone-white);
-  --surface-nav: var(--color-onyx);
-  --surface-card: var(--color-obsidian);
-  --surface-input: var(--color-graphite);
-  --border-hairline: var(--color-charcoal-edge);
-  --border-medium: var(--color-iron-border);
+  /* Typography — Scale */
+  --text-caption: 14px;
+  --leading-caption: 1.5;
+  --text-body-sm: 16px;
+  --leading-body-sm: 1.5;
+  --text-body: 18px;
+  --leading-body: 1.5;
+  --text-subheading: 20px;
+  --leading-subheading: 1.5;
+  --text-heading-sm: 24px;
+  --leading-heading-sm: 1.5;
+  --text-heading: 28px;
+  --leading-heading: 1.25;
+  --text-display: 64px;
+  --leading-display: 1.25;
+  --tracking-display: -1.02px;
 
-  /* ── Radii ── */
-  --radius-cards: 12px;
-  --radius-buttons: 4px;
-  --radius-inputs: 8px;
-  --radius-pills: 9999px;
+  /* Spacing */
+  --spacing-8: 8px;
+  --spacing-16: 16px;
+  --spacing-24: 24px;
+  --spacing-32: 32px;
+  --spacing-48: 48px;
+  --spacing-64: 64px;
+  --spacing-128: 128px;
+  --spacing-192: 192px;
+
+  /* Layout */
+  --page-max-width: 1200px;
+  --section-gap: 64px;
+  --card-padding: 32px;
+  --element-gap: 16px;
+
+  /* Border Radius */
+  --radius-md: 6px;
+  --radius-xl: 12px;
+  --radius-3xl: 24px;
+  --radius-tags: 9999px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono);
+@theme {
+  --color-sunshine-highlight: var(--color-sunshine-highlight);
+  --color-mint-signal: var(--color-mint-signal);
+  --color-cream-paper: var(--color-cream-paper);
+  --color-ink: var(--color-ink);
+  --color-graphite: var(--color-graphite);
+
+  --font-sans: var(--font-dm-sans);
+  
+  --radius-md: 6px;
+  --radius-xl: 12px;
+  --radius-3xl: 24px;
 }
 
-/* ── Base ── */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  background-color: var(--color-cream-paper);
+  color: var(--color-ink);
+  font-family: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss03" 1, "ss04" 1;
 }
 
-/* ── Scrollbar ── */
+/* Hairline utilities */
+.hairline-border {
+  border: 1px solid var(--color-ink);
+}
+
+.hairline-border-muted {
+  border: 1px solid var(--color-graphite);
+}
+
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-void);
+  background: var(--color-cream-paper);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-charcoal-edge);
+  background: var(--color-graphite);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-iron-border);
+  background: var(--color-ink);
 }

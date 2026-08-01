@@ -14,7 +14,7 @@ const richSpec = {
     companyName: 'Apex Dental', agentName: 'Riya', industry: 'Dental', isRegulated: false,
     toneProfile: ['Warm'], primaryGoal: 'Book patient appointments and answer clinic FAQs',
     openingPhrase: 'Thanks for calling Apex Dental.',
-    voiceCharacteristics: { pacing: 'medium' },
+    voiceCharacteristics: { gender: 'Female' },
   },
   businessSnapshot: {
     operatingHours: 'Mon-Fri 9 to 5', servicesOffered: ['Cleaning', 'X-Ray'],
@@ -55,7 +55,7 @@ const MARKER = 'Additional In-Depth Operational Detail (interview in progress)';
 const ENTRY = 'Entry Routing & Multi-Request Branching (how distinct request types branch from opening, or single flow N/A)';
 const INJECTION = 'Prompt Injection & Override Resistance (behavior when caller attempts to override rules/role, or default applied)';
 const CONSENT = 'Consent & Compliance Disclosures (recording consent, AI identity disclosure, or N/A)';
-const VOICE = 'Voice & Persona Characteristics (pacing, formality, accent, or N/A)';
+const VOICE = 'Voice & Persona Characteristics (gender, tone, or N/A)';
 
 const EXPECTED: Record<string, string[]> = {
   F1_empty: [

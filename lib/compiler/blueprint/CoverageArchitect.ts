@@ -241,12 +241,12 @@ const COVERAGE_RULES: CoverageRule[] = [
     ),
   },
   {
-    id: "voice_persona", label: "Voice & Persona Characteristics (pacing, formality, accent, or N/A)", group: "policies",
+    id: "voice_persona", label: "Voice & Persona Characteristics (gender, tone, or N/A)", group: "policies",
     missing: (c) => !(
       !!c.meta.voiceCharacteristics ||
-      /\b(pacing|fast|slow|formality|formal|casual|filler words|um|uh|accent|british|american|indian accent|voice style|voice persona|n\/a)\b/i.test(c.fullUserText) ||
-      c.resolvedHas("voice", "persona", "pacing", "accent", "tone") ||
-      c.capturedHas("voice", "persona", "pacing", "accent", "tone")
+      /\b(gender|male|female|tone|casual|professional|formal|filler words|um|uh|voice style|voice persona|n\/a)\b/i.test(c.fullUserText) ||
+      c.resolvedHas("voice", "persona", "gender", "tone") ||
+      c.capturedHas("voice", "persona", "gender", "tone")
     ),
   },
   {
@@ -547,7 +547,7 @@ Return ONLY valid JSON: { "notApplicable": ["topic_id", ...] }`;
     } else if (topic4Fields.length > 0) {
       activeTopicGroup = "Policies, Edge Cases & Guardrails";
       targetFields = topic4Fields;
-      topicInstruction = `We are exploring everyday rules, transfer routing, edge case/objection handling, consent disclosures, voice pacing/persona, or prompt injection guardrails. Formulate a clear, helpful question targeting: ${topic4Fields[0]}.`;
+      topicInstruction = `We are exploring everyday rules, transfer routing, edge case/objection handling, consent disclosures, voice gender/persona, or prompt injection guardrails. Formulate a clear, helpful question targeting: ${topic4Fields[0]}.`;
     }
 
     const historyText = chatHistory.slice(-50).map(m => `${m.role.toUpperCase()}: ${m.content}`).join("\n");

@@ -465,6 +465,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   const identity = `### AGENT IDENTITY & PERSONA
 You are a voice ${aiDisclosureMode === 'deny' ? '' : 'AI '}agent for phone conversations representing ${companyName}. Your output will be sent to a Text to Speech service for synthesising, respond in a speech-friendly manner.
 - Name: ${agentName}
+- Gender: ${spec?.meta?.voiceCharacteristics?.gender || "Female"}
 - Company: ${companyName}
 - Call Direction: ${isInbound ? "INBOUND (Customer calling into the business/helpline)" : "OUTBOUND (Agent calling out to the customer/lead)"}
 - Primary Goal: ${primaryGoal}

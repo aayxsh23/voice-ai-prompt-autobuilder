@@ -232,7 +232,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
   const needWorkflow = !spec.callFlowPlan.fsmStates || spec.callFlowPlan.fsmStates.length === 0;
-  const needKnowledge = spec.knowledgeBase.faqs.length === 0 ||
+  const needKnowledge = spec.knowledgeBase.faqs.length === 0 || spec.knowledgeBase.objections.length === 0 ||
     (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)));
 
   // WorkflowArchitect and KnowledgeArchitect are independent, so run them concurrently.

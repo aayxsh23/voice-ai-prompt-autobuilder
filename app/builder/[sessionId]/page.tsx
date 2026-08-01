@@ -1,285 +1,112 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, User, Send, ArrowRight, ShieldAlert, RefreshCw } from 'lucide-react';
-import { PromptPackageDraft, SchemaOverrides } from '@/lib/llm/types';
+import { BuilderForm, initialData, COUNTRY_CODES } from '@/components/project/BuilderForm';
+import { ArrowRight, Bot, CheckCircle, Edit3 } from 'lucide-react';
+import { PromptPackageDraft } from '@/lib/llm/types';
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
+function SummaryItem({ label, value }: { label: string, value: string | React.ReactNode }) {
+  if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+  return (
+    <div className="mb-4 flex flex-col gap-1">
+      <div className="text-[16px] font-bold text-ink">{label}</div>
+      <div className="text-[16px] text-ink/90 whitespace-pre-wrap">{value}</div>
+    </div>
+  );
 }
 
-export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessionId: string }> }) {
+export default function FormBuilderPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
-  // Chat state
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content: "Hello! I'm your VoiceAgent Architect. What kind of AI voice agent would you like to build today? Tell me about your domain and what workflows you want it to handle."
-    }
-  ]);
-  const [input, setInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [missingDetails, setMissingDetails] = useState<string[]>([
-    'request_types', 'caller_segmentation', 'operational_context', 'data_collection',
-    'escalation_triggers', 'forbidden_actions', 'faq_content', 'post_call_action'
-  ]);
+  // Form State
+  const [formData, setFormData] = useState(initialData);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
 
-  const CATEGORY_LABELS: Record<string, string> = {
-    request_types: 'Request Types & Sub-flows',
-    caller_segmentation: 'Caller Segmentation',
-    operational_context: 'Operational Context & Rules',
-    data_collection: 'Required Data Collection Items',
-    escalation_triggers: 'Escalation & Hand-off Rules',
-    forbidden_actions: 'Strict Guardrails & Forbidden Actions',
-    faq_content: 'FAQ Content',
-    post_call_action: 'Post-Call Outcome'
-  };
+  // Evaluation / Clarification State
+  const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
+  const [clarificationAnswers, setClarificationAnswers] = useState<Record<number, string>>({});
   
-  // Blueprint state gathered during chat
-  const [blueprint, setBlueprint] = useState<any>({
-    useCase: 'Custom Voice Agent',
-    business: { businessName: 'My Enterprise', industry: 'General', description: '' },
-    mission: { primaryGoal: 'Assist callers', supportedIntents: [] },
-    conversation: { opening: 'Hello, how can I help you today?' },
-    personality: { tone: 'Warm, empathetic, professional' }
-  });
-
-  // Prompt generation state
-  const [generatingDraft, setGeneratingDraft] = useState(false);
-  const [loadingStage, setLoadingStage] = useState<string>('Compiling base prompt and structure...');
+  // Review & Generate State
+  const [reviewMode, setReviewMode] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
-  const [creatingProject, setCreatingProject] = useState(false);
-  const [activeTab, setActiveTab] = useState<'agent' | 'system' | 'combined'>('agent');
-  const [overrides, setOverrides] = useState<SchemaOverrides>({
-    faqPairs: [],
-    objectionPairs: [],
-    verbatimLines: [],
-    transferRules: []
-  });
-  const [auditFixInputs, setAuditFixInputs] = useState<Record<number, string>>({});
-  const [isSubmittingFixes, setIsSubmittingFixes] = useState(false);
-
-  const chatEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const initialPromptHandledRef = useRef(false);
-
-  const handleInputResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  };
 
   useEffect(() => {
     params.then(p => {
       setSessionId(p.sessionId);
       setLoading(false);
-      if (typeof window !== 'undefined' && !initialPromptHandledRef.current) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const initPrompt = urlParams.get('initialPrompt');
-        if (initPrompt) {
-          initialPromptHandledRef.current = true;
-          window.history.replaceState({}, '', `/builder/${p.sessionId}`);
-          setTimeout(() => {
-            handleSendMessage(undefined, initPrompt);
-          }, 100);
-        }
-      }
     });
   }, [params]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, chatLoading]);
-
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (generatingDraft) {
-      setLoadingStage('Assembling base prompt package and knowledge base...');
-      const start = Date.now();
-      interval = setInterval(() => {
-        const elapsed = Date.now() - start;
-        if (elapsed > 12000) {
-          setLoadingStage('Applying fixes from Judge review and verifying script...');
-        } else if (elapsed > 4000) {
-          setLoadingStage('Reviewing against your conversation (Judge Loop)...');
-        }
-      }, 1000);
+  const handleEvaluate = async () => {
+    if (formData.phone) {
+      const selectedCountry = COUNTRY_CODES.find(c => c.code === formData.phoneCode);
+      const expectedDigits = selectedCountry?.digits || 10;
+      if (formData.phone.length < expectedDigits) {
+        setPhoneError(`Please provide the expected ${expectedDigits} digits for ${selectedCountry?.country}.`);
+        return;
+      }
     }
-    return () => clearInterval(interval);
-  }, [generatingDraft]);
+    setPhoneError('');
 
-  const handleSendMessage = async (e?: React.FormEvent, customMsg?: string) => {
-    if (e) e.preventDefault();
-    const textToSend = customMsg || input;
-    if (!textToSend.trim() || chatLoading) return;
-
-    const newMessages: Message[] = [...messages, { role: 'user', content: textToSend }];
-    setMessages(newMessages);
-    if (!customMsg) {
-      setInput('');
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    }
-    setChatLoading(true);
-
+    setIsSubmitting(true);
+    setClarificationQuestions([]);
     try {
-      const res = await fetch('/api/builder/chat', {
+      const res = await fetch('/api/builder/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, sessionId })
+        body: JSON.stringify({ form: formData, sessionId })
       });
       const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Failed to get response from builder API");
-      }
-      if (data) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply || "Thank you for sharing those details! To ensure our prompt is highly detailed and thorough, what exact checklist items or caller details should the agent collect, and what are a couple of common FAQs callers ask?" }]);
-        if (data.isReadyToGenerate !== undefined) setIsReady(data.isReadyToGenerate);
-        if (data.missingDetails) setMissingDetails(data.missingDetails);
-        
-        let mergedBlueprint = { ...blueprint };
-        let mergedOverrides = { ...overrides };
-        if (data.extractedBlueprint) {
-          mergedBlueprint = {
-            ...blueprint,
-            ...data.extractedBlueprint,
-            business: { ...blueprint.business, ...(data.extractedBlueprint.business || {}) },
-            mission: { ...blueprint.mission, ...(data.extractedBlueprint.mission || {}) },
-            conversation: { ...blueprint.conversation, ...(data.extractedBlueprint.conversation || {}) }
-          };
-          setBlueprint(mergedBlueprint);
-          if (data.extractedBlueprint.overrides) {
-            mergedOverrides = {
-              ...overrides,
-              ...(data.extractedBlueprint.overrides || {})
-            };
-            setOverrides(mergedOverrides);
-          }
-        }
-
-        const userAgreed = /\b(yes|yeah|yep|generate|go ahead|ready|ok|okay|sure|let'?s do it|build|looks good|agree|proceed|create|split|finalize|done)\b/i.test(input.trim());
-        if (data.triggerGeneration || ((isReady || data.isReadyToGenerate) && userAgreed)) {
-          setTimeout(() => {
-            handleGeneratePromptPackage(mergedBlueprint, mergedOverrides);
-          }, 300);
-        }
+      if (data.questions && data.questions.length > 0) {
+        setClarificationQuestions(data.questions);
+      } else {
+        setReviewMode(true);
       }
     } catch (err) {
       console.error(err);
-      setMessages(prev => [...prev, { role: 'assistant', content: "I encountered a minor issue connecting. Could you please clarify what details callers should provide?" }]);
+      alert("Failed to evaluate form.");
     } finally {
-      setChatLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleGeneratePromptPackage = async (customBlueprint?: any, customOverrides?: any, customTranscript?: Message[]) => {
-    setGeneratingDraft(true);
+  const handleSubmitClarifications = () => {
+    setReviewMode(true);
+  };
+
+  const handleGenerate = async () => {
+    setGenerating(true);
     try {
-      const payload = {
-        ...(customBlueprint || blueprint),
-        languageMode: customBlueprint?.languageMode || blueprint?.languageMode || 'english',
-        overrides: customOverrides || overrides,
-        transcript: customTranscript || messages,
-        sessionId
-      };
       const res = await fetch('/api/builder/generate-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          business: { businessName: formData.companyName },
+          languageMode: formData.language,
+          overrides: { faqPairs: [], objectionPairs: [], verbatimLines: [], transferRules: [] },
+          form: formData,
+          clarifications: clarificationAnswers,
+          sessionId
+        })
       });
       const data = await res.json();
       if (data) {
         setDraft(data);
       }
     } catch (err) {
-      alert('Failed to generate prompt draft. Please try again.');
-    } finally {
-      setGeneratingDraft(false);
-    }
-  };
-
-  const handleSubmitAuditFixes = async () => {
-    if (!draft?.judgeReport?.issues || Object.keys(auditFixInputs).length === 0) {
-      alert("Please enter or select at least one fix for the audit findings before submitting.");
-      return;
-    }
-
-    const fixLines = Object.entries(auditFixInputs)
-      .filter(([_, text]) => text && text.trim())
-      .map(([idxStr, text]) => {
-        const idx = Number(idxStr);
-        const issue = draft.judgeReport?.issues?.[idx];
-        if (!issue) return null;
-        return `- [${issue.severity.toUpperCase()} - ${issue.category}] (${issue.description}): ${text.trim()}`;
-      })
-      .filter(Boolean);
-
-    if (fixLines.length === 0) {
-      alert("Please enter or select at least one fix for the audit findings before submitting.");
-      return;
-    }
-
-    setIsSubmittingFixes(true);
-    const fixMessage = `AUDIT FIX REQUEST:\n${fixLines.join('\n')}`;
-    const newMessages: Message[] = [...messages, { role: 'user', content: fixMessage }];
-    setMessages(newMessages);
-    setChatLoading(true);
-
-    try {
-      const res = await fetch('/api/builder/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: newMessages, currentBlueprint: blueprint, sessionId })
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Failed to process audit fixes");
-      }
-      if (data) {
-        const updatedMessages: Message[] = [...newMessages, { role: 'assistant', content: data.reply || "Got it! I have processed your audit fixes and am re-compiling the prompt package right now..." }];
-        setMessages(updatedMessages);
-        
-        let mergedBlueprint = { ...blueprint };
-        let mergedOverrides = { ...overrides };
-        if (data.extractedBlueprint) {
-          mergedBlueprint = {
-            ...blueprint,
-            ...data.extractedBlueprint,
-            business: { ...blueprint.business, ...(data.extractedBlueprint.business || {}) },
-            mission: { ...blueprint.mission, ...(data.extractedBlueprint.mission || {}) },
-            conversation: { ...blueprint.conversation, ...(data.extractedBlueprint.conversation || {}) }
-          };
-          setBlueprint(mergedBlueprint);
-          if (data.extractedBlueprint.overrides) {
-            mergedOverrides = {
-              ...overrides,
-              ...(data.extractedBlueprint.overrides || {})
-            };
-            setOverrides(mergedOverrides);
-          }
-        }
-
-        setAuditFixInputs({});
-        await handleGeneratePromptPackage(mergedBlueprint, mergedOverrides, updatedMessages);
-      }
-    } catch (err) {
       console.error(err);
-      alert('Error submitting audit fixes. Please try again.');
+      alert("Failed to generate prompt.");
     } finally {
-      setIsSubmittingFixes(false);
-      setChatLoading(false);
+      setGenerating(false);
     }
   };
 
-  const handleCreateProject = async () => {
-    setCreatingProject(true);
+  const handleSaveProject = async () => {
     try {
       const res = await fetch('/api/builder/create-project', {
         method: 'POST',
@@ -287,7 +114,7 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         body: JSON.stringify({
           sessionId,
           draft,
-          blueprint: { ...blueprint, languageMode: blueprint?.languageMode || 'english' }
+          blueprint: { business: { businessName: formData.companyName }, languageMode: formData.language }
         })
       });
       const project = await res.json();
@@ -295,363 +122,195 @@ export default function ChatbotBuilderPage({ params }: { params: Promise<{ sessi
         router.push(`/project/${project.id}`);
       } else {
         alert('Error saving project.');
-        setCreatingProject(false);
       }
     } catch (err) {
       alert('Failed to save project workspace.');
-      setCreatingProject(false);
     }
   };
 
-  if (loading) return <div className="min-h-[80vh] bg-[#040404] flex items-center justify-center text-[#909090] text-sm">Initializing session...</div>;
+  if (loading) return <div className="min-h-[80vh] flex items-center justify-center text-graphite text-[14px]">Initializing session...</div>;
+
+  if (draft) {
+    return (
+      <div className="flex-1 max-w-4xl mx-auto w-full p-6 pt-12">
+        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-[24px] font-medium text-ink flex items-center">
+              <CheckCircle className="w-6 h-6 text-mint-signal mr-3" />
+              Prompt Package Ready
+            </h2>
+            <button
+              onClick={handleSaveProject}
+              className="inline-flex items-center justify-center h-10 px-6 bg-sunshine-highlight text-ink rounded-buttons font-medium text-[14px] hover:opacity-90 transition-opacity"
+            >
+              Save Project <ArrowRight className="w-4 h-4 ml-2" />
+            </button>
+          </div>
+          <div className="bg-white hairline-border-muted p-4 rounded-inputs overflow-y-auto max-h-[600px] whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
+            {draft.finalPrompt}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (reviewMode) {
+    return (
+      <div className="flex-1 max-w-4xl mx-auto w-full p-6 lg:p-12 relative pb-24">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-[32px] font-medium text-ink mb-2">Final Review</h1>
+            <p className="text-[16px] text-graphite">Please verify your setup before we generate the system prompt.</p>
+          </div>
+          <button 
+            onClick={() => setReviewMode(false)}
+            className="flex items-center px-4 py-2 rounded-buttons hairline-border bg-white text-ink hover:bg-black/5 text-[14px] font-medium transition-colors"
+          >
+            <Edit3 className="w-4 h-4 mr-2" /> Edit Form
+          </button>
+        </div>
+
+        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
+          <h2 className="text-[20px] font-medium text-ink mb-4">Identity & Basics</h2>
+          <SummaryItem label="Company Name" value={formData.companyName} />
+          <SummaryItem label="Call Direction" value={formData.callDirection} />
+          <SummaryItem label="Primary Goal" value={formData.goalPreset === 'Other' ? formData.goalOther : formData.goalPreset} />
+          <SummaryItem label="Language Mode" value={formData.language} />
+          {formData.language === 'Multilingual' && <SummaryItem label="Sub Languages" value={formData.subLanguages.join(', ')} />}
+          <SummaryItem label="Physical Address" value={formData.isRemote ? 'Remote' : formData.address} />
+          <SummaryItem label="Phone / Website" value={[formData.phone ? `${formData.phoneCode} ${formData.phone}` : '', formData.website].filter(Boolean).join(' | ')} />
+        </div>
+
+        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
+          <h2 className="text-[20px] font-medium text-ink mb-4">Team & Services</h2>
+          <SummaryItem label="Staff List" value={formData.staffList.filter(s => s.name).map(s => `${s.name} (${s.role})`).join(', ')} />
+          <SummaryItem label="Services Offered" value={formData.services.filter(s => s.name).map(s => `${s.name}: ${s.desc}`).join('\n')} />
+          <SummaryItem label="Intake Requirements" value={[...formData.intakeReqs].filter(Boolean).join(', ')} />
+          <SummaryItem label="Pre-call Context" value={formData.preCallFields.join(', ')} />
+        </div>
+
+        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
+          <h2 className="text-[20px] font-medium text-ink mb-4">Policies & Mechanics</h2>
+          <SummaryItem label="General FAQs" value={formData.faqsText} />
+          <SummaryItem label="Custom Policies" value={formData.policies.filter(p => p.desc).map(p => `${p.type}: ${p.desc}`).join('\n')} />
+          <SummaryItem label="Live Transfer" value={formData.transferEnabled ? `Yes (To: ${formData.transferNumbers.map(n => n.label).join(', ')})` : 'No'} />
+          <SummaryItem label="Voice & Tone" value={[formData.voiceGender, ...formData.toneWords].join(', ')} />
+          {formData.needsConfirmation && <SummaryItem label="Confirmation" value={`Confirms: ${formData.confirmationScope} (via ${formData.confirmationStyle})`} />}
+          <SummaryItem label="Call Flow Description" value={formData.callFlowDescription} />
+        </div>
+
+        {Object.entries(clarificationAnswers).length > 0 && (
+          <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6 border-sunshine-highlight border-l-4">
+            <h2 className="text-[20px] font-medium text-ink mb-4 flex items-center">
+              <Bot className="w-5 h-5 text-sunshine-highlight mr-2" />
+              Judge Clarifications
+            </h2>
+            {Object.entries(clarificationAnswers).map(([idx, ans]) => (
+              <div key={idx} className="mb-4 flex flex-col gap-1">
+                <div className="text-[16px] text-ink/90">
+                  <span className="font-bold text-ink">Question:</span> {clarificationQuestions[Number(idx)]}
+                </div>
+                <div className="text-[16px] text-ink/90 whitespace-pre-wrap">
+                  <span className="font-bold text-ink">Answer:</span> {ans}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="fixed bottom-0 left-0 right-0 bg-cream-paper border-t hairline-border-muted p-4 z-50">
+          <div className="max-w-4xl mx-auto flex items-center justify-between">
+            <span className="text-[14px] text-graphite font-medium">Ready to compile</span>
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="inline-flex items-center justify-center h-12 px-8 bg-ink text-cream-paper rounded-buttons font-medium text-[16px] hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {generating ? (
+                <span className="flex items-center"><span className="w-4 h-4 rounded-full border-2 border-cream-paper border-t-transparent animate-spin mr-2" /> Compiling...</span>
+              ) : (
+                <span className="flex items-center">Generate Prompt <ArrowRight className="w-4 h-4 ml-2" /></span>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex-1 bg-[#040404] text-[#f3f3f3] flex flex-col font-sans selection:bg-[#ff6c02] selection:text-[#040404]">
-      {/* Main Studio Area */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
-        
-        {/* Chat Conversation Column */}
-        {messages.length === 1 && !chatLoading ? (
-          /* Centered Starting Screen */
-          <div className="col-span-1 lg:col-span-3 flex flex-col items-center justify-center p-6 min-h-[75vh]">
-            <div className="space-y-6 w-full max-w-3xl text-center">
-              <h1 className="text-[32px] sm:text-[42px] font-semibold text-[#f3f3f3] tracking-tight leading-[1.15]">
-                What kind of Voice AI agent are we building today?
-              </h1>
-              <p className="text-[15px] text-[#909090] max-w-xl mx-auto leading-relaxed">
-                Describe your business workflows, required caller checklist, FAQ answers, and transfer rules. Watch our AI architect a production-grade prompt package.
-              </p>
+    <div className="flex-1 max-w-7xl mx-auto w-full p-6 lg:p-12 relative">
+      <div className="mb-8">
+        <h1 className="text-[32px] font-medium text-ink mb-2">Build your Agent</h1>
+        <p className="text-[16px] text-graphite">Fill out the blueprint below to automatically architect a production-grade system prompt.</p>
+      </div>
+      
+      <BuilderForm data={formData} setData={setFormData} phoneError={phoneError} />
 
-              {/* Dynamic Auto-Expanding Input Bar */}
-              <div className="mt-8 text-left">
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }}
-                  className="w-full bg-[#0c0c0c] border border-[#252525] rounded-[16px] p-2 sm:p-3 focus-within:border-[#ff6c02] transition-colors shadow-2xl flex items-center gap-2"
-                >
-                  <textarea
-                    ref={textareaRef}
-                    rows={2}
-                    value={input}
-                    onChange={handleInputResize}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    placeholder="Describe your voice agent (e.g. Dental clinic receptionist handling appointments, FAQs, and emergency transfers)..."
-                    disabled={chatLoading}
-                    className="flex-1 bg-transparent border-none px-3 py-2 text-[15px] text-[#f3f3f3] placeholder-[#646464] focus:outline-none resize-none overflow-hidden leading-relaxed"
-                  />
-                  <button
-                    type="submit"
-                    disabled={chatLoading || !input.trim()}
-                    className="bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-40 text-[#040404] font-semibold w-10 h-10 rounded-[10px] flex items-center justify-center transition-colors cursor-pointer shrink-0 mr-0.5"
-                  >
-                    {chatLoading ? (
-                      <div className="w-4 h-4 rounded-full border-2 border-[#040404] border-t-transparent animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </button>
-                </form>
+      {/* Action Footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-cream-paper border-t hairline-border-muted p-4 z-50">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <span className="text-[14px] text-graphite font-medium">Session: {sessionId.slice(0, 8)}...</span>
+          <button
+            onClick={handleEvaluate}
+            disabled={isSubmitting}
+            className="inline-flex items-center justify-center h-12 px-8 bg-ink text-cream-paper rounded-buttons font-medium text-[16px] hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {isSubmitting ? (
+              <span className="flex items-center"><span className="w-4 h-4 rounded-full border-2 border-cream-paper border-t-transparent animate-spin mr-2" /> Processing...</span>
+            ) : (
+              <span className="flex items-center">Review & Build <ArrowRight className="w-4 h-4 ml-2" /></span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Clarification Modal Overlay */}
+      {clarificationQuestions.length > 0 && !reviewMode && (
+        <div className="fixed inset-0 bg-ink/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-cream-paper hairline-border rounded-cards w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 shadow-2xl">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-10 h-10 rounded-full bg-sunshine-highlight flex items-center justify-center">
+                <Bot className="w-5 h-5 text-ink" />
+              </div>
+              <div>
+                <h3 className="text-[20px] font-medium text-ink">A few clarifying questions</h3>
+                <p className="text-[14px] text-graphite">Our LLM Judge needs a bit more detail before compiling the prompt.</p>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className={`flex flex-col bg-[#0c0c0c] border border-[#252525] rounded-[12px] overflow-hidden transition-all duration-300 ${(draft || generatingDraft) ? 'lg:col-span-1' : 'lg:col-span-3'}`}>
-            {/* Messages Log */}
-            <div className="flex-1 p-5 overflow-y-auto space-y-4 max-h-[650px] min-h-[450px]">
-              {messages.map((m, idx) => (
-                <div key={idx} className={`flex items-start gap-3 ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${m.role === 'user' ? 'bg-[#1b1b1b] border border-[#303030] text-[#f3f3f3]' : 'bg-[#ff6c02] text-[#040404]'}`}>
-                    {m.role === 'user' ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-                  </div>
-                  <div className={`max-w-[82%] rounded-[12px] px-4 py-3 text-[14px] leading-relaxed border ${m.role === 'user' ? 'bg-[#1b1b1b] border-[#303030] text-[#f3f3f3]' : 'bg-[#121212] border-[#252525] text-[#dedede]'}`}>
-                    {m.content}
-                  </div>
+            
+            <div className="space-y-6">
+              {clarificationQuestions.map((q, idx) => (
+                <div key={idx} className="space-y-2">
+                  <label className="text-[16px] font-medium text-ink block">{idx + 1}. {q}</label>
+                  <textarea
+                    rows={2}
+                    className="w-full bg-transparent hairline-border-muted rounded-inputs px-3 py-2 text-[16px] text-ink placeholder-graphite focus:outline-none focus:hairline-border transition-colors resize-y"
+                    placeholder="Your answer..."
+                    value={clarificationAnswers[idx] || ''}
+                    onChange={(e) => setClarificationAnswers(prev => ({ ...prev, [idx]: e.target.value }))}
+                  />
                 </div>
               ))}
-              {chatLoading && (
-                <div className="flex items-center gap-3 text-[#909090] text-xs py-2">
-                  <div className="w-7 h-7 rounded-full bg-[#121212] border border-[#252525] flex items-center justify-center animate-pulse shrink-0">
-                    <Bot className="w-3.5 h-3.5 text-[#ff6c02]" />
-                  </div>
-                  <span className="animate-pulse">Thinking...</span>
-                </div>
-              )}
-              <div ref={chatEndRef} />
             </div>
 
-            {/* Discovery Progress Bar */}
-            <div className="px-4 py-2 bg-[#121212] border-t border-[#252525] flex items-center justify-between text-xs text-[#909090]">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-[#dedede]">Discovery Progress:</span>
-                <span>{8 - Math.min(missingDetails.length, 8)}/8 Categories Gathered</span>
-              </div>
-              {missingDetails.length > 0 && (
-                <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto max-w-[280px]">
-                  <span className="text-[#ff6c02] shrink-0">Next:</span>
-                  <span className="truncate text-[#dedede]">{CATEGORY_LABELS[missingDetails[0]] || missingDetails[0]}</span>
-                </div>
-              )}
+            <div className="mt-8 flex justify-end gap-3">
+              <button 
+                onClick={() => setClarificationQuestions([])}
+                className="px-6 py-2 rounded-buttons hairline-border text-ink hover:bg-black/5 font-medium text-[14px] transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleSubmitClarifications}
+                className="px-6 py-2 rounded-buttons bg-ink text-cream-paper hover:opacity-90 font-medium text-[14px] transition-opacity flex items-center"
+              >
+                Submit Answers
+              </button>
             </div>
-
-            {/* Dynamic Input Box for Ongoing Chat */}
-            <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="p-3 bg-[#0c0c0c] border-t border-[#252525] flex flex-col gap-2">
-              <div className="flex items-center gap-2 bg-[#1b1b1b] border border-[#252525] focus-within:border-[#ff6c02] rounded-[8px] p-2 transition-colors">
-                <textarea
-                  ref={textareaRef}
-                  rows={1}
-                  value={input}
-                  onChange={handleInputResize}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder="Type your answer or instruction..."
-                  disabled={chatLoading}
-                  className="flex-1 bg-transparent border-none px-2 py-1 text-sm text-[#f3f3f3] placeholder-[#646464] focus:outline-none resize-none overflow-hidden leading-relaxed"
-                />
-                <button
-                  type="submit"
-                  disabled={chatLoading || !input.trim()}
-                  className="bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-50 text-[#040404] px-3 py-2 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer shrink-0 font-medium"
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
           </div>
-        )}
-
-        {/* Output Column (Visible when generating or generated) */}
-        {(draft || generatingDraft) && (
-          <div className="flex flex-col gap-6 lg:col-span-2">
-            {generatingDraft && !draft ? (
-              /* Loading Window */
-              <div className="bg-[#0c0c0c] border border-[#252525] rounded-[12px] flex flex-col h-full min-h-[500px] overflow-hidden">
-                <div className="bg-[#121212] px-4 py-3 border-b border-[#252525] flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-[#ff6c02] animate-ping" />
-                  <span className="text-xs font-medium text-[#dedede]">Prompt Studio Preview</span>
-                </div>
-                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-4">
-                  <div className="w-8 h-8 rounded-full border-2 border-[#ff6c02] border-t-transparent animate-spin" />
-                  <h3 className="text-base font-semibold text-[#f3f3f3]">{loadingStage}</h3>
-                  <p className="text-sm text-[#909090] max-w-md">Our automated Prompt Judge loop audits your draft against the interview requirements before presenting.</p>
-                </div>
-              </div>
-            ) : draft ? (
-            /* Split Prompts Studio Window */
-            <div className="bg-[#0c0c0c] border border-[#252525] rounded-[12px] flex flex-col h-full overflow-hidden">
-              {/* Top Title Bar */}
-              <div className="bg-[#121212] px-4 pt-3 pb-2 border-b border-[#252525] flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-3">
-                  <span className="w-2 h-2 rounded-full bg-[#ff6c02]" />
-                  <span className="text-xs font-semibold text-[#f3f3f3] flex items-center gap-1.5">
-                    Split Prompts Studio
-                  </span>
-                </div>
-
-                <button
-                  onClick={handleCreateProject}
-                  disabled={creatingProject}
-                  className="px-4 py-1.5 rounded-[4px] bg-[#ff6c02] hover:bg-[#ff8025] text-[#f3f3f3] font-medium text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  {creatingProject ? 'Saving...' : 'Finalize Workspace'}
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Tabs Bar */}
-              <div className="bg-[#121212] px-3 pt-2 border-b border-[#252525] flex items-center gap-1 overflow-x-auto">
-                <button
-                  onClick={() => setActiveTab('agent')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'agent' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
-                >
-                  <span>Agent Prompt.tab</span>
-                  {activeTab === 'agent' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
-                </button>
-                <button
-                  onClick={() => setActiveTab('system')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'system' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
-                >
-                  <span>System Prompt.tab</span>
-                  {activeTab === 'system' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
-                </button>
-                <button
-                  onClick={() => setActiveTab('combined')}
-                  className={`px-4 py-2 rounded-t-[8px] text-xs font-medium transition-colors flex items-center gap-2 border-t border-x cursor-pointer ${activeTab === 'combined' ? 'bg-[#0c0c0c] text-[#f3f3f3] border-[#252525] border-b-[#0c0c0c] -mb-[1px]' : 'bg-transparent text-[#909090] border-transparent hover:bg-[#1b1b1b] hover:text-[#f3f3f3]'}`}
-                >
-                  <span>Combined Final.tab</span>
-                  {activeTab === 'combined' && <span className="w-1.5 h-1.5 rounded-full bg-[#ff6c02]" />}
-                </button>
-              </div>
-
-              {/* Judge Audit Report Banner */}
-              {draft.judgeReport && (
-                <div className={`border-b px-4 py-3.5 flex flex-col gap-2 ${
-                  draft.judgeReport.blockingCount > 0
-                    ? 'bg-[#ff3333]/15 border-[#ff3333]/40 text-[#ffdede]'
-                    : 'bg-[#00cc66]/10 border-[#00cc66]/30 text-[#e6fff2]'
-                }`}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <ShieldAlert className={`w-4 h-4 ${draft.judgeReport.blockingCount > 0 ? 'text-[#ff5555]' : 'text-[#00ff88]'}`} />
-                      <span className="text-xs font-semibold">
-                        Prompt Judge Audit: {draft.judgeReport.verdict.toUpperCase()} (Score: {draft.judgeReport.score}/100)
-                      </span>
-                    </div>
-                    {draft.judgeReport.blockingCount > 0 ? (
-                      <span className="px-2 py-0.5 rounded-[4px] bg-[#ff3333] text-[#ffffff] font-bold text-[10px] uppercase">
-                        Deliver-Flagged (Surviving Critical Issue)
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-[4px] bg-[#00ff88]/20 text-[#00ff88] font-bold text-[10px] uppercase">
-                        All Blocking Issues Resolved
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Auto-fixed issues during compiler loop */}
-                  {draft.judgeReport.fixedIssues && draft.judgeReport.fixedIssues.length > 0 && (
-                    <div className="text-xs mt-1">
-                      <span className="font-semibold text-[#00ff88]">Auto-Fixed During Compiler Loop:</span>
-                      <ul className="list-disc ml-4 mt-1 space-y-1 text-[#aaeed3]">
-                        {draft.judgeReport.fixedIssues.map((issue, idx) => (
-                          <li key={`fixed-${idx}`} className="flex items-start justify-between gap-2">
-                            <span>{issue.description}</span>
-                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-[#00cc66]/20 text-[#00ff88] font-semibold text-[10px]">
-                              Auto-Fixed
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Remaining issues or suggestions (Interactive Audit Fix UI) */}
-                  {draft.judgeReport.issues && draft.judgeReport.issues.length > 0 && (
-                    <div className="text-xs mt-3 space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-[#ffb8b8]">Active Audit Findings — Review & Fix:</span>
-                        <span className="text-[11px] text-[#909090]">Provide instructions or accept suggested fixes to re-compile</span>
-                      </div>
-                      <div className="space-y-2.5">
-                        {draft.judgeReport.issues.map((issue, idx) => (
-                          <div key={`active-${idx}`} className="p-2.5 rounded-[8px] bg-[#0c0c0c]/80 border border-[#2e2e2e] flex flex-col gap-2">
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <span className="font-medium text-[#f3f3f3] text-xs">
-                                [{issue.severity.toUpperCase()} - {issue.category}] {issue.description}
-                              </span>
-                              <span className={`shrink-0 px-1.5 py-0.5 rounded font-semibold text-[10px] ${
-                                issue.severity === 'critical' || issue.severity === 'major'
-                                  ? 'bg-[#ff3333] text-[#ffffff]'
-                                  : 'bg-[#3366ff]/20 text-[#88bbff]'
-                              }`}>
-                                {issue.severity === 'critical' || issue.severity === 'major' ? 'Needs your review' : 'Advisory note'}
-                              </span>
-                            </div>
-                            {issue.suggestedFix && (
-                              <div className="flex items-center justify-between gap-2 bg-[#171717] px-2.5 py-1.5 rounded-[6px] border border-[#252525]">
-                                <span className="text-[11px] text-[#b0b0b0] italic flex-1">
-                                  Suggested fix: {issue.suggestedFix}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setAuditFixInputs(prev => ({ ...prev, [idx]: issue.suggestedFix || '' }))}
-                                  className="shrink-0 px-2 py-1 rounded-[4px] bg-[#ff6c02]/20 hover:bg-[#ff6c02]/30 text-[#ff8025] font-semibold text-[10px] transition-colors cursor-pointer"
-                                >
-                                  Use Suggested Fix
-                                </button>
-                              </div>
-                            )}
-                            <textarea
-                              rows={2}
-                              placeholder={`Type how to resolve this issue (e.g. "Keep English words in English script", "Remove fee quote", "Set cancellation to 48 hours")...`}
-                              value={auditFixInputs[idx] || ''}
-                              onChange={(e) => setAuditFixInputs(prev => ({ ...prev, [idx]: e.target.value }))}
-                              disabled={isSubmittingFixes || generatingDraft}
-                              className="w-full bg-[#121212] border border-[#2a2a2a] rounded-[6px] px-2.5 py-1.5 text-xs text-[#f3f3f3] placeholder-[#646464] focus:outline-none focus:border-[#ff6c02] resize-y"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                      <div className="flex items-center justify-end pt-1">
-                        <button
-                          type="button"
-                          onClick={handleSubmitAuditFixes}
-                          disabled={isSubmittingFixes || generatingDraft || Object.values(auditFixInputs).every(v => !v || !v.trim())}
-                          className="px-3.5 py-2 rounded-[8px] bg-[#ff6c02] hover:bg-[#ff8025] disabled:opacity-40 text-[#040404] font-semibold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-md"
-                        >
-                          {isSubmittingFixes ? (
-                            <>
-                              <div className="w-3.5 h-3.5 rounded-full border-2 border-[#040404] border-t-transparent animate-spin" />
-                              <span>Submitting Fixes & Re-compiling...</span>
-                            </>
-                          ) : (
-                            <>
-                              <RefreshCw className="w-3.5 h-3.5" />
-                              <span>Submit Fixes to Re-Compile</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Legacy / General Validation Warning Banner */}
-              {!draft.judgeReport && (draft.requiresHumanReview || (draft.validationErrors && draft.validationErrors.length > 0)) && (
-                <div className="bg-[#ff3333]/15 border-b border-[#ff3333]/40 px-4 py-3 flex items-start gap-3">
-                  <ShieldAlert className="w-4 h-4 text-[#ff5555] shrink-0 mt-0.5" />
-                  <div className="text-xs text-[#ffdede]">
-                    <span className="font-semibold text-[#ff5555]">Validation Warning / Human Review Suggested:</span> Automated compiler loop flagged potential structure issues after retries:
-                    <ul className="list-disc ml-4 mt-1 space-y-0.5 text-[#ffb8b8]">
-                      {(draft.validationErrors || ['Quality/Security check warning']).slice(0, 3).map((e, idx) => (
-                        <li key={idx}>{e}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* Tab Content Window */}
-              <div className="p-5 flex-1 flex flex-col gap-4 bg-[#0c0c0c]">
-                <div className="flex-1 bg-[#040404] border border-[#252525] rounded-[8px] p-4 font-mono text-xs text-[#dedede] overflow-y-auto max-h-[500px] whitespace-pre-wrap leading-relaxed selection:bg-[#ff6c02] selection:text-[#040404]">
-                  {activeTab === 'agent' && draft.finalPrompt}
-                  {activeTab === 'system' && draft.finalPrompt}
-                  {activeTab === 'combined' && draft.finalPrompt}
-                </div>
-
-                {/* Tool Registry Badge List */}
-                {draft.suggestedFunctions && draft.suggestedFunctions.length > 0 && (
-                  <div className="pt-3 border-t border-[#252525]">
-                    <span className="text-xs font-medium text-[#909090] block mb-2">Embedded Tools Registered:</span>
-                    <div className="flex flex-wrap gap-2">
-                      {draft.suggestedFunctions.map((f, i) => (
-                        <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-transparent text-[#55c2ff] border border-[#55c2ff]/40 px-3 py-1 rounded-full font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[#55c2ff]" />
-                          {f.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
-
         </div>
-        )}
-
-      </div>
+      )}
     </div>
   );
 }

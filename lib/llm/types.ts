@@ -82,12 +82,8 @@ export interface ConversationDesign {
 }
 
 export interface VoicePersonality {
+  gender?: string;
   tone?: string;
-  pace?: string;
-  formality?: string;
-  empathyLevel?: string;
-  languageVariant?: string;
-  accentPreference?: string;
   sentenceStyle?: 'short' | 'moderate' | 'detailed' | string;
   humorAllowed?: boolean;
   phrasesToUse?: string[];
@@ -185,6 +181,7 @@ export interface PromptPackageDraft {
     emergencyAction?: string;
     prohibitions?: string[];
   };
+  optimizedGuardrails?: string;
   systemPromptCompiled?: boolean;
   operationalContext?: Record<string, string>;
   appliedRules?: any[];
@@ -409,7 +406,7 @@ export interface BusinessSpecification {
     aiDisclosure?: 'disclose' | 'deny';
     recordingDisclosure?: 'required' | 'none';
     targetTTS?: string;
-    voiceCharacteristics?: { pacing?: string; formality?: string; fillerWords?: boolean; accent?: string };
+    voiceCharacteristics?: { gender?: string; fillerWords?: boolean };
     scopeExclusions?: string[];
     terminalStates?: Array<{ stateId: string; label?: string; closingScript?: string }>;
     /**
@@ -435,6 +432,7 @@ export interface BusinessSpecification {
       refunds: string;
       escalationNumbers: string[];
       disclosures?: string[];
+      otherPolicies?: string[];
     };
   };
   callFlowPlan: {

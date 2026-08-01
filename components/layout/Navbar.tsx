@@ -1,34 +1,33 @@
 import React from 'react';
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
-import { Button } from '../ui';
+import { Plus, List } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   return (
-    <header className="sticky top-0 z-50 w-full bg-[#0c0c0c] border-b border-[#252525]">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-6">
-        <div className="flex items-center space-x-8">
-          <Link href="/" className="flex items-center space-x-2.5 group">
-            <span className="h-2.5 w-2.5 rounded-full bg-[#ff6c02] shrink-0 shadow-[0_0_8px_#ff6c02]" />
-            <span className="font-semibold text-[15px] text-[#f3f3f3] tracking-tight">
-              VoiceAgent Studio
-            </span>
+    <header className="sticky top-0 z-50 w-full bg-cream-paper hairline-border-muted border-t-0 border-r-0 border-l-0">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 relative">
+        {/* Left Side: Past Projects */}
+        <div className="flex-1 flex justify-start">
+          <Link href="/dashboard" className="inline-flex items-center justify-center h-10 px-6 font-medium text-[16px] text-ink bg-transparent border border-transparent hover:hairline-border rounded-[24px] transition-all">
+            <List className="w-4 h-4 mr-2" />
+            Past Projects
           </Link>
-
-          <nav className="flex items-center space-x-2">
-            <Link href="/dashboard">
-              <Button variant="ghost" className="text-sm text-[#909090] hover:text-[#f3f3f3]">
-                Projects
-              </Button>
-            </Link>
-          </nav>
         </div>
 
-        <div className="flex items-center space-x-3">
-          <Link href="/builder">
-            <Button className="text-sm font-medium px-4 h-9 bg-[#ff6c02] text-[#f3f3f3] hover:bg-[#ff8025] rounded-[4px]">
-              <Plus className="mr-1.5 h-4 w-4" /> New Session
-            </Button>
+        {/* Center: TechLadder.ai Logo */}
+        <div className="flex-1 flex justify-center">
+          <Link href="/" className="flex items-center text-ink hover:text-graphite transition-colors">
+            <span className="font-medium text-[20px] tracking-tight">
+              TechLadder.ai
+            </span>
+          </Link>
+        </div>
+
+        {/* Right Side: New Session */}
+        <div className="flex-1 flex justify-end">
+          <Link href="/builder" className="inline-flex items-center justify-center h-10 px-6 font-medium text-[16px] text-ink bg-sunshine-highlight rounded-[24px] hover:opacity-90 transition-opacity">
+            <Plus className="w-4 h-4 mr-2" />
+            New Session
           </Link>
         </div>
       </div>

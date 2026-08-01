@@ -63,17 +63,25 @@ export class KnowledgeArchitect {
       ? `\nCRITICAL LANGUAGE DIRECTIVE:\nThis voice agent communicates in Hindi/Hinglish (languageMode '${languageMode}' / operational protocols). EVERY SINGLE FAQ answer (answer) and objection handling response (response) MUST be written in Devanagari script (देवनागरी), NOT English/Roman script.\nENGLISH WORDS RULE: Any word originating from English (such as WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, number, etc.) MUST remain in Roman/English script within the Devanagari sentence. NEVER transliterate English words into Devanagari. Example: "हमारा registered office Delhi में है।" NOT "हमारा रजिस्टर्ड ऑफिस दिल्ली में है।"`
       : "";
 
-    const prompt = `You are a KnowledgeArchitect specializing in creating structured FAQs and objection handlers for Voice AI agents.
-Given the following business context, expand the details into a strict JSON object containing faqs and objections.${langDirective}
+    const prompt = `You are a KnowledgeArchitect specializing in creating structured FAQs and objection handlers (edge cases) for Voice AI agents.
+Given the following business context and existing knowledge base, expand the details into a strict JSON object containing missing faqs and objections. ${langDirective}
 
 Business Context:
-${JSON.stringify({ meta, snap, capturedTopics: spec.capturedTopics || [], resolvedTopics: spec.resolvedTopics || [], scopeExclusions: meta?.scopeExclusions || [] }, null, 2)}
+${JSON.stringify({ 
+  meta, 
+  snap, 
+  existingKnowledgeBase: spec.knowledgeBase || {}, 
+  capturedTopics: spec.capturedTopics || [], 
+  resolvedTopics: spec.resolvedTopics || [], 
+  scopeExclusions: meta?.scopeExclusions || [] 
+}, null, 2)}
 
 MANDATORY RULES:
 1. If any policy value in the business snapshot is 'None — confirmed by business', 'None — not specified', 'Standard cancellation policy applies.', or 'Standard refund policy applies.', do NOT generate FAQ entries about that topic! Only generate FAQs for topics where real, custom details were explicitly provided by the user.
 2. If any topic is listed in 'scopeExclusions' (${meta?.scopeExclusions && meta.scopeExclusions.length > 0 ? JSON.stringify(meta.scopeExclusions) : "[]"}), strictly skip it and do NOT generate FAQs or objection handlers for it.
 3. CRITICAL: Never summarize, abstract, or omit exact addresses, phone numbers, exact locations, or URLs provided by the user. They must be preserved verbatim in the FAQs.
-4. EXHAUSTIVE EXTRACTION: You MUST generate a distinct FAQ or Objection handler for EVERY SINGLE item present in the provided Business Context (capturedTopics, businessSnapshot, etc.). Do not consolidate, summarize, or skip any provided topics. Ensure 100% of custom rules and topics are represented in the output.
+4. EXHAUSTIVE EXTRACTION & EDGE CASES: Analyze the business context and generate a distinct FAQ or Objection handler for EVERY SINGLE item or edge case that might arise. Ensure you generate edge cases (objections) based on the business context provided. DO NOT duplicate items already present in the existingKnowledgeBase.
+5. You are augmenting the existing knowledge base. Only output the NEW faqs and objections you are adding.
 
 Return a JSON object with:
 - faqs: array of { question: string, answer: string (in exact target language) }
@@ -86,19 +94,24 @@ Return a JSON object with:
         responseMimeType: "application/json"
       });
       const kb = safeParseJson(response.text, fallbackKB);
-      const rawFaqs = Array.isArray(kb?.faqs) && kb.faqs.length > 0 ? kb.faqs : fallbackKB.faqs;
-      const rawObjs = Array.isArray(kb?.objections) && kb.objections.length > 0 ? kb.objections : fallbackKB.objections;
+      const rawFaqs = Array.isArray(kb?.faqs) ? kb.faqs : [];
+      const rawObjs = Array.isArray(kb?.objections) ? kb.objections : [];
+      
+      const newFaqs = rawFaqs.map((f: any) => ({
+        question: f?.question || f?.q || "General FAQ",
+        answer: f?.answer || f?.a || "Standard policy applies.",
+        isFallback: !!f?.isFallback
+      }));
+      
+      const newObjs = rawObjs.map((o: any) => ({
+        trigger: o?.trigger || o?.objection || "General objection",
+        response: o?.response || o?.handling || "Address calmly and assist.",
+        isFallback: !!o?.isFallback
+      }));
+
       return {
-        faqs: rawFaqs.map((f: any) => ({
-          question: f?.question || f?.q || "General FAQ",
-          answer: f?.answer || f?.a || "Standard policy applies.",
-          isFallback: !!f?.isFallback
-        })),
-        objections: rawObjs.map((o: any) => ({
-          trigger: o?.trigger || o?.objection || "General objection",
-          response: o?.response || o?.handling || "Address calmly and assist.",
-          isFallback: !!o?.isFallback
-        }))
+        faqs: [...(spec.knowledgeBase?.faqs || []), ...newFaqs],
+        objections: [...(spec.knowledgeBase?.objections || []), ...newObjs]
       };
     } catch (err) {
       logger.warn("KnowledgeArchitect fallback triggered", err);
