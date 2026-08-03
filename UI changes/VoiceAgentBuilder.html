@@ -3,314 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Agent Builder</title>
-    <meta name="description" content="Build intelligent voice agents with a smart, guided form experience.">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-
+    <title>Voice AI Prompt Autobuilder</title>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        'blue-primary': '#0061fe',
-                        'blue-light': '#e8f0fe',
-                        'cream': '#f7f5f2',
-                        'white': '#ffffff',
-                        'ink': '#1e1919',
-                        'ink-soft': '#3d3730',
-                        'gray-mid': '#716b61',
-                        'gray-light': '#8a8377',
-                        'sand': '#eee9e2',
-                        'sand-dark': '#ddd6cc',
-                        'amber-signal': '#b45f04',
-                        'green-signal': '#128a3e',
+                        canvas: '#f5f4f1',
+                        surface: '#ffffff',
+                        subtle: '#f5f5f5',
+                        line: '#e5e5e5',
+                        'line-strong': '#d4d4d4',
+                        ink: '#171717',
+                        'ink-soft': '#404040',
+                        graphite: '#737373',
+                        faint: '#a3a3a3',
+                        accent: '#f0530f',
+                        'accent-hover': '#c43b00',
+                        'accent-soft': 'rgba(240, 83, 15, 0.1)',
+                        danger: '#dc2626',
+                        'danger-soft': '#fef2f2',
+                        success: '#16a34a',
+                        warning: '#b45309',
+                        'warning-soft': '#fffbeb',
                     },
                     fontFamily: {
                         sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-                        display: ['Manrope', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-                        mono: ['JetBrains Mono', 'ui-monospace', 'monospace'],
                     },
-                    fontSize: {
-                        'xs': ['11px', '1.3'],
-                        'sm': ['13px', '1.45'],
-                        'base': ['14px', '1.5'],
-                        'md': ['15px', '1.5'],
-                        'lg': ['17px', '1.4'],
-                        'xl': ['20px', '1.35'],
-                        '2xl': ['26px', '1.25'],
-                        '3xl': ['36px', '1.15'],
+                    borderRadius: {
+                        md: '6px',
+                        lg: '8px',
                     },
+                    animation: {
+                        'fade-in-up': 'fadeInUp 0.6s ease-out forwards',
+                        'slide-up': 'slideUp 0.3s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(10px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
                 }
             }
         }
     </script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-
-    <style>
-        *, *::before, *::after { box-sizing: border-box; }
-        body {
-            background: #f7f5f2;
-            color: #1e1919;
-            -webkit-font-smoothing: antialiased;
-            font-family: 'Inter', sans-serif;
-            margin: 0;
+    <style type="text/tailwindcss">
+        @layer base {
+            body { background-color: theme('colors.canvas'); color: theme('colors.ink'); font-family: theme('fontFamily.sans'); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+            h1, h2, h3, h4, h5, h6 { font-weight: 600; letter-spacing: -0.011em; }
         }
-        h1, h2, h3, h4, h5, h6 {
-            font-family: 'Manrope', sans-serif;
-            font-weight: 600;
+        @layer components {
+            .input-field { width: 100%; background: theme('colors.surface'); border: 1px solid theme('colors.line'); border-radius: theme('borderRadius.md'); padding: 7px 11px; font: inherit; font-size: 14px; color: theme('colors.ink'); outline: none; transition: border-color 0.12s ease, box-shadow 0.12s ease; }
+            .input-field:hover:not(:focus):not(:disabled) { border-color: theme('colors.line-strong'); }
+            .input-field:focus { border-color: theme('colors.accent'); box-shadow: 0 0 0 3px theme('colors.accent-soft'); }
+            .input-field::placeholder { color: theme('colors.faint'); }
+            .input-field:disabled { background: theme('colors.subtle'); color: theme('colors.graphite'); cursor: not-allowed; }
+            select.input-field { cursor: pointer; appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+            
+            .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: theme('borderRadius.md'); border: 1px solid transparent; font: inherit; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+            .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+            .btn-primary { background: theme('colors.accent'); color: #ffffff; }
+            .btn-primary:hover:not(:disabled) { background: theme('colors.accent-hover'); }
+            .btn-secondary { background: theme('colors.surface'); border-color: theme('colors.line'); color: theme('colors.ink'); }
+            .btn-secondary:hover:not(:disabled) { background: theme('colors.subtle'); border-color: theme('colors.line-strong'); }
+            .btn-ghost { background: transparent; color: theme('colors.graphite'); }
+            .btn-ghost:hover:not(:disabled) { background: theme('colors.subtle'); color: theme('colors.ink'); }
+            .btn-danger { background: transparent; color: theme('colors.graphite'); }
+            .btn-danger:hover:not(:disabled) { background: theme('colors.danger-soft'); color: theme('colors.danger'); }
+            
+            .card { background: theme('colors.surface'); border: 1px solid theme('colors.line'); border-radius: theme('borderRadius.lg'); }
+            
+            .link { color: theme('colors.accent'); font-weight: 500; cursor: pointer; }
+            .link:hover { color: theme('colors.accent-hover'); text-decoration: underline; }
+            .link:disabled { color: theme('colors.faint'); cursor: not-allowed; text-decoration: none; }
         }
-
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #ddd6cc; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #b0a99f; }
-
-        .input-field {
-            background: #ffffff;
-            border: 1px solid #eee9e2;
-            border-radius: 10px;
-            padding: 10px 14px;
-            font-size: 14px;
-            color: #1e1919;
-            width: 100%;
-            outline: none;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-        .input-field:focus {
-            border-color: #0061fe;
-            box-shadow: 0 0 0 3px rgba(0, 97, 254, 0.08);
-        }
-        .input-field::placeholder { color: #a39e95; }
-
-        .btn-primary {
-            background: #0061fe;
-            color: #fff;
-            border-radius: 10px;
-            padding: 10px 20px;
-            font-weight: 500;
-            font-size: 14px;
-            border: none;
-            cursor: pointer;
-            transition: all 0.15s;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .btn-primary:hover { background: #0050d4; }
-
-        .btn-ghost {
-            background: transparent;
-            color: #716b61;
-            border: 1px solid #eee9e2;
-            border-radius: 10px;
-            padding: 10px 20px;
-            font-weight: 500;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.15s;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .btn-ghost:hover { background: #eee9e2; color: #1e1919; }
-
-        .card {
-            background: #ffffff;
-            border: 1px solid #eee9e2;
-            border-radius: 12px;
-            padding: 20px;
-        }
-
-        .sidebar-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 16px;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.15s;
-            font-size: 14px;
-            font-weight: 500;
-            color: #716b61;
-            position: relative;
-            background-color: transparent;
-            border: none;
-            font: inherit;
-            text-align: left;
-            width: 100%;
-        }
-        .sidebar-item:hover { background: #eee9e2; color: #1e1919; }
-        .sidebar-item.active {
-            background: #ffffff;
-            color: #1e1919;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-        }
-        .sidebar-item.active::before {
-            content: '';
-            position: absolute;
-            left: 0;
-            top: 8px;
-            bottom: 8px;
-            width: 3px;
-            border-radius: 0 3px 3px 0;
-            background: #0061fe;
-        }
-
-        .completion-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .quality-signal {
-            font-size: 12px;
-            padding: 4px 0;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            animation: fadeIn 0.3s ease;
-        }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-
-        .inline-guide {
-            font-size: 12px;
-            color: #a39e95;
-            padding: 6px 0 2px;
-            display: flex;
-            align-items: flex-start;
-            gap: 5px;
-            line-height: 1.5;
-        }
-
-        .entry-card {
-            transition: all 0.2s ease;
-            background-color: #ffffff;
-            border: none;
-            font: inherit;
-            text-align: left;
-            width: 100%;
-            cursor: pointer;
-        }
-        .entry-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.06);
-        }
-
-        .sidebar-item:focus-visible,
-        .entry-card:focus-visible,
-        .tone-pill:focus-visible,
-        button:focus-visible,
-        input:focus-visible,
-        select:focus-visible,
-        textarea:focus-visible {
-            outline: 2px solid #0061fe;
-            outline-offset: 2px;
-        }
-
-        .tone-pill {
-            padding: 8px 16px;
-            border-radius: 10px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s;
-            border: 1px solid #eee9e2;
-            background: #fff;
-            color: #716b61;
-            text-align: center;
-        }
-        .tone-pill:hover {
-            border-color: #1e1919;
-            color: #1e1919;
-        }
-        .tone-pill.active {
-            background: #0061fe;
-            border-color: #0061fe;
-            color: #fff;
-        }
-
-        .section-divider {
-            height: 1px;
-            background: #eee9e2;
-            margin: 28px 0;
+        @layer utilities {
+            .glass-modal { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); }
+            ::-webkit-scrollbar { width: 10px; height: 10px; }
+            ::-webkit-scrollbar-track { background: transparent; }
+            ::-webkit-scrollbar-thumb { background: theme('colors.line-strong'); border-radius: 5px; border: 3px solid theme('colors.canvas'); }
+            ::-webkit-scrollbar-thumb:hover { background: theme('colors.graphite'); }
         }
     </style>
 </head>
 <body>
     <div id="root"></div>
+
     <script type="text/babel">
-        const { useState, useEffect, useCallback, useMemo } = React;
+        const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-        // ─── Helpers ──────────────────────────────────────────────────────
-
-        const placeholderMap = {
-            agentName: {
-                default: 'e.g. Alex',
-                Healthcare: 'e.g. Dr. Priya',
-                'E-commerce': 'e.g. Maya',
-                Finance: 'e.g. Arjun',
-                'Real Estate': 'e.g. Neha',
-                Education: 'e.g. Ravi',
-            },
-            companyName: {
-                default: 'e.g. Acme Corp',
-                Healthcare: 'e.g. Apollo Clinics',
-                'E-commerce': 'e.g. Flipkart',
-                Finance: 'e.g. HDFC Bank',
-                'Real Estate': 'e.g. Lodha Group',
-                Education: 'e.g. Byju\'s',
-            },
-            callPurpose: {
-                default: 'e.g. Schedule appointments with prospective clients',
-                Healthcare: 'e.g. Confirm patient lab results and schedule follow-ups',
-                'E-commerce': 'e.g. Recover abandoned carts with a limited-time discount',
-                Finance: 'e.g. Collect overdue EMI payments with a flexible plan offer',
-                'Real Estate': 'e.g. Qualify inbound leads and book site visits',
-                Education: 'e.g. Follow up with demo attendees to close enrollment',
-            },
-            openingMessage: {
-                default: 'Hi, this is {agentName} from {companyName}. How can I help you today?',
-                Healthcare: 'Hi, I\'m {agentName} calling from {companyName} regarding your recent visit...',
-                'E-commerce': 'Hi {customer_name}, this is {agentName} from {companyName}. We noticed you left some items in your cart...',
-                Finance: 'Hello, this is {agentName} from {companyName}. I\'m calling regarding your account...',
-                'Real Estate': 'Hi {customer_name}, this is {agentName} from {companyName}. I saw you were interested in our properties...',
-                Education: 'Hello {customer_name}, this is {agentName} from {companyName}. Thank you for attending our demo...',
-            },
-            callFlow: {
-                default: '1. Greet and introduce yourself\n2. State the purpose of the call\n3. Gather information\n4. Answer questions\n5. Confirm next steps\n6. Thank and close',
-                Healthcare: '1. Greet the patient by name\n2. Verify identity (date of birth)\n3. Share lab results summary\n4. Answer questions\n5. Schedule follow-up if needed\n6. Confirm details and close',
-                'E-commerce': '1. Greet customer by name\n2. Mention the items left in cart\n3. Offer 10% limited-time discount\n4. Handle objections\n5. Guide to checkout\n6. Confirm and close',
-                Finance: '1. Greet and verify identity\n2. State the overdue amount and due date\n3. Understand reason for delay\n4. Offer flexible payment plan\n5. Handle objections calmly\n6. Confirm commitment and close',
-                'Real Estate': '1. Greet and introduce yourself\n2. Ask about property preferences\n3. Qualify budget and timeline\n4. Pitch matching properties\n5. Book a site visit\n6. Confirm appointment and close',
-                Education: '1. Greet and reference the demo attended\n2. Ask about their learning goals\n3. Address concerns or objections\n4. Present enrollment offer\n5. Guide to registration\n6. Confirm and close',
-            },
-            guardrails: {
-                default: 'e.g. Never promise a discount without manager approval.',
-                Healthcare: 'e.g. Never disclose diagnosis over the phone. Always verify identity first.',
-                'E-commerce': 'e.g. Maximum discount is 10%. Never badmouth competitors.',
-                Finance: 'e.g. Never confirm exact balances. Always offer to transfer to a supervisor if requested twice.',
-                'Real Estate': 'e.g. Never quote exact prices — always say "starting from." Offer site visit instead.',
-                Education: 'e.g. Never guarantee placement. Always clarify results vary by student effort.',
-            },
+        // --- Icon Helper ---
+        const LIcon = ({ name, className, strokeWidth }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (!ref.current || !window.lucide || !window.lucide.icons[name]) return;
+                ref.current.innerHTML = '';
+                const svgArgs = window.lucide.icons[name];
+                const svgNode = window.lucide.createElement(svgArgs);
+                if (className) svgNode.setAttribute('class', className);
+                if (strokeWidth) svgNode.setAttribute('stroke-width', strokeWidth);
+                ref.current.appendChild(svgNode);
+            }, [name, className, strokeWidth]);
+            return <span ref={ref} className={`inline-flex shrink-0 ${className || ''}`}></span>;
         };
 
-        const getPlaceholder = (field, industry) => {
-            const map = placeholderMap[field];
-            if (!map) return '';
-            return map[industry] || map.default || '';
+        // --- Constants ---
+        const initialData = {
+            companyName: '', agentName: '', callPurpose: '', callDirection: 'Inbound', industry: '', region: '',
+            primaryLanguage: 'English', secondaryLanguage: 'None', voiceGender: 'Female', voiceTone: 'professional',
+            openingMessage: '', callFlow: '', variables: [], kbEnabled: false, kbContent: '',
+            guardrails: '', discloseAI: true, recordingConsent: false, disclosureText: '',
+            digressionHandling: 'Answer briefly, then resume the script', retryFallback: 'Transfer to a human agent',
+            maxRetries: 2, liveTransferEnabled: false, transferNumbers: [{label: '', number: ''}], transferTriggers: [], afterHoursBehavior: ''
         };
 
-        const toneOptions = [
+        const INDUSTRIES = ['E-commerce', 'Healthcare', 'Finance', 'Real Estate', 'Education', 'Insurance', 'SaaS', 'Travel & Hospitality', 'Logistics', 'Other'];
+        const LANGUAGES = ['English', 'Hindi', 'Spanish', 'French', 'German'];
+        
+        const REGIONS = [
+            { code: '', label: 'Not specified' },
+            { code: 'US', label: 'United States' },
+            { code: 'CA', label: 'Canada' },
+            { code: 'GB', label: 'United Kingdom' },
+            { code: 'IN', label: 'India' },
+            { code: 'AE', label: 'United Arab Emirates' },
+            { code: 'SA', label: 'Saudi Arabia' },
+            { code: 'QA', label: 'Qatar' },
+            { code: 'SG', label: 'Singapore' },
+            { code: 'AU', label: 'Australia' },
+            { code: 'NZ', label: 'New Zealand' },
+            { code: 'DE', label: 'Germany' },
+            { code: 'FR', label: 'France' },
+            { code: 'ES', label: 'Spain' },
+            { code: 'BR', label: 'Brazil' },
+            { code: 'MX', label: 'Mexico' },
+            { code: 'ZA', label: 'South Africa' },
+            { code: 'PH', label: 'Philippines' },
+            { code: 'MY', label: 'Malaysia' },
+            { code: 'ID', label: 'Indonesia' },
+        ];
+
+        const TONE_OPTIONS = [
             { id: 'professional', label: 'Professional', desc: 'Neutral, business-appropriate' },
             { id: 'friendly', label: 'Friendly & Warm', desc: 'Approachable, conversational' },
             { id: 'empathetic', label: 'Empathetic', desc: 'Understanding, patient' },
@@ -318,918 +168,919 @@
             { id: 'casual', label: 'Casual', desc: 'Relaxed, informal' },
             { id: 'persuasive', label: 'Persuasive', desc: 'Convincing, enthusiastic' },
         ];
+        
+        const TRANSFER_TRIGGERS = [
+            'Caller explicitly asks for a human',
+            'Caller sounds angry or distressed',
+            "Issue is outside the agent's scope",
+            'Call is after business hours',
+        ];
+        
+        const KB_SOURCE_HINTS = [
+            { title: 'FAQ document', desc: 'Common questions and answers, so the agent responds accurately without leaving the script.' },
+            { title: 'Pricing and product sheet', desc: 'Plans, SKUs and features, so the agent quotes exact details instead of guessing.' },
+            { title: 'Policy and terms doc', desc: 'Refunds, cancellations and compliance rules, for consistent answers.' },
+            { title: 'Objection and comparison notes', desc: 'Approved responses to pushback, to back up your call flow with substance.' },
+            { title: 'Troubleshooting guide', desc: 'Step-by-step fixes, useful for support and service agents.' },
+            { title: 'Company fact sheet', desc: 'Hours, locations and certifications not already covered in Persona.' },
+            { title: 'Past call transcripts', desc: 'Real customer questions, to surface edge cases your FAQ might miss.' },
+        ];
 
-        const moduleDefinitions = {
-            persona: { label: 'Persona', icon: 'user-circle' },
-            conversation: { label: 'Conversation', icon: 'message-square' },
-            rules: { label: 'Rules & Config', icon: 'shield-check' },
-            knowledge: { label: 'Knowledge Base', icon: 'book-open' },
-            handling: { label: 'Call Handling', icon: 'phone-call' },
+        const PURPOSE_PLACEHOLDER = {
+            Healthcare: 'e.g. Confirm patient lab results and schedule follow-up visits',
+            'E-commerce': 'e.g. Recover abandoned carts with a limited-time discount',
+            Finance: 'e.g. Collect overdue EMI payments and agree a flexible plan',
+            'Real Estate': 'e.g. Qualify inbound leads and book site visits',
+            Education: 'e.g. Follow up with demo attendees to close enrolment',
+            default: 'e.g. Book appointments for new and returning callers, and answer basic questions',
         };
 
-        const getModuleOrder = (direction, templateCat) => {
-            if (direction === 'outbound' && (templateCat === 'Collections' || templateCat === 'Recovery')) {
-                return ['persona', 'rules', 'conversation', 'knowledge', 'handling'];
-            }
-            if (direction === 'inbound') {
-                return ['persona', 'conversation', 'knowledge', 'rules', 'handling'];
-            }
-            return ['persona', 'conversation', 'rules', 'knowledge', 'handling'];
+        const MODULES = {
+            persona: { label: 'Persona', icon: 'user-circle', blurb: 'Who the agent is, who it works for, and why it is calling.' },
+            conversation: { label: 'Conversation', icon: 'message-square', blurb: 'The opening, the flow, and the data injected per call.' },
+            knowledge: { label: 'Knowledge Base', icon: 'book-open', blurb: 'Facts the agent answers from instead of guessing.' },
+            rules: { label: 'Guardrails & Call Handling', icon: 'shield-check', blurb: 'Boundaries, disclosures, fallbacks and human handoff.' },
         };
+        const MODULE_ORDER = ['persona', 'conversation', 'knowledge', 'rules'];
 
-        const getQualitySignal = (field, value, data) => {
-            if (!value && field !== 'guardrails') return null;
-            switch (field) {
-                case 'callPurpose':
-                    if (value.length > 0 && value.length < 15) return { type: 'warn', msg: 'This is thin — try adding what outcome you expect.' };
-                    if (value.length >= 15) return { type: 'ok', msg: 'Good specificity.' };
-                    return null;
-                case 'agentName':
-                    if (!value && (data.companyName || data.callPurpose)) return { type: 'hint', msg: 'A named agent builds more trust than an anonymous one.' };
-                    return null;
-                case 'openingMessage':
-                    if (value && data.companyName && !value.includes(data.companyName) && !value.includes('{companyName}') && !value.includes('{Company}'))
-                        return { type: 'hint', msg: 'Mentioning your company name in the opener increases engagement.' };
-                    if (value && value.length < 20) return { type: 'warn', msg: 'Very short — the first 5 seconds determine if the recipient stays.' };
-                    return null;
-                case 'guardrails':
-                    if (!value && data.direction === 'outbound') return { type: 'hint', msg: 'Optional, but outbound calls benefit from clear boundaries.' };
-                    if (value && value.length < 15) return { type: 'warn', msg: 'Consider adding more specifics — good guardrails prevent off-script behavior.' };
-                    return null;
-                default:
-                    return null;
-            }
-        };
-
-        const getModuleCompletion = (moduleId, data) => {
-            switch (moduleId) {
-                case 'persona': {
-                    const fields = [data.agentName, data.companyName, data.industry];
-                    const filled = fields.filter(Boolean).length;
-                    return filled === 0 ? 'empty' : filled === fields.length ? 'complete' : 'partial';
-                }
-                case 'conversation': {
-                    const has = [data.callPurpose, data.openingMessage, data.callFlow].filter(Boolean).length;
-                    return has === 0 ? 'empty' : has >= 2 ? 'complete' : 'partial';
-                }
-                case 'rules': {
-                    const has = [data.customGuardrails, data.customVariables.some(v => v.key.trim())].filter(Boolean).length;
-                    return has === 0 ? 'empty' : has === 2 ? 'complete' : 'partial';
-                }
+        // --- Helpers ---
+        function getModuleCompletion(id, d) {
+            const score = (parts) => {
+                const filled = parts.filter(Boolean).length;
+                if (filled === 0) return 'empty';
+                return filled === parts.length ? 'complete' : 'partial';
+            };
+            switch (id) {
+                case 'persona': return score([d.companyName.trim(), d.agentName.trim(), d.industry, d.callPurpose.trim()]);
+                case 'conversation': return score([d.openingMessage.trim(), d.callFlow.trim()]);
                 case 'knowledge':
-                    return data.kbEnabled ? 'complete' : 'empty';
-                case 'handling': {
-                    let score = 0;
-                    if (data.digressionHandling) score++;
-                    if (data.retryFallback) score++;
-                    if (data.liveTransferEnabled) score++;
-                    return score === 0 ? 'empty' : score >= 2 ? 'complete' : 'partial';
+                    if (!d.kbEnabled) return 'empty';
+                    return d.kbContent.trim() ? 'complete' : 'partial';
+                case 'rules': {
+                    const hasGuardrails = !!d.guardrails.trim();
+                    const hasTransfer = d.liveTransferEnabled;
+                    if (!hasGuardrails && !hasTransfer) return 'empty';
+                    const transferOk = !hasTransfer || d.transferNumbers.some((t) => t.number.trim());
+                    return (hasGuardrails && transferOk) ? 'complete' : 'partial';
                 }
-                default: return 'empty';
             }
-        };
+        }
 
-        // ─── Small Components ─────────────────────────────────────────────
+        function getBlockingGaps(d) {
+            const gaps = [];
+            if (!d.companyName.trim()) gaps.push('Company name (Persona)');
+            if (!d.callPurpose.trim()) gaps.push('Call purpose (Persona)');
+            if (!d.callFlow.trim()) gaps.push('Call flow (Conversation)');
+            if (d.kbEnabled && !d.kbContent.trim()) gaps.push('Knowledge base content (Knowledge Base)');
+            if (d.liveTransferEnabled && !d.transferNumbers.some((t) => t.number.trim())) {
+                gaps.push('At least one transfer number (Guardrails & Call Handling)');
+            }
+            return gaps;
+        }
 
-        const QualityHint = ({ field, value, data }) => {
-            const signal = getQualitySignal(field, value, data);
-            if (!signal) return null;
-            const color = signal.type === 'warn' ? 'text-amber-signal' : signal.type === 'ok' ? 'text-green-signal' : 'text-gray-light';
-            const icon = signal.type === 'warn' ? '💡' : signal.type === 'ok' ? '✓' : '○';
-            return <div className={`quality-signal ${color}`}><span>{icon}</span> {signal.msg}</div>;
-        };
-
-        const InlineGuide = ({ text }) => (
-            <div className="inline-guide">
-                <i data-lucide="info" style={{ width: 13, height: 13, flexShrink: 0, marginTop: 1 }}></i>
-                <span>{text}</span>
-            </div>
-        );
-
-        const CompletionDot = ({ status }) => {
-            const bg = status === 'complete' ? 'bg-green-signal text-white' : status === 'partial' ? 'bg-amber-signal text-white' : 'bg-sand-dark text-transparent';
+        // --- Primitives ---
+        function Label({ htmlFor, children, badge }) {
             return (
-                <div className={`completion-dot ${bg}`}>
-                    {status === 'complete' && <i data-lucide="check" style={{ width: 8, height: 8, strokeWidth: 4 }}></i>}
-                    {status === 'partial' && <i data-lucide="minus" style={{ width: 8, height: 8, strokeWidth: 4 }}></i>}
+                <label htmlFor={htmlFor} className="flex items-center gap-2 text-[14px] font-medium text-ink mb-1.5">
+                    <span>{children}</span>
+                    {badge}
+                </label>
+            );
+        }
+
+        function Guide({ children }) {
+            return (
+                <p className="flex items-start gap-1.5 text-[12px] leading-[1.5] text-faint pt-1.5">
+                    <LIcon name="info" className="w-[13px] h-[13px] shrink-0 mt-[2px]" />
+                    <span>{children}</span>
+                </p>
+            );
+        }
+
+        function Hint({ tone, children }) {
+            const color = tone === 'warn' ? 'text-warning' : tone === 'ok' ? 'text-success' : 'text-faint';
+            return (
+                <p className={`flex items-center gap-1.5 text-[12px] pt-1 ${color}`}>
+                    <span>{tone === 'ok' ? '✓' : tone === 'warn' ? '!' : '○'}</span>
+                    <span>{children}</span>
+                </p>
+            );
+        }
+
+        function GeneratedBadge() {
+            return (
+                <span className="inline-flex items-center rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-medium text-graphite">
+                    Drafted
+                </span>
+            );
+        }
+
+        function CompletionDot({ status }) {
+            const bg = status === 'complete' ? 'bg-success text-white' : status === 'partial' ? 'bg-warning text-white' : 'bg-line-strong text-transparent';
+            return (
+                <span className={`w-3 h-3 rounded-full shrink-0 flex items-center justify-center ${bg}`}>
+                    {status === 'complete' && <LIcon name="check" className="w-2 h-2" strokeWidth="4" />}
+                    {status === 'partial' && <LIcon name="minus" className="w-2 h-2" strokeWidth="4" />}
+                </span>
+            );
+        }
+
+        function Toggle({ id, label, checked, onChange, onText = 'Yes', offText = 'No' }) {
+            return (
+                <div>
+                    <span id={`${id}-label`} className="block text-[14px] font-medium text-ink mb-2.5">{label}</span>
+                    <label htmlFor={id} className="inline-flex items-center gap-3 cursor-pointer">
+                        <span className="relative inline-block w-11 h-6">
+                            <input id={id} type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
+                            <span className="absolute inset-0 rounded-full bg-line-strong transition-colors peer-checked:bg-ink peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2" />
+                            <span className="absolute top-1 left-1 h-4 w-4 rounded-full bg-surface transition-transform peer-checked:translate-x-5" />
+                        </span>
+                        <span className="text-[14px] font-medium text-ink">{checked ? onText : offText}</span>
+                    </label>
                 </div>
             );
-        };
+        }
 
-        const ToggleSwitch = ({ id, label, checked, onChange }) => (
-            <div>
-                <span id={`${id}-label`} className="block text-sm font-medium mb-3 text-ink">{label}</span>
-                <label htmlFor={id} className="inline-flex items-center gap-3 cursor-pointer">
-                    <span className="relative inline-block w-11 h-6">
-                        <input
-                            id={id}
-                            type="checkbox"
-                            role="switch"
-                            aria-checked={checked}
-                            aria-labelledby={`${id}-label`}
-                            checked={checked}
-                            onChange={e => onChange(e.target.checked)}
-                            className="peer sr-only"
-                        />
-                        <span className="absolute inset-0 rounded-full bg-gray-light peer-checked:bg-green-signal transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-blue-primary peer-focus-visible:ring-offset-2"></span>
-                        <span className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></span>
-                    </span>
-                    <span className="text-sm font-medium text-ink">{checked ? 'Yes' : 'No'}</span>
-                </label>
-            </div>
-        );
+        function Segmented({ label, value, options, onChange }) {
+            return (
+                <fieldset className="border-0 p-0 m-0">
+                    <legend className="block text-[14px] font-medium text-ink mb-1.5">{label}</legend>
+                    <div role="radiogroup" aria-label={label} className="inline-flex bg-subtle rounded-full p-1">
+                        {options.map((o) => (
+                            <button
+                                key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
+                                className={`px-4 py-1.5 rounded-full text-[14px] font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+                                    value === o.value ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)]' : 'text-graphite hover:text-ink'
+                                }`}
+                            >
+                                {o.label}
+                            </button>
+                        ))}
+                    </div>
+                </fieldset>
+            );
+        }
 
-        const SegmentedControl = ({ label, options, value, onChange }) => (
-            <fieldset className="border-0 p-0 m-0">
-                <legend className="block text-sm font-medium mb-1.5 text-ink">{label}</legend>
-                <div role="radiogroup" aria-label={label} className="inline-flex bg-sand rounded-full p-1">
-                    {options.map(opt => (
-                        <button
-                            key={opt.value}
-                            type="button"
-                            role="radio"
-                            aria-checked={value === opt.value}
-                            onClick={() => onChange(opt.value)}
-                            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-primary focus-visible:outline-offset-2 ${value === opt.value ? 'bg-white text-ink shadow-sm' : 'text-gray-mid hover:text-ink'}`}
-                        >
-                            {opt.label}
-                        </button>
-                    ))}
+        function ModuleHeader({ id }) {
+            return (
+                <header className="mb-6">
+                    <h2 className="text-[20px] font-semibold text-ink mb-1">{MODULES[id].label}</h2>
+                    <p className="text-[14px] text-graphite">{MODULES[id].blurb}</p>
+                </header>
+            );
+        }
+
+        function NextButton({ label, onClick, busy }) {
+            return (
+                <div className="pt-5 mt-2 border-t border-line flex justify-end">
+                    <button type="button" onClick={onClick} className="btn btn-primary" disabled={busy}>
+                        {busy ? <><LIcon name="loader-2" className="w-4 h-4 animate-spin" /> Drafting…</> : <>{label} <LIcon name="arrow-right" className="w-4 h-4" /></>}
+                    </button>
                 </div>
-            </fieldset>
-        );
+            );
+        }
 
-        const AutoFillBadge = ({ field, data }) =>
-            data.autoFilledFields?.includes(field) ? (
-                <span className="text-xs text-blue-primary bg-blue-light px-2 py-0.5 rounded-full ml-2 font-medium">
-                    From template
-                </span>
-            ) : null;
+        function DraftButton({ onClick, busy, children }) {
+            return (
+                <button type="button" onClick={onClick} disabled={busy} className="link inline-flex items-center gap-1.5 text-[12px]">
+                    {busy && <LIcon name="loader-2" className="h-3.5 w-3.5 animate-spin" />}
+                    {children}
+                </button>
+            );
+        }
 
-        // ─── Persona Card ─────────────────────────────────────────────────
-
-        const PersonaCard = ({ data }) => {
-            const initials = (data.agentName || '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-            const toneObj = toneOptions.find(t => t.id === data.voiceTone);
-            const toneLabel = toneObj ? toneObj.label : 'Not set';
+        function PersonaCard({ data }) {
+            const tone = TONE_OPTIONS.find((t) => t.id === data.voiceTone)?.label ?? 'Not set';
+            const meta = [
+                data.industry,
+                `${data.voiceGender} · ${tone}`,
+                data.secondaryLanguage !== 'None' ? `${data.primaryLanguage} + ${data.secondaryLanguage}` : data.primaryLanguage,
+            ].filter(Boolean);
 
             return (
-                <div className="card mb-6" style={{ background: 'linear-gradient(135deg, #fefefe 0%, #f9f7f4 100%)' }}>
-                    <div className="flex items-center gap-4">
-                        <div aria-hidden="true" className="w-12 h-12 rounded-full bg-blue-primary text-white flex items-center justify-center font-display font-bold text-lg shrink-0">
-                            {initials}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="font-display font-semibold text-lg text-ink truncate">
-                                {data.agentName || <span className="text-gray-light italic font-normal">Unnamed Agent</span>}
-                            </div>
-                            <div className="text-sm text-gray-mid truncate">
-                                {data.companyName || <span className="text-gray-light">No company</span>}
-                                {data.industry ? <span className="text-gray-light"> · {data.industry}</span> : null}
-                            </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 justify-end">
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-sand text-gray-mid font-medium">
-                                Voice: {data.voiceGender} · {toneLabel}
-                            </span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-sand text-gray-mid font-medium">
-                                {data.primaryLanguage}
-                            </span>
-                            {data.secondaryLanguage !== 'None' && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-sand text-gray-mid font-medium">
-                                    +{data.secondaryLanguage}
-                                </span>
-                            )}
-                        </div>
+                <div className="card mb-6 px-4 py-3">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                        <p className="min-w-0 truncate text-[14px] font-medium text-ink">
+                            {data.agentName || <span className="font-normal text-faint">Unnamed agent</span>}
+                            <span className="text-faint"> · </span>
+                            {data.companyName || <span className="font-normal text-faint">No company</span>}
+                        </p>
+                        <p className="truncate text-[12px] text-graphite">{meta.join(' · ')}</p>
                     </div>
                     {data.callPurpose && (
-                        <div className="mt-3 pt-3 border-t border-sand text-sm text-gray-mid">
-                            <span className="font-medium text-ink-soft">Purpose:</span> {data.callPurpose}
-                        </div>
+                        <p className="mt-2 line-clamp-2 border-t border-line pt-2 text-[13px] leading-[1.45] text-graphite">
+                            {data.callPurpose}
+                        </p>
                     )}
                 </div>
             );
-        };
+        }
 
-        // ─── Module: Persona ──────────────────────────────────────────────
+        function FileUploadZone() {
+            return (
+                <div className="border border-dashed border-line rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-subtle transition-colors">
+                    <LIcon name="upload-cloud" className="w-8 h-8 text-graphite mb-2" />
+                    <p className="text-[13px] font-medium text-ink">Click or drag files here to upload</p>
+                    <p className="text-[12px] text-graphite mt-1">PDF, DOCX, TXT up to 10MB (Visual Demo Only)</p>
+                </div>
+            );
+        }
 
-        const PersonaModule = ({ data, updateData, onNext }) => (
-            <div className="space-y-5">
-                <div>
-                    <h2 className="font-display font-semibold text-xl text-ink mb-1">Persona</h2>
-                    <p className="text-sm text-gray-mid mb-6">Define who your agent is and how they sound.</p>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label htmlFor="agentName" className="block text-sm font-medium mb-1.5 text-ink">
-                            Agent Name <AutoFillBadge field="agentName" data={data} />
-                        </label>
-                        <input id="agentName" type="text" className="input-field" value={data.agentName} onChange={e => updateData({ agentName: e.target.value })} placeholder={getPlaceholder('agentName', data.industry)} aria-describedby="agentName-hint" />
-                        <div id="agentName-hint">
-                            <QualityHint field="agentName" value={data.agentName} data={data} />
-                        </div>
-                        <InlineGuide text="A relatable name builds a faster connection." />
-                    </div>
-                    <div>
-                        <label htmlFor="companyName" className="block text-sm font-medium mb-1.5 text-ink">
-                            Company Name <AutoFillBadge field="companyName" data={data} />
-                        </label>
-                        <input id="companyName" type="text" className="input-field" value={data.companyName} onChange={e => updateData({ companyName: e.target.value })} placeholder={getPlaceholder('companyName', data.industry)} />
-                        <InlineGuide text="Used in greetings and context." />
-                    </div>
-                </div>
-                <div>
-                    <label htmlFor="industry" className="block text-sm font-medium mb-1.5 text-ink">
-                        Industry <AutoFillBadge field="industry" data={data} />
-                    </label>
-                    <select id="industry" className="input-field" value={data.industry} onChange={e => updateData({ industry: e.target.value })}>
-                        <option value="">Select industry...</option>
-                        <option>E-commerce</option>
-                        <option>Healthcare</option>
-                        <option>Finance</option>
-                        <option>Real Estate</option>
-                        <option>Education</option>
-                        <option>Insurance</option>
-                        <option>SaaS</option>
-                        <option>Other</option>
-                    </select>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label htmlFor="primaryLanguage" className="block text-sm font-medium mb-1.5 text-ink">Primary Language</label>
-                        <select id="primaryLanguage" className="input-field" value={data.primaryLanguage} onChange={e => updateData({ primaryLanguage: e.target.value })}>
-                            <option>English</option>
-                            <option>Hindi</option>
-                            <option>Spanish</option>
-                            <option>French</option>
-                            <option>German</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label htmlFor="secondaryLanguage" className="block text-sm font-medium mb-1.5 text-ink">Secondary Language</label>
-                        <select id="secondaryLanguage" className="input-field" value={data.secondaryLanguage} onChange={e => updateData({ secondaryLanguage: e.target.value })}>
-                            <option>None</option>
-                            <option>English</option>
-                            <option>Hindi</option>
-                            <option>Spanish</option>
-                            <option>French</option>
-                        </select>
-                    </div>
-                </div>
-                <div>
-                    <SegmentedControl
-                        label="Voice Gender"
-                        value={data.voiceGender}
-                        onChange={v => updateData({ voiceGender: v })}
-                        options={[{ value: 'Female', label: 'Female' }, { value: 'Male', label: 'Male' }, { value: 'Neutral', label: 'Neutral' }]}
-                    />
-                </div>
-                <div>
-                    <fieldset className="border-0 p-0 m-0">
-                        <legend className="block text-sm font-medium mb-2 text-ink">Voice Tone</legend>
-                        <div role="radiogroup" aria-label="Voice Tone" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            {toneOptions.map(t => (
-                                <button key={t.id} type="button" role="radio" aria-checked={data.voiceTone === t.id} onClick={() => updateData({ voiceTone: t.id })}
-                                    className={`tone-pill text-left ${data.voiceTone === t.id ? 'active' : ''}`}>
-                                    <div className="font-medium">{t.label}</div>
-                                    <div className={`text-xs mt-0.5 ${data.voiceTone === t.id ? 'text-blue-100' : 'text-gray-light'}`}>{t.desc}</div>
-                                </button>
-                            ))}
-                        </div>
-                    </fieldset>
-                </div>
+        // --- Main Builder Form ---
+        function BuilderForm({ data, setData, activeModule, setActiveModule }) {
+            const [drafting, setDrafting] = useState([]);
+            const [drafted, setDrafted] = useState([]);
+            const [draftError, setDraftError] = useState('');
+            const [kbTipOpen, setKbTipOpen] = useState(false);
+
+            const set = (key, val) => setData((d) => ({ ...d, [key]: val }));
+
+            // Dummy autofill logic
+            const runAutoFill = async (fields, force = false) => {
+                if (!data.callPurpose.trim()) return;
+                const targets = force ? fields : fields.filter((f) => !String(data[f] ?? '').trim());
+                if (targets.length === 0) return;
+
+                setDraftError('');
+                setDrafting(targets);
                 
-                <div className="pt-4 border-t border-sand flex justify-end">
-                    <button onClick={onNext} className="btn-primary">
-                        Next section <i data-lucide="arrow-right" aria-hidden="true" style={{ width: 16, height: 16 }}></i>
-                    </button>
-                </div>
-            </div>
-        );
+                // Simulate network latency
+                await new Promise(r => setTimeout(r, 1200));
 
-        // ─── Module: Conversation ─────────────────────────────────────────
+                const out = {};
+                targets.forEach(f => {
+                    if (f === 'openingMessage') out[f] = `Hi, this is ${data.agentName || 'Ava'} from ${data.companyName || 'our company'}. How can I help you today?`;
+                    if (f === 'callFlow') out[f] = `1. Greet the caller\n2. Ask for their requirements\n3. Provide information based on knowledge base\n4. Escalate to human if complex\n5. Thank them and close`;
+                    if (f === 'guardrails') out[f] = `Never promise discounts.\nOnly operate within operating hours.\nAlways be polite.`;
+                });
 
-        const ConversationModule = ({ data, updateData, onNext }) => {
-            return (
-                <div className="space-y-5">
-                    <div>
-                        <h2 className="font-display font-semibold text-xl text-ink mb-1">Conversation</h2>
-                        <p className="text-sm text-gray-mid mb-6">Define the purpose, opening, and flow — everything the agent says and does.</p>
-                    </div>
-
-                    {/* Call Purpose */}
-                    <div>
-                        <label htmlFor="callPurpose" className="block text-sm font-medium mb-1.5 text-ink">
-                            Call Purpose <AutoFillBadge field="callPurpose" data={data} />
-                        </label>
-                        <textarea id="callPurpose" className="input-field resize-none" rows="2" value={data.callPurpose} onChange={e => updateData({ callPurpose: e.target.value })} placeholder={getPlaceholder('callPurpose', data.industry)} aria-describedby="callPurpose-hint"></textarea>
-                        <div id="callPurpose-hint">
-                            <QualityHint field="callPurpose" value={data.callPurpose} data={data} />
-                        </div>
-                        <InlineGuide text="Be specific about the desired outcome. 'Collect overdue payments by offering flexible plans' beats 'Collections call'." />
-                    </div>
-
-                    {/* Opening Message */}
-                    <div>
-                        <label htmlFor="openingMessage" className="block text-sm font-medium mb-1.5 text-ink">
-                            Opening Message <AutoFillBadge field="openingMessage" data={data} />
-                        </label>
-                        <textarea id="openingMessage" className="input-field resize-none" rows="2" value={data.openingMessage} onChange={e => updateData({ openingMessage: e.target.value })} placeholder={getPlaceholder('openingMessage', data.industry)} aria-describedby="openingMessage-hint"></textarea>
-                        <div id="openingMessage-hint">
-                            <QualityHint field="openingMessage" value={data.openingMessage} data={data} />
-                        </div>
-                        <InlineGuide text="The first 5 seconds determine if the recipient stays on the line. Be specific about who you are and why you're calling." />
-                    </div>
-
-                    <div className="section-divider"></div>
-
-                    {/* Call Flow — single textarea, numbered list */}
-                    <div>
-                        <label htmlFor="callFlow" className="block text-sm font-medium mb-1.5 text-ink">
-                            Call Flow <AutoFillBadge field="callFlow" data={data} />
-                        </label>
-                        <p className="text-xs text-gray-light mb-2">Write each step as a numbered line. Keep it simple — one goal per step.</p>
-                        <textarea id="callFlow" className="input-field resize-none font-mono text-sm" rows="8" value={data.callFlow} onChange={e => updateData({ callFlow: e.target.value })} placeholder={getPlaceholder('callFlow', data.industry)}></textarea>
-                        <InlineGuide text="A good flow has 4–8 steps. Include verification, purpose, objection handling, and a clear close." />
-                    </div>
-
-                    <div className="pt-4 border-t border-sand flex justify-end">
-                        <button onClick={onNext} className="btn-primary">
-                            Next section <i data-lucide="arrow-right" aria-hidden="true" style={{ width: 16, height: 16 }}></i>
-                        </button>
-                    </div>
-                </div>
-            );
-        };
-
-        // ─── Module: Rules & Config ───────────────────────────────────────
-
-        const RulesModule = ({ data, updateData, onNext }) => {
-            const addVar = () => updateData({ customVariables: [...data.customVariables, { key: '', value: '' }] });
-            const updateVar = (i, field, val) => {
-                const vars = [...data.customVariables];
-                vars[i][field] = val;
-                updateData({ customVariables: vars });
+                setData((d) => {
+                    const next = { ...d };
+                    targets.forEach((f) => { next[f] = String(out[f]).trim(); });
+                    return next;
+                });
+                setDrafted((prev) => Array.from(new Set([...prev, ...targets])));
+                setDrafting([]);
             };
-            const removeVar = (i) => updateData({ customVariables: data.customVariables.filter((_, idx) => idx !== i) });
 
-            return (
-                <div className="space-y-5">
-                    <div>
-                        <h2 className="font-display font-semibold text-xl text-ink mb-1">Rules & Config</h2>
-                        <p className="text-sm text-gray-mid mb-6">Set boundaries and define dynamic data for each call.</p>
-                    </div>
+            const isDrafting = (f) => drafting.includes(f);
+            const wasDrafted = (f) => drafted.includes(f);
 
-                    {/* Guardrails */}
-                    <div>
-                        <label htmlFor="customGuardrails" className="block text-sm font-medium mb-1.5 text-ink">
-                            Guardrails <AutoFillBadge field="customGuardrails" data={data} />
-                        </label>
-                        <textarea id="customGuardrails" className="input-field resize-none" rows="4" value={data.customGuardrails} onChange={e => updateData({ customGuardrails: e.target.value })} placeholder={getPlaceholder('guardrails', data.industry)} aria-describedby="guardrails-hint"></textarea>
-                        <div id="guardrails-hint">
-                            <QualityHint field="guardrails" value={data.customGuardrails} data={data} />
+            const goNext = async (from) => {
+                if (from === 'persona') await runAutoFill(['openingMessage', 'callFlow']);
+                if (from === 'conversation') await runAutoFill(['guardrails']);
+                const idx = MODULE_ORDER.indexOf(from);
+                if (idx >= 0 && idx < MODULE_ORDER.length - 1) setActiveModule(MODULE_ORDER[idx + 1]);
+            };
+
+            const addVariable = () => setData((d) => ({ ...d, variables: [...d.variables, { key: '', value: '' }] }));
+            const updateVariable = (i, field, val) => setData((d) => ({ ...d, variables: d.variables.map((v, idx) => (idx === i ? { ...v, [field]: val } : v)) }));
+            const removeVariable = (i) => setData((d) => ({ ...d, variables: d.variables.filter((_, idx) => idx !== i) }));
+
+            const addTransferNumber = () => setData((d) => ({ ...d, transferNumbers: [...d.transferNumbers, { label: '', number: '' }] }));
+            const updateTransferNumber = (i, field, val) => setData((d) => ({ ...d, transferNumbers: d.transferNumbers.map((t, idx) => (idx === i ? { ...t, [field]: val } : t)) }));
+            const removeTransferNumber = (i) => setData((d) => ({ ...d, transferNumbers: d.transferNumbers.filter((_, idx) => idx !== i) }));
+            const toggleTrigger = (trigger) => setData((d) => ({
+                ...d, transferTriggers: d.transferTriggers.includes(trigger) ? d.transferTriggers.filter((t) => t !== trigger) : [...d.transferTriggers, trigger]
+            }));
+
+            const draftErrorBanner = draftError ? <p className="text-[12px] text-warning pt-1">{draftError}</p> : null;
+
+            if (activeModule === 'persona') {
+                return (
+                    <section className="space-y-5">
+                        <ModuleHeader id="persona" />
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="companyName">Company name *</Label>
+                                <input id="companyName" className="input-field" value={data.companyName} onChange={(e) => set('companyName', e.target.value)} placeholder="e.g. Meridian Dental" />
+                                <Guide>Used in greetings, disclosures and every reference to "us".</Guide>
+                            </div>
+                            <div>
+                                <Label htmlFor="agentName">Agent name</Label>
+                                <input id="agentName" className="input-field" value={data.agentName} onChange={(e) => set('agentName', e.target.value)} placeholder="e.g. Ava" />
+                                {!data.agentName && data.companyName ? <Hint tone="idea">A named agent builds trust faster than an anonymous one.</Hint> : <Guide>The name the agent introduces itself with.</Guide>}
+                            </div>
                         </div>
-                        <InlineGuide text="Good guardrails prevent off-script behavior. e.g., 'Never confirm payment amounts,' 'Always offer to transfer to a human if asked twice.'" />
-                    </div>
 
-                    <div className="section-divider"></div>
-
-                    {/* Variables */}
-                    <div>
-                        <label className="block text-sm font-medium mb-1.5 text-ink">Custom Variables</label>
-                        <p className="text-xs text-gray-light mb-3">Dynamic data injected per call — use {'{variable_name}'} in your messages.</p>
-                        <div className="space-y-2">
-                            {data.customVariables.map((v, i) => (
-                                <div key={i} className="flex gap-3 items-center">
-                                    <input type="text" aria-label={`Variable key ${i + 1}`} className="input-field w-2/5 font-mono text-sm" placeholder="key" value={v.key} onChange={e => updateVar(i, 'key', e.target.value)} />
-                                    <input type="text" aria-label={`Variable value ${i + 1}`} className="input-field flex-1 text-sm" placeholder="Sample value" value={v.value} onChange={e => updateVar(i, 'value', e.target.value)} />
-                                    <button aria-label={`Remove variable ${i + 1}`} onClick={() => removeVar(i)} className="p-1.5 text-gray-light hover:text-ink transition-colors">
-                                        <i data-lucide="x" style={{ width: 15, height: 15 }}></i>
-                                    </button>
-                                </div>
-                            ))}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="industry">Industry</Label>
+                                <select id="industry" className="input-field" value={data.industry} onChange={(e) => set('industry', e.target.value)}>
+                                    <option value="">Select industry…</option>
+                                    {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <Label htmlFor="region">Deployment region</Label>
+                                <select id="region" className="input-field" value={data.region} onChange={(e) => set('region', e.target.value)}>
+                                    {REGIONS.map((r) => <option key={r.code || 'none'} value={r.code}>{r.label}</option>)}
+                                </select>
+                                <Guide>Sets currency, emergency numbers and phone-number length. Left blank, the agent stays deliberately generic.</Guide>
+                            </div>
                         </div>
-                        <button onClick={addVar} className="flex items-center gap-2 text-blue-primary text-sm font-medium hover:underline mt-3">
-                            <i data-lucide="plus" style={{ width: 15, height: 15 }}></i> Add Variable
-                        </button>
-                    </div>
 
-                    <div className="pt-4 border-t border-sand flex justify-end">
-                        <button onClick={onNext} className="btn-primary">
-                            Next section <i data-lucide="arrow-right" aria-hidden="true" style={{ width: 16, height: 16 }}></i>
-                        </button>
-                    </div>
-                </div>
-            );
-        };
+                        <Segmented label="Call direction" value={data.callDirection} onChange={(v) => set('callDirection', v)} options={[{ value: 'Inbound', label: 'Inbound' }, { value: 'Outbound', label: 'Outbound' }]} />
 
-        // ─── Module: Knowledge Base ───────────────────────────────────────
-
-        const KBModule = ({ data, updateData, onNext }) => (
-            <div className="space-y-5">
-                <div>
-                    <h2 className="font-display font-semibold text-xl text-ink mb-1">Knowledge Base</h2>
-                    <p className="text-sm text-gray-mid mb-6">Give your agent facts to answer questions accurately.</p>
-                </div>
-                <div className="card">
-                    <div className="mb-4">
-                        <ToggleSwitch
-                            id="kbEnabled"
-                            label="Enable Knowledge Base"
-                            checked={data.kbEnabled}
-                            onChange={c => updateData({ kbEnabled: c })}
-                        />
-                    </div>
-                    {data.kbEnabled && (
                         <div>
-                            <div className="flex gap-2 mb-4">
-                                {['upload', 'paste', 'url'].map(m => (
-                                    <button key={m} onClick={() => updateData({ kbMethod: m })} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${data.kbMethod === m ? 'bg-sand text-ink' : 'text-gray-mid hover:bg-sand'}`}>
-                                        {m === 'upload' ? 'Upload' : m === 'paste' ? 'Paste' : 'URL'}
+                            <Label htmlFor="callPurpose">Call purpose *</Label>
+                            <textarea id="callPurpose" className="input-field resize-y" rows={3} value={data.callPurpose} onChange={(e) => set('callPurpose', e.target.value)} placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default} />
+                            {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20 ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint> : data.callPurpose.trim().length >= 20 ? <Hint tone="ok">Good specificity.</Hint> : null}
+                            <Guide>Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it when you move to the next section.</Guide>
+                        </div>
+
+                        <div className="my-6 h-px bg-line" />
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="primaryLanguage">Primary language</Label>
+                                <select id="primaryLanguage" className="input-field" value={data.primaryLanguage} onChange={(e) => set('primaryLanguage', e.target.value)}>
+                                    {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <Label htmlFor="secondaryLanguage">Secondary language</Label>
+                                <select id="secondaryLanguage" className="input-field" value={data.secondaryLanguage} onChange={(e) => set('secondaryLanguage', e.target.value)}>
+                                    <option value="None">None</option>
+                                    {LANGUAGES.filter((l) => l !== data.primaryLanguage).map((l) => <option key={l} value={l}>{l}</option>)}
+                                </select>
+                                <Guide>Adding one puts the agent in multilingual mode — it mirrors whichever language the caller uses.</Guide>
+                            </div>
+                        </div>
+
+                        <Segmented label="Voice gender" value={data.voiceGender} onChange={(v) => set('voiceGender', v)} options={[{ value: 'Female', label: 'Female' }, { value: 'Male', label: 'Male' }]} />
+
+                        <fieldset className="border-0 p-0 m-0">
+                            <legend className="block text-[14px] font-medium text-ink mb-2">Voice tone</legend>
+                            <div role="radiogroup" aria-label="Voice tone" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {TONE_OPTIONS.map((t) => (
+                                    <button key={t.id} type="button" role="radio" aria-checked={data.voiceTone === t.id} onClick={() => set('voiceTone', t.id)}
+                                        className={`rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
+                                            data.voiceTone === t.id ? 'border-ink bg-subtle text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                                        }`}>
+                                        <span className="block font-medium">{t.label}</span>
+                                        <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
                                     </button>
                                 ))}
                             </div>
-                            {data.kbMethod === 'upload' && (
-                                <div className="border border-dashed border-sand-dark rounded-lg p-8 text-center cursor-pointer hover:bg-cream transition-colors">
-                                    <i data-lucide="upload-cloud" className="mx-auto text-gray-light mb-2"></i>
-                                    <p className="text-sm text-ink font-medium">Click to upload or drag and drop</p>
-                                    <p className="text-xs text-gray-light">PDF, TXT, DOCX up to 10MB</p>
-                                </div>
-                            )}
-                            {data.kbMethod === 'paste' && (
-                                <div>
-                                    <label htmlFor="kbContent" className="sr-only">Paste KB content</label>
-                                    <textarea id="kbContent" className="input-field resize-none" rows="6" placeholder="Paste your FAQ or documentation here..." value={data.kbContent} onChange={e => updateData({ kbContent: e.target.value })}></textarea>
-                                </div>
-                            )}
-                            {data.kbMethod === 'url' && (
-                                <div className="flex gap-2">
-                                    <label htmlFor="kbUrl" className="sr-only">URL</label>
-                                    <input id="kbUrl" type="text" className="input-field" placeholder="https://example.com/faq" />
-                                    <button className="btn-primary shrink-0">Scrape</button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
+                        </fieldset>
 
-                <div className="pt-4 border-t border-sand flex justify-end">
-                    <button onClick={onNext} className="btn-primary">
-                        Next section <i data-lucide="arrow-right" aria-hidden="true" style={{ width: 16, height: 16 }}></i>
-                    </button>
-                </div>
-            </div>
-        );
-
-        // ─── Module: Call Handling ────────────────────────────────────────
-
-        const CallHandlingModule = ({ data, updateData }) => {
-            const addTransferNum = () => updateData({ transferNumbers: [...data.transferNumbers, { label: '', number: '' }] });
-            const updateTransferNum = (i, field, val) => {
-                const nums = [...data.transferNumbers];
-                nums[i][field] = val;
-                updateData({ transferNumbers: nums });
-            };
-            const removeTransferNum = (i) => updateData({ transferNumbers: data.transferNumbers.filter((_, idx) => idx !== i) });
-
-            const toggleTrigger = (trigger) => {
-                const triggers = data.transferTriggers.includes(trigger)
-                    ? data.transferTriggers.filter(t => t !== trigger)
-                    : [...data.transferTriggers, trigger];
-                updateData({ transferTriggers: triggers });
-            };
-
-            return (
-                <div className="space-y-7">
-                    <div>
-                        <h2 className="font-display font-semibold text-xl text-ink mb-1">Call Handling</h2>
-                        <p className="text-sm text-gray-mid mb-6">Manage disclosures, interruptions, and human handoffs.</p>
-                    </div>
-
-                    {/* Compliance & Disclosures */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                        <div>
-                            <ToggleSwitch
-                                id="discloseAI"
-                                label="Disclose AI identity to caller"
-                                checked={data.discloseAI}
-                                onChange={c => updateData({ discloseAI: c })}
-                            />
-                        </div>
-                        <div>
-                            <ToggleSwitch
-                                id="recordingConsent"
-                                label="Recording consent required"
-                                checked={data.recordingConsent}
-                                onChange={c => updateData({ recordingConsent: c })}
-                            />
-                        </div>
-                    </div>
-
-                    <div className="section-divider"></div>
-
-                    {/* Interruption & Digression Handling */}
-                    <div>
-                        <h3 className="text-base font-semibold text-ink mb-4">Interruption & Fallback Logic</h3>
-                        <div className="space-y-4">
-                            <div>
-                                <label htmlFor="digressionHandling" className="block text-sm font-medium mb-1.5 text-ink">
-                                    Mid-flow digression handling <AutoFillBadge field="digressionHandling" data={data} />
-                                </label>
-                                <select id="digressionHandling" className="input-field" value={data.digressionHandling} onChange={e => updateData({ digressionHandling: e.target.value })}>
-                                    <option value="Answer briefly, then resume the script">Answer briefly, then resume the script</option>
-                                    <option value="Note it and continue the script only">Note it and continue the script only</option>
-                                    <option value="Refuse and redirect to the script">Refuse and redirect to the script</option>
-                                </select>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="retryFallback" className="block text-sm font-medium mb-1.5 text-ink">
-                                        Retry exhaustion fallback <AutoFillBadge field="retryFallback" data={data} />
-                                    </label>
-                                    <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={e => updateData({ retryFallback: e.target.value })}>
-                                        <option value="Transfer to a human agent">Transfer to a human agent</option>
-                                        <option value="End the call politely">End the call politely</option>
-                                        <option value="Offer a callback">Offer a callback</option>
-                                        <option value="Repeat the request differently">Repeat the request differently</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label htmlFor="maxRetries" className="block text-sm font-medium mb-1.5 text-ink">Max retries before fallback</label>
-                                    <input id="maxRetries" type="number" className="input-field" value={data.maxRetries} onChange={e => updateData({ maxRetries: parseInt(e.target.value) || 0 })} min="0" max="10" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="section-divider"></div>
-
-                    {/* Live Transfer / Escalation */}
-                    <div>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-base font-semibold text-ink">Live transfer / escalation</h3>
-                        </div>
-                        <div className="mb-4">
-                            <ToggleSwitch
-                                id="liveTransferEnabled"
-                                label="Enable live transfer"
-                                checked={data.liveTransferEnabled}
-                                onChange={c => updateData({ liveTransferEnabled: c })}
-                            />
-                        </div>
-
-                        {data.liveTransferEnabled && (
-                            <div className="border border-sand-dark rounded-xl p-5 bg-white space-y-6 shadow-sm">
-                                {/* Transfer numbers */}
-                                <div>
-                                    <label className="block text-sm font-medium mb-3 text-ink">Transfer numbers</label>
-                                    <div className="space-y-3">
-                                        {data.transferNumbers.map((tn, i) => (
-                                            <div key={i} className="flex gap-3">
-                                                <input type="text" aria-label={`Transfer number label ${i + 1}`} className="input-field flex-1" placeholder="Label (e.g. Manager)" value={tn.label} onChange={e => updateTransferNum(i, 'label', e.target.value)} />
-                                                <input type="text" aria-label={`Transfer number ${i + 1}`} className="input-field flex-1" placeholder="Phone number" value={tn.number} onChange={e => updateTransferNum(i, 'number', e.target.value)} />
-                                                {data.transferNumbers.length > 1 && (
-                                                    <button aria-label={`Remove transfer number ${i + 1}`} onClick={() => removeTransferNum(i)} className="p-2 text-gray-light hover:text-ink transition-colors flex shrink-0 items-center justify-center">
-                                                        <i data-lucide="x" style={{ width: 16, height: 16 }}></i>
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button onClick={addTransferNum} className="flex items-center gap-1.5 text-gray-mid text-sm font-medium hover:text-ink mt-3 transition-colors">
-                                        <i data-lucide="plus" style={{ width: 14, height: 14 }}></i> Add number
-                                    </button>
-                                </div>
-
-                                {/* Transfer when... */}
-                                <div>
-                                    <label className="block text-sm font-medium mb-3 text-ink">Transfer when...</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {['Caller explicitly asks for a human', 'Caller sounds angry or distressed', "Issue is outside the agent's scope", 'Call is after business hours'].map(trigger => {
-                                            const isActive = data.transferTriggers.includes(trigger);
-                                            return (
-                                                <button key={trigger} onClick={() => toggleTrigger(trigger)}
-                                                    className={`px-3 py-1.5 text-sm rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-primary focus-visible:outline-offset-2 ${isActive ? 'bg-blue-light border-blue-primary text-blue-primary font-medium' : 'bg-white border-sand text-ink-soft hover:border-gray-mid hover:bg-cream'}`}>
-                                                    {trigger}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                {/* After-hours behavior */}
-                                <div>
-                                    <label htmlFor="afterHoursBehavior" className="block text-sm font-medium mb-2 text-ink">After-hours behavior if no one can take the transfer</label>
-                                    <textarea id="afterHoursBehavior" className="input-field resize-none" rows="2" placeholder="e.g. Take a message and confirm a callback window" value={data.afterHoursBehavior} onChange={e => updateData({ afterHoursBehavior: e.target.value })}></textarea>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        };
-
-        const compileSystemPrompt = (data) => {
-            let prompt = `You are a voice AI agent${data.agentName ? ` named ${data.agentName}` : ''}${data.companyName ? ` working for ${data.companyName}` : ''}.`;
-            if (data.industry) prompt += `\nIndustry: ${data.industry}`;
-            if (data.callPurpose) prompt += `\n\n## Call Purpose\n${data.callPurpose}`;
-            if (data.openingMessage) prompt += `\n\n## Opening Message\n"${data.openingMessage}"`;
-            if (data.callFlow) prompt += `\n\n## Call Flow\n${data.callFlow}`;
-            if (data.customGuardrails) prompt += `\n\n## Guardrails\n${data.customGuardrails}`;
-            if (data.kbEnabled && data.kbContent) prompt += `\n\n## Knowledge Base\n${data.kbContent.substring(0, 150)}...`;
-            return prompt || 'Your system prompt will appear here as you build your agent.';
-        };
-
-        const App = () => {
-            const [mode, setMode] = useState('entry');
-            const [isDeploying, setIsDeploying] = useState(false);
-            const [data, setData] = useState({
-                direction: 'inbound',
-                buildPath: null,
-                templateCategory: 'Collections',
-                templateId: null,
-
-                agentName: '',
-                companyName: '',
-                industry: '',
-                primaryLanguage: 'English',
-                secondaryLanguage: 'None',
-                voiceGender: 'Female',
-                voiceTone: 'professional',
-
-                callPurpose: '',
-                openingMessage: '',
-                callFlow: '',
-
-                customGuardrails: '',
-
-                kbEnabled: false,
-                kbMethod: 'upload',
-                kbContent: '',
-
-                customVariables: [{ key: 'customer_name', value: '' }],
-
-                activeModule: 'persona',
-                autoFilledFields: [],
-
-                discloseAI: true,
-                recordingConsent: false,
-                digressionHandling: 'Answer briefly, then resume the script',
-                retryFallback: 'Transfer to a human agent',
-                maxRetries: 2,
-                liveTransferEnabled: false,
-                transferNumbers: [{ label: '', number: '' }],
-                transferTriggers: [],
-                afterHoursBehavior: '',
-            });
-
-            useEffect(() => {
-                setTimeout(() => lucide.createIcons(), 50);
-            }, [data, mode, isDeploying]);
-
-            const updateData = (updates) => setData(prev => ({ ...prev, ...updates }));
-
-            const categories = ['Collections', 'Reminders', 'Recovery', 'Lead Qualification'];
-            const templates = [
-                { id: 1, cat: 'Collections', title: 'EMI Follow-up', desc: 'Friendly reminder for upcoming or missed EMI payments.', industry: 'Finance' },
-                { id: 2, cat: 'Collections', title: 'Late Invoice', desc: 'Firm but polite collection for overdue B2B invoices.', industry: 'Finance' },
-                { id: 3, cat: 'Reminders', title: 'Appointment Reminder', desc: 'Confirm attendance for medical or service appointments.', industry: 'Healthcare' },
-                { id: 4, cat: 'Lead Qualification', title: 'Real Estate Intent', desc: 'Qualify inbound leads for property purchases.', industry: 'Real Estate' },
-                { id: 5, cat: 'Recovery', title: 'Cart Recovery', desc: 'Re-engage customers who abandoned their shopping cart.', industry: 'E-commerce' },
-            ];
-
-            const defaultFlows = {
-                'Collections': '1. Greet and verify identity\n2. State the overdue amount and due date\n3. Understand reason for delay\n4. Offer flexible payment plan\n5. Handle objections calmly\n6. Confirm commitment and close',
-                'Reminders': '1. Greet by name\n2. Confirm appointment date and time\n3. Ask if they can attend\n4. Offer to reschedule if needed\n5. Confirm and close',
-                'Recovery': '1. Greet customer by name\n2. Mention items left in cart\n3. Offer limited-time discount\n4. Handle objections\n5. Guide to checkout\n6. Confirm and close',
-                'Lead Qualification': '1. Introduce yourself and company\n2. Ask about their needs and timeline\n3. Qualify budget range\n4. Pitch matching solution\n5. Book a follow-up meeting\n6. Confirm next steps',
-            };
-
-            const enterBuilder = (path, templateObj) => {
-                const updates = { buildPath: path, autoFilledFields: [] };
-                if (templateObj) {
-                    updates.templateId = templateObj.id;
-                    updates.callPurpose = templateObj.desc;
-                    updates.industry = templateObj.industry || '';
-                    updates.callFlow = defaultFlows[templateObj.cat] || '';
-                    updates.autoFilledFields = ['callPurpose', 'industry', 'callFlow'];
-                    const order = getModuleOrder(data.direction, templateObj.cat);
-                    updates.activeModule = order[0];
-                } else {
-                    updates.activeModule = 'persona';
-                }
-                updateData(updates);
-                setMode('builder');
-            };
-
-            const moduleOrder = getModuleOrder(data.direction, data.templateCategory);
-
-            const handleNext = (currentModule) => {
-                const index = moduleOrder.indexOf(currentModule);
-                if (index >= 0 && index < moduleOrder.length - 1) {
-                    updateData({ activeModule: moduleOrder[index + 1] });
-                } else {
-                    setIsDeploying(true); // Open deploy modal if last step
-                }
-            };
-
-            const moduleRenderers = {
-                persona: <PersonaModule data={data} updateData={updateData} onNext={() => handleNext('persona')} />,
-                conversation: <ConversationModule data={data} updateData={updateData} onNext={() => handleNext('conversation')} />,
-                rules: <RulesModule data={data} updateData={updateData} onNext={() => handleNext('rules')} />,
-                knowledge: <KBModule data={data} updateData={updateData} onNext={() => handleNext('knowledge')} />,
-                handling: <CallHandlingModule data={data} updateData={updateData} onNext={() => handleNext('handling')} />,
-            };
-
-            // Calculate overall progress
-            const totalModules = moduleOrder.length;
-            const completedModules = moduleOrder.filter(id => getModuleCompletion(id, data) === 'complete').length;
-            const progressPercent = Math.round((completedModules / totalModules) * 100);
-
-            // ─── Entry Page ───────────────────────────────────────────────
-
-            if (mode === 'entry') {
-                return (
-                    <main className="min-h-screen flex items-center justify-center py-16 px-8">
-                        <div className="w-full max-w-4xl">
-                            <div className="text-center mb-12">
-                                <h1 className="font-display text-3xl text-ink mb-3">Build your agent</h1>
-                                <p className="text-md text-gray-mid">Start from a proven template or build your custom agent from scratch.</p>
-                            </div>
-
-                            <div className="flex justify-center mb-12">
-                                <SegmentedControl
-                                    label=""
-                                    value={data.direction}
-                                    onChange={v => updateData({ direction: v })}
-                                    options={[{ value: 'inbound', label: 'Inbound' }, { value: 'outbound', label: 'Outbound' }]}
-                                />
-                            </div>
-
-                            {data.buildPath !== 'template' && (
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-12">
-                                    <button onClick={() => updateData({ buildPath: 'template' })} className="card entry-card cursor-pointer hover:border-gray-mid">
-                                        <div className="w-10 h-10 bg-sand rounded-lg flex items-center justify-center mb-4">
-                                            <i data-lucide="layout-template" className="text-ink" aria-hidden="true" style={{ width: 20, height: 20 }}></i>
-                                        </div>
-                                        <h2 className="font-display font-semibold text-lg text-ink mb-1">Use a template</h2>
-                                        <p className="text-sm text-gray-mid">Start with a pre-configured prompt for common use cases.</p>
-                                    </button>
-                                    <button onClick={() => enterBuilder('scratch', null)} className="card entry-card cursor-pointer hover:border-gray-mid">
-                                        <div className="w-10 h-10 bg-sand rounded-lg flex items-center justify-center mb-4">
-                                            <i data-lucide="pen-tool" className="text-ink" aria-hidden="true" style={{ width: 20, height: 20 }}></i>
-                                        </div>
-                                        <h2 className="font-display font-semibold text-lg text-ink mb-1">Start from scratch</h2>
-                                        <p className="text-sm text-gray-mid">Build a fully custom agent step-by-step.</p>
-                                    </button>
-                                </div>
-                            )}
-
-                            {data.buildPath === 'template' && (
-                                <div>
-                                    <div className="flex items-center gap-4 mb-6">
-                                        <button onClick={() => updateData({ buildPath: null })} className="btn-ghost">
-                                            <i data-lucide="arrow-left" aria-hidden="true" style={{ width: 16, height: 16 }}></i> Back
-                                        </button>
-                                        <h2 className="font-display font-semibold text-xl text-ink">Select a Template</h2>
-                                    </div>
-                                    <div className="flex flex-col md:flex-row gap-8 pt-6 border-t border-sand">
-                                        <div className="w-full md:w-44 shrink-0">
-                                            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-mid mb-4">Categories</h3>
-                                            <div className="space-y-1">
-                                                {categories.map(cat => (
-                                                    <button key={cat} onClick={() => updateData({ templateCategory: cat })} className={`block w-full text-left text-sm px-3 py-1.5 rounded-lg transition-colors ${data.templateCategory === cat ? 'bg-sand text-ink font-medium' : 'text-gray-mid hover:bg-sand hover:text-ink'}`}>
-                                                        {cat}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                            {templates.filter(t => t.cat === data.templateCategory).map(t => (
-                                                <button key={t.id} onClick={() => enterBuilder('template', t)} className="card entry-card cursor-pointer hover:border-gray-mid">
-                                                    <h3 className="font-medium text-base text-ink mb-1">{t.title}</h3>
-                                                    <p className="text-sm text-gray-mid">{t.desc}</p>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </main>
+                        {draftErrorBanner}
+                        <NextButton label="Next: Conversation" onClick={() => goNext('persona')} busy={drafting.length > 0} />
+                    </section>
                 );
             }
 
-            // ─── Builder Layout ──────────────────────────────
+            if (activeModule === 'conversation') {
+                return (
+                    <section className="space-y-5">
+                        <ModuleHeader id="conversation" />
+                        {!data.callPurpose.trim() && (
+                            <div className="card bg-subtle px-4 py-3 text-[13px] text-graphite">
+                                Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('persona')}>Persona</button> and we will draft the opening message, call flow and guardrails for you.
+                            </div>
+                        )}
 
-            return (
-                <div className="h-screen flex flex-col overflow-hidden">
-                    {/* Top Bar */}
-                    <header className="bg-white border-b border-sand px-6 py-3 flex flex-wrap items-center justify-between shrink-0 z-30 gap-4">
-                        <div className="flex items-center gap-3">
-                            <button aria-label="Back to entry" onClick={() => setMode('entry')} className="p-1.5 rounded-lg hover:bg-sand text-gray-mid hover:text-ink transition-colors">
-                                <i data-lucide="arrow-left" aria-hidden="true" style={{ width: 18, height: 18 }}></i>
-                            </button>
-                            <h1 className="font-display font-semibold text-lg text-ink m-0">Voice Agent Builder</h1>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-sand text-gray-mid font-medium capitalize">{data.direction}</span>
+                        <div>
+                            <Label htmlFor="openingMessage" badge={wasDrafted('openingMessage') ? <GeneratedBadge /> : undefined}>Opening message</Label>
+                            <textarea id="openingMessage" className="input-field resize-y" rows={3} value={data.openingMessage} onChange={(e) => set('openingMessage', e.target.value)} placeholder="Hi, this is Ava from Meridian Dental — how can I help today?" />
+                            {data.openingMessage && data.companyName && !data.openingMessage.includes(data.companyName) ? <Hint tone="idea">Naming {data.companyName} in the opener measurably increases engagement.</Hint> : null}
+                            <div className="flex items-center justify-between gap-4 pt-1">
+                                <Guide>The first five seconds decide whether the caller stays. Say who you are and why you are calling.</Guide>
+                                <DraftButton busy={isDrafting('openingMessage')} onClick={() => runAutoFill(['openingMessage'], true)}>Redraft</DraftButton>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-6">
-                            <div className="hidden sm:flex items-center gap-3 text-sm">
-                                <span className="font-medium text-ink">{progressPercent}%</span>
-                                <div className="w-32 h-2 bg-sand rounded-full overflow-hidden" role="progressbar" aria-valuenow={progressPercent} aria-valuemin="0" aria-valuemax="100">
-                                    <div className="h-full bg-green-signal transition-all duration-300" style={{ width: `${progressPercent}%` }}></div>
+
+                        <div>
+                            <Label htmlFor="callFlow" badge={wasDrafted('callFlow') ? <GeneratedBadge /> : undefined}>Call flow *</Label>
+                            <p className="text-[12px] text-faint mb-2">Plain language, one goal per line — this is a sketch for you, not the prompt. The compiler turns it into the full state machine with branching, retries and confirmations.</p>
+                            <textarea id="callFlow" className="input-field resize-y font-mono text-[13px]" rows={9} value={data.callFlow} onChange={(e) => set('callFlow', e.target.value)} placeholder={'1. Greet and introduce yourself\n2. Ask what the caller needs\n3. Collect the details you need\n4. Answer questions from the knowledge base\n5. Confirm next steps and close'} />
+                            <div className="flex items-center justify-between gap-4 pt-1">
+                                <Guide>Four to eight steps works best. Include the close.</Guide>
+                                <DraftButton busy={isDrafting('callFlow')} onClick={() => runAutoFill(['callFlow'], true)}>Redraft</DraftButton>
+                            </div>
+                        </div>
+
+                        <div className="my-6 h-px bg-line" />
+
+                        <div>
+                            <span className="block text-[14px] font-medium text-ink mb-1.5">Variables</span>
+                            <p className="text-[12px] text-faint mb-3">Data your system already knows before the call and injects into the conversation. Reference them as <code className="font-mono text-ink-soft">{`{{variable_name}}`}</code> in the opening message or call flow. Anything the agent has to <em>ask</em> for does not belong here — the compiler derives those from your flow.</p>
+                            
+                            {data.variables.length === 0 && <p className="text-[13px] text-faint mb-3 italic">No variables yet — the agent will run without pre-call context.</p>}
+                            
+                            <div className="space-y-2">
+                                {data.variables.map((v, i) => (
+                                    <div key={i} className="flex gap-2 items-center">
+                                        <input className="input-field w-2/5 font-mono text-[13px]" placeholder="customer_name" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase())} />
+                                        <input className="input-field flex-1 text-[13px]" placeholder="Sample value (e.g. Priya)" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
+                                        <button type="button" onClick={() => removeVariable(i)} className="p-2 text-faint hover:text-ink transition-colors shrink-0"><LIcon name="x" className="w-4 h-4" /></button>
+                                    </div>
+                                ))}
+                            </div>
+                            <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><LIcon name="plus" className="w-4 h-4" /> Add variable</button>
+                        </div>
+
+                        {draftErrorBanner}
+                        <NextButton label="Next: Knowledge Base" onClick={() => goNext('conversation')} busy={drafting.length > 0} />
+                    </section>
+                );
+            }
+
+            if (activeModule === 'knowledge') {
+                return (
+                    <section className="space-y-5">
+                        <ModuleHeader id="knowledge" />
+                        <div className="card space-y-4 p-4">
+                            <div className="flex items-start justify-between gap-4">
+                                <Toggle id="kbEnabled" label="Enable knowledge base" checked={data.kbEnabled} onChange={(v) => set('kbEnabled', v)} />
+                                <div className="relative">
+                                    <button type="button" onClick={() => setKbTipOpen((o) => !o)} onMouseEnter={() => setKbTipOpen(true)} onMouseLeave={() => setKbTipOpen(false)} className="link inline-flex items-center gap-1.5 text-[12px]">
+                                        <LIcon name="info" className="w-4 h-4" /> What should I add here?
+                                    </button>
+                                    {kbTipOpen && (
+                                        <div className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-line glass-modal p-4 animate-fade-in-up">
+                                            <div className="flex items-start justify-between gap-3 mb-2">
+                                                <p className="text-[13px] font-semibold text-ink">Anything factual the agent might be asked</p>
+                                                <button type="button" onClick={() => setKbTipOpen(false)} className="text-faint hover:text-ink"><LIcon name="x" className="w-4 h-4" /></button>
+                                            </div>
+                                            <p className="text-[12px] text-graphite mb-3">The compiler reads this and files each fact into the right part of the prompt — business facts, FAQ answers, policies and objection handling.</p>
+                                            <ul className="space-y-2">
+                                                {KB_SOURCE_HINTS.map((h, i) => (
+                                                    <li key={i} className="text-[12px] leading-[1.5]">
+                                                        <span className="font-medium text-ink">{h.title}</span><span className="text-graphite"> — {h.desc}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <button className="btn-ghost text-sm py-1.5 px-4">Save Draft</button>
-                                <button className="btn-primary text-sm py-1.5 px-4" onClick={() => setIsDeploying(true)}>Review & Deploy</button>
+                            {data.kbEnabled ? (
+                                <div className="space-y-4">
+                                    <div>
+                                        <Label>Upload documents</Label>
+                                        <p className="text-[12px] text-faint mb-2">Drop your FAQ docs, pricing sheets, policy files, or past call transcripts. Text is extracted and added to the content box below.</p>
+                                        <FileUploadZone />
+                                    </div>
+                                    <div className="my-2 h-px bg-line" />
+                                    <div>
+                                        <Label htmlFor="kbContent">Knowledge base content</Label>
+                                        <textarea id="kbContent" className="input-field resize-y" rows={14} value={data.kbContent} onChange={(e) => set('kbContent', e.target.value)} placeholder="Paste your FAQs, pricing sheet, policies, objection notes, troubleshooting steps, hours and locations — raw text is fine, it does not need formatting." />
+                                        {data.kbContent.trim() && (
+                                            <p className="text-[11px] text-faint pt-1 tabular-nums">{data.kbContent.length.toLocaleString()} chars</p>
+                                        )}
+                                        <Guide>Raw and messy is fine. Facts get extracted and routed into the prompt automatically; nothing is pasted in verbatim. Uploaded file text appears here — feel free to edit.</Guide>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-[13px] text-graphite">Optional. Without it the agent answers only from the Persona and Conversation sections, and says it does not have the detail for anything else — which is safe, just less useful.</p>
+                            )}
+                        </div>
+                        <NextButton label="Next: Guardrails & Call Handling" onClick={() => goNext('knowledge')} busy={drafting.length > 0} />
+                    </section>
+                );
+            }
+
+            if (activeModule === 'rules') {
+                return (
+                    <section className="space-y-6">
+                        <ModuleHeader id="rules" />
+                        
+                        <div>
+                            <Label htmlFor="guardrails" badge={wasDrafted('guardrails') ? <GeneratedBadge /> : undefined}>Guardrails</Label>
+                            <textarea id="guardrails" className="input-field resize-y" rows={6} value={data.guardrails} onChange={(e) => set('guardrails', e.target.value)} placeholder={'One rule per line, e.g.\nNever promise a discount without manager approval.\nNever quote an exact price — say "starting from".\nAlways offer a human transfer if asked twice.'} />
+                            {data.guardrails.trim() && data.guardrails.trim().length < 20 ? <Hint tone="warn">Add specifics — vague guardrails do not prevent off-script behaviour.</Hint> : null}
+                            <div className="flex items-center justify-between gap-4 pt-1">
+                                <Guide>One rule per line. These become hard prohibitions in the compiled prompt.</Guide>
+                                <DraftButton busy={isDrafting('guardrails')} onClick={() => runAutoFill(['guardrails'], true)}>{data.guardrails.trim() ? 'Redraft' : 'Draft from call purpose'}</DraftButton>
                             </div>
+                        </div>
+
+                        <div className="my-6 h-px bg-line" />
+
+                        <div>
+                            <h3 className="text-[14px] font-semibold text-ink mb-4">Disclosure &amp; compliance</h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                                <Toggle id="discloseAI" label="Disclose AI identity to the caller" checked={data.discloseAI} onChange={(v) => set('discloseAI', v)} />
+                                <Toggle id="recordingConsent" label="Recording consent required" checked={data.recordingConsent} onChange={(v) => set('recordingConsent', v)} />
+                            </div>
+                            {data.recordingConsent && (
+                                <div className="mt-4">
+                                    <Label htmlFor="disclosureText">Exact disclosure line</Label>
+                                    <input id="disclosureText" className="input-field" value={data.disclosureText} onChange={(e) => set('disclosureText', e.target.value)} placeholder="This call may be recorded for quality and training purposes." />
+                                    <Guide>Leave blank and the agent will phrase it itself.</Guide>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="my-6 h-px bg-line" />
+
+                        <div>
+                            <h3 className="text-[14px] font-semibold text-ink mb-4">Digression &amp; fallback</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <Label htmlFor="digressionHandling">Mid-flow digression handling</Label>
+                                    <select id="digressionHandling" className="input-field" value={data.digressionHandling} onChange={(e) => set('digressionHandling', e.target.value)}>
+                                        <option>Answer briefly, then resume the script</option>
+                                        <option>Note it and continue the script only</option>
+                                        <option>Refuse and redirect to the script</option>
+                                    </select>
+                                    <Guide>What happens when the caller asks something off-flow mid-conversation.</Guide>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <Label htmlFor="retryFallback">Retry exhaustion fallback</Label>
+                                        <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={(e) => set('retryFallback', e.target.value)}>
+                                            <option>Transfer to a human agent</option>
+                                            <option>End the call politely</option>
+                                            <option>Offer a callback</option>
+                                            <option>Repeat the request differently</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <Label htmlFor="maxRetries">Max retries before fallback</Label>
+                                        <input id="maxRetries" type="number" min="1" max="5" className="input-field font-mono" value={data.maxRetries} onChange={(e) => set('maxRetries', Math.min(5, Math.max(1, Number(e.target.value) || 1)))} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="my-6 h-px bg-line" />
+
+                        <div>
+                            <h3 className="text-[14px] font-semibold text-ink mb-4">Live transfer &amp; escalation</h3>
+                            <Toggle id="liveTransferEnabled" label="Enable live transfer" checked={data.liveTransferEnabled} onChange={(v) => set('liveTransferEnabled', v)} onText="Enabled" offText="Disabled" />
+                            {data.liveTransferEnabled && (
+                                <div className="mt-4 space-y-6 rounded-lg border border-line bg-surface p-4">
+                                    <div>
+                                        <span className="block text-[14px] font-medium text-ink mb-3">Transfer numbers</span>
+                                        <div className="space-y-3">
+                                            {data.transferNumbers.map((t, i) => (
+                                                <div key={i} className="flex gap-2">
+                                                    <input className="input-field flex-1" placeholder="Label (e.g. Front desk)" value={t.label} onChange={(e) => updateTransferNumber(i, 'label', e.target.value)} />
+                                                    <input className="input-field flex-1 font-mono text-[13px]" placeholder="+1 415 555 0142" value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
+                                                    {data.transferNumbers.length > 1 && (
+                                                        <button type="button" onClick={() => removeTransferNumber(i)} className="p-2 text-faint hover:text-ink transition-colors shrink-0"><LIcon name="x" className="w-4 h-4" /></button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button type="button" onClick={addTransferNumber} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><LIcon name="plus" className="w-4 h-4" /> Add number</button>
+                                    </div>
+
+                                    <fieldset className="border-0 p-0 m-0">
+                                        <legend className="block text-[14px] font-medium text-ink mb-3">Transfer when…</legend>
+                                        <div className="flex flex-wrap gap-2">
+                                            {TRANSFER_TRIGGERS.map((trigger) => {
+                                                const active = data.transferTriggers.includes(trigger);
+                                                return (
+                                                    <button key={trigger} type="button" role="checkbox" aria-checked={active} onClick={() => toggleTrigger(trigger)}
+                                                        className={`px-3 py-1.5 text-[13px] rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+                                                            active ? 'border-ink bg-subtle font-medium text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                                                        }`}>
+                                                        {trigger}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </fieldset>
+
+                                    <div>
+                                        <Label htmlFor="afterHoursBehavior">If nobody can take the transfer</Label>
+                                        <textarea id="afterHoursBehavior" className="input-field resize-y" rows={2} value={data.afterHoursBehavior} onChange={(e) => set('afterHoursBehavior', e.target.value)} placeholder="e.g. Take a message and confirm a callback window" />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                );
+            }
+        }
+
+        // --- Main App / Page Layout ---
+        function App() {
+            const [data, setData] = useState(initialData);
+            const [activeModule, setActiveModule] = useState('persona');
+            const [stage, setStage] = useState('form');
+            const [evaluating, setEvaluating] = useState(false);
+            const [generating, setGenerating] = useState(false);
+            const [gaps, setGaps] = useState([]);
+            const [draft, setDraft] = useState(null);
+            const [questions, setQuestions] = useState([]);
+            const [answers, setAnswers] = useState({});
+            const [copied, setCopied] = useState(false);
+
+            const completions = useMemo(() => MODULE_ORDER.map((id) => ({ id, status: getModuleCompletion(id, data) })), [data]);
+            const progress = Math.round((completions.filter((c) => c.status === 'complete').length / MODULE_ORDER.length) * 100);
+
+            const handleSubmitForm = async () => {
+                const blocking = getBlockingGaps(data);
+                setGaps(blocking);
+                if (blocking.length > 0) return;
+                
+                setEvaluating(true);
+                setTimeout(() => {
+                    setEvaluating(false);
+                    setQuestions([
+                        "Do you offer refunds for missed appointments?",
+                        "What is the exact escalation path if the caller is unhappy with the standard answers?"
+                    ]);
+                    setAnswers({});
+                    setStage('questions');
+                }, 1500);
+            };
+
+            const handleGenerate = async () => {
+                setGenerating(true);
+                setTimeout(() => {
+                    setGenerating(false);
+                    
+                    let prompt = `You are a voice AI agent${data.agentName ? ` named ${data.agentName}` : ''}${data.companyName ? ` working for ${data.companyName}` : ''}.`;
+                    if (data.industry) prompt += `\nIndustry: ${data.industry}`;
+                    if (data.callPurpose) prompt += `\n\n## Call Purpose\n${data.callPurpose}`;
+                    if (data.openingMessage) prompt += `\n\n## Opening Message\n"${data.openingMessage}"`;
+                    if (data.callFlow) prompt += `\n\n## Call Flow\n${data.callFlow}`;
+                    if (data.guardrails) prompt += `\n\n## Guardrails\n${data.guardrails}`;
+                    if (data.kbEnabled && data.kbContent) prompt += `\n\n## Knowledge Base\n${data.kbContent}`;
+                    
+                    if (questions.length > 0) {
+                        prompt += `\n\n## Clarifications\n`;
+                        questions.forEach((q, i) => {
+                            if (answers[i]?.trim()) {
+                                prompt += `Q: ${q}\nA: ${answers[i]}\n`;
+                            }
+                        });
+                    }
+                    
+                    setDraft({ finalPrompt: prompt, estimatedTokens: 4200, dynamicVariables: data.variables, suggestedFunctions: ['checkAvailability', 'bookAppointment'] });
+                    setStage('done');
+                }, 2000);
+            };
+
+            // Review helpers
+            function ReviewField({ label, value, onChange, rows = 2, mono = false }) {
+                return (
+                    <div className="mb-4">
+                        <span className="block text-[13px] font-medium text-graphite mb-1.5">{label}</span>
+                        {rows === 1 ? (
+                            <input className={`input-field ${mono ? 'font-mono text-[13px]' : ''}`} value={value} onChange={(e) => onChange(e.target.value)} />
+                        ) : (
+                            <textarea className={`input-field resize-y ${mono ? 'font-mono text-[13px]' : ''}`} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+                        )}
+                    </div>
+                );
+            }
+            function ReviewStatic({ label, value }) {
+                if (!value) return null;
+                return (
+                    <div className="mb-3">
+                        <span className="block text-[13px] font-medium text-graphite mb-0.5">{label}</span>
+                        <p className="text-[14px] text-ink whitespace-pre-wrap">{value}</p>
+                    </div>
+                );
+            }
+
+            if (stage === 'done' && draft) {
+                return (
+                    <div className="w-full max-w-4xl mx-auto px-6 py-10">
+                        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+                            <div className="flex items-center gap-3">
+                                <LIcon name="check-circle" className="w-6 h-6 text-success" />
+                                <div>
+                                    <h1 className="text-[20px] font-semibold text-ink">Prompt package ready</h1>
+                                    <p className="text-[13px] text-graphite">
+                                        ~{draft.estimatedTokens} tokens · {draft.dynamicVariables?.length ?? 0} variables · {draft.suggestedFunctions?.length ?? 0} tools
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button type="button" className="btn btn-secondary" onClick={() => { setStage('review'); setDraft(null); }}>
+                                    <LIcon name="edit-3" className="w-4 h-4" /> Back to review
+                                </button>
+                                <button type="button" className="btn btn-primary" onClick={() => alert("Project saved (Demo)")}>
+                                    Save project <LIcon name="arrow-right" className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="card p-0 overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
+                                <span className="text-[13px] font-medium text-graphite">Compiled system prompt</span>
+                                <button type="button" className="link inline-flex items-center gap-1.5 text-[12px]" onClick={() => {
+                                    navigator.clipboard.writeText(draft.finalPrompt || '');
+                                    setCopied(true);
+                                    setTimeout(() => setCopied(false), 1600);
+                                }}>
+                                    <LIcon name="copy" className="w-3.5 h-3.5" /> {copied ? 'Copied' : 'Copy'}
+                                </button>
+                            </div>
+                            <pre className="p-4 overflow-auto max-h-[62vh] whitespace-pre-wrap font-mono text-[13px] leading-[1.6] text-ink-soft">
+                                {draft.finalPrompt}
+                            </pre>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (stage === 'review') {
+                const answered = questions.filter((_, i) => answers[i]?.trim());
+                return (
+                    <div className="w-full max-w-3xl mx-auto px-6 py-10 pb-28">
+                        <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
+                            <div>
+                                <h1 className="text-[20px] font-semibold text-ink mb-1">Final review</h1>
+                                <p className="text-[14px] text-graphite">Edit anything here before we compile. Changes are saved into the build.</p>
+                            </div>
+                            <button type="button" className="btn btn-secondary" onClick={() => setStage('form')}>
+                                <LIcon name="arrow-left" className="w-4 h-4" /> Back to builder
+                            </button>
+                        </div>
+
+                        <div className="card mb-4 p-5">
+                            <h2 className="text-[16px] font-semibold text-ink mb-4">Persona</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                                <ReviewField label="Company name" rows={1} value={data.companyName} onChange={(v) => setData((d) => ({ ...d, companyName: v }))} />
+                                <ReviewField label="Agent name" rows={1} value={data.agentName} onChange={(v) => setData((d) => ({ ...d, agentName: v }))} />
+                            </div>
+                            <ReviewField label="Call purpose" rows={3} value={data.callPurpose} onChange={(v) => setData((d) => ({ ...d, callPurpose: v }))} />
+                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-graphite pt-1">
+                                <span>Direction: <span className="text-ink">{data.callDirection}</span></span>
+                                <span>Industry: <span className="text-ink">{data.industry || '—'}</span></span>
+                                <span>Region: <span className="text-ink">{data.region || 'Generic'}</span></span>
+                                <span>Language: <span className="text-ink">{data.primaryLanguage}{data.secondaryLanguage !== 'None' ? ` + ${data.secondaryLanguage}` : ''}</span></span>
+                                <span>Voice: <span className="text-ink">{data.voiceGender}</span></span>
+                            </div>
+                        </div>
+
+                        <div className="card mb-4 p-5">
+                            <h2 className="text-[16px] font-semibold text-ink mb-4">Conversation</h2>
+                            <ReviewField label="Opening message" rows={3} value={data.openingMessage} onChange={(v) => setData((d) => ({ ...d, openingMessage: v }))} />
+                            <ReviewField label="Call flow" rows={8} mono={true} value={data.callFlow} onChange={(v) => setData((d) => ({ ...d, callFlow: v }))} />
+                            <ReviewStatic label="Variables" value={data.variables.filter((v) => v.key.trim()).map((v) => `{{${v.key}}}${v.value ? ` = ${v.value}` : ''}`).join('\n')} />
+                        </div>
+
+                        <div className="card mb-4 p-5">
+                            <h2 className="text-[16px] font-semibold text-ink mb-4">Knowledge base</h2>
+                            {data.kbEnabled && data.kbContent.trim() ? (
+                                <ReviewField label="Source content (facts get extracted into the prompt)" rows={8} value={data.kbContent} onChange={(v) => setData((d) => ({ ...d, kbContent: v }))} />
+                            ) : (
+                                <p className="text-[13px] text-graphite">Not provided — the agent will answer only from the persona and flow above.</p>
+                            )}
+                        </div>
+
+                        <div className="card mb-4 p-5">
+                            <h2 className="text-[16px] font-semibold text-ink mb-4">Guardrails &amp; call handling</h2>
+                            <ReviewField label="Guardrails" rows={5} value={data.guardrails} onChange={(v) => setData((d) => ({ ...d, guardrails: v }))} />
+                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-graphite">
+                                <span>AI disclosure: <span className="text-ink">{data.discloseAI ? 'Yes' : 'No'}</span></span>
+                                <span>Recording consent: <span className="text-ink">{data.recordingConsent ? 'Yes' : 'No'}</span></span>
+                                <span>Digression: <span className="text-ink">{data.digressionHandling}</span></span>
+                                <span>Fallback: <span className="text-ink">{data.retryFallback} after {data.maxRetries}</span></span>
+                            </div>
+                            {data.liveTransferEnabled && (
+                                <div className="mt-3">
+                                    <ReviewStatic label="Live transfer" value={[
+                                        ...data.transferNumbers.filter((t) => t.number.trim()).map((t) => `${t.label || 'Transfer'}: ${t.number}`),
+                                        ...(data.transferTriggers.length ? [`Triggers: ${data.transferTriggers.join('; ')}`] : []),
+                                        ...(data.afterHoursBehavior ? [`If unavailable: ${data.afterHoursBehavior}`] : []),
+                                    ].join('\n')} />
+                                </div>
+                            )}
+                        </div>
+
+                        {questions.length > 0 && (
+                            <div className="card mb-4 p-5">
+                                <h2 className="flex items-center gap-2 text-[16px] font-semibold text-ink mb-4">
+                                    <LIcon name="bot" className="h-4 w-4 text-graphite" /> Reviewer clarifications
+                                </h2>
+                                {answered.length === 0 && <p className="text-[13px] text-graphite mb-3">You skipped these — the compiler will use its own judgement.</p>}
+                                {questions.map((q, i) => (
+                                    <div key={i} className="mb-4">
+                                        <p className="text-[13px] font-medium text-graphite mb-1.5">{i + 1}. {q}</p>
+                                        <textarea className="input-field resize-y" rows={2} value={answers[i] || ''}
+                                            placeholder="Your answer (optional)"
+                                            onChange={(e) => setAnswers((a) => ({ ...a, [i]: e.target.value }))} />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="fixed bottom-0 left-0 right-0 border-t border-line bg-surface px-6 py-3 z-40">
+                            <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+                                <span className="text-[13px] text-graphite">Everything above goes into the compiler.</span>
+                                <button type="button" className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+                                    {generating ? <><LIcon name="loader-2" className="w-4 h-4 animate-spin" /> Compiling…</> : <>Build prompt <LIcon name="arrow-right" className="w-4 h-4" /></>}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-canvas">
+                    <header className="shrink-0 bg-surface border-b border-line px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 z-20">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <h1 className="text-[16px] font-semibold text-ink truncate">
+                                {data.companyName ? `${data.companyName} agent` : 'Build your agent'}
+                            </h1>
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-subtle text-graphite font-medium">{data.callDirection}</span>
+                        </div>
+                        <div className="flex items-center gap-5">
+                            <div className="hidden sm:flex items-center gap-2.5 text-[13px]">
+                                <span className="font-medium text-ink tabular-nums">{progress}%</span>
+                                <div className="w-28 h-2 bg-subtle rounded-full overflow-hidden">
+                                    <div className="h-full bg-success transition-all duration-300" style={{ width: `${progress}%` }} />
+                                </div>
+                            </div>
+                            <button type="button" className="btn btn-primary" onClick={handleSubmitForm} disabled={evaluating}>
+                                {evaluating ? <><LIcon name="loader-2" className="w-4 h-4 animate-spin" /> Reviewing…</> : <>Submit for review <LIcon name="arrow-right" className="w-4 h-4" /></>}
+                            </button>
                         </div>
                     </header>
 
-                    {/* Three-column layout */}
-                    <div className="flex-1 flex overflow-hidden">
-                        {/* Sidebar */}
-                        <nav aria-label="Modules" className="w-56 bg-cream border-r border-sand p-4 shrink-0 overflow-y-auto hidden md:block">
+                    <div className="flex-1 flex min-h-0">
+                        <nav aria-label="Builder sections" className="hidden md:block w-60 shrink-0 border-r border-line p-4 overflow-y-auto">
                             <div className="space-y-1">
-                                {moduleOrder.map(id => {
-                                    const mod = moduleDefinitions[id];
-                                    const completion = getModuleCompletion(id, data);
-                                    return (
-                                        <button key={id}
-                                            className={`sidebar-item ${data.activeModule === id ? 'active' : ''}`}
-                                            onClick={() => updateData({ activeModule: id })}
-                                            aria-current={data.activeModule === id ? 'page' : undefined}
-                                        >
-                                            <CompletionDot status={completion} />
-                                            <i data-lucide={mod.icon} aria-hidden="true" style={{ width: 16, height: 16 }}></i>
-                                            <span>{mod.label}</span>
-                                        </button>
-                                    );
-                                })}
+                                {completions.map(({ id, status }) => (
+                                    <button key={id} type="button"
+                                        className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors ${
+                                            activeModule === id ? 'bg-subtle text-ink' : 'text-graphite hover:bg-subtle hover:text-ink'
+                                        }`}
+                                        onClick={() => setActiveModule(id)}>
+                                        <CompletionDot status={status} />
+                                        <LIcon name={MODULES[id].icon} className="w-4 h-4 shrink-0" />
+                                        <span className="truncate">{MODULES[id].label}</span>
+                                    </button>
+                                ))}
                             </div>
-                            {data.direction === 'inbound' && (
-                                <div className="mt-8 p-3 bg-blue-light rounded-xl text-xs text-blue-primary font-medium">
-                                    <i data-lucide="info" aria-hidden="true" className="inline-block mr-1" style={{ width: 14, height: 14, marginBottom: 2 }}></i>
-                                    Module order optimized for inbound resolution.
-                                </div>
-                            )}
                         </nav>
 
-                        {/* Center: Builder */}
-                        <main className="flex-1 overflow-y-auto p-4 sm:p-8 bg-cream">
-                            <div className="max-w-2xl mx-auto">
+                        <main className="flex-1 overflow-y-auto p-4 sm:p-8 min-w-0">
+                            <div className="max-w-3xl mx-auto">
+                                <div className="md:hidden flex gap-2 overflow-x-auto pb-3 mb-4 -mx-1 px-1">
+                                    {completions.map(({ id, status }) => (
+                                        <button key={id} type="button" onClick={() => setActiveModule(id)}
+                                            className={`shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors ${
+                                                activeModule === id ? 'border-ink bg-surface text-ink' : 'border-line bg-transparent text-graphite'
+                                            }`}>
+                                            <CompletionDot status={status} />
+                                            {MODULES[id].label}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 <PersonaCard data={data} />
-                                {moduleRenderers[data.activeModule]}
+                                
+                                {gaps.length > 0 && (
+                                    <div className="card mb-6 border-warning/30 bg-warning-soft p-4">
+                                        <p className="flex items-center gap-2 text-[13px] font-semibold text-warning mb-2">
+                                            <LIcon name="alert-triangle" className="w-4 h-4" /> Fill these in before submitting
+                                        </p>
+                                        <ul className="space-y-1 text-[13px] text-ink-soft list-disc pl-5">
+                                            {gaps.map((g) => <li key={g}>{g}</li>)}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                <BuilderForm data={data} setData={setData} activeModule={activeModule} setActiveModule={setActiveModule} />
                             </div>
                         </main>
-
-                        {/* Right Sidebar: Prompt Preview */}
-                        <aside className="w-80 bg-white border-l border-sand p-6 shrink-0 overflow-y-auto hidden xl:block shadow-sm">
-                            <div className="sticky top-0 bg-white pb-4 mb-4 border-b border-sand z-10 flex items-center justify-between">
-                                <h2 className="font-display font-semibold text-lg text-ink">Prompt Preview</h2>
-                                <i data-lucide="sparkles" className="text-amber-signal" style={{ width: 18, height: 18 }}></i>
-                            </div>
-                            <div className="font-mono text-xs text-gray-mid whitespace-pre-wrap leading-relaxed">
-                                {compileSystemPrompt(data)}
-                            </div>
-                        </aside>
                     </div>
 
-                    {/* Deploy Modal Overlay */}
-                    {isDeploying && (
-                        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4" aria-modal="true" role="dialog" aria-labelledby="deploy-title">
-                            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-[fadeIn_0.2s_ease-out]">
-                                <div className="flex justify-between items-start mb-4">
-                                    <h2 id="deploy-title" className="font-display font-semibold text-xl text-ink">Review & Deploy</h2>
-                                    <button onClick={() => setIsDeploying(false)} aria-label="Close modal" className="text-gray-light hover:text-ink transition-colors">
-                                        <i data-lucide="x" style={{ width: 20, height: 20 }}></i>
+                    {stage === 'questions' && (
+                        <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                            <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg sm:p-8">
+                                <div className="flex items-start gap-3 mb-6">
+                                    <div>
+                                        <h3 className="text-[16px] font-semibold text-ink">A few clarifying questions</h3>
+                                        <p className="text-[13px] text-graphite">
+                                            Our reviewer read your setup and found {questions.length} thing{questions.length === 1 ? '' : 's'} worth pinning down. Answer what you can — blanks are fine.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="space-y-5">
+                                    {questions.map((q, i) => (
+                                        <div key={i}>
+                                            <label className="block text-[14px] font-medium text-ink mb-1.5">{i + 1}. {q}</label>
+                                            <textarea rows={2} className="input-field resize-y" placeholder="Your answer…"
+                                                value={answers[i] || ''} onChange={(e) => setAnswers((a) => ({ ...a, [i]: e.target.value }))} />
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-7 flex flex-wrap justify-end gap-2">
+                                    <button type="button" className="btn btn-secondary" onClick={() => setStage('form')}>Back to builder</button>
+                                    <button type="button" className="btn btn-primary" onClick={() => setStage('review')}>
+                                        Continue to review <LIcon name="arrow-right" className="w-4 h-4" />
                                     </button>
-                                </div>
-                                <div className="mb-6 space-y-4">
-                                    <div className="flex justify-between items-center pb-3 border-b border-sand">
-                                        <span className="text-sm text-gray-mid">Modules Completed</span>
-                                        <span className="text-sm font-medium text-ink">{completedModules} / {totalModules}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center pb-3 border-b border-sand">
-                                        <span className="text-sm text-gray-mid">Direction</span>
-                                        <span className="text-sm font-medium text-ink capitalize">{data.direction}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-sm text-gray-mid">Live Transfer</span>
-                                        <span className="text-sm font-medium text-ink">{data.liveTransferEnabled ? 'Enabled' : 'Disabled'}</span>
-                                    </div>
-                                </div>
-                                <div className="flex gap-3">
-                                    <button onClick={() => setIsDeploying(false)} className="btn-ghost flex-1 justify-center">Continue Editing</button>
-                                    <button className="btn-primary flex-1 justify-center bg-green-signal hover:bg-green-700" onClick={() => alert('Agent deployed successfully!')}>Confirm Deploy</button>
                                 </div>
                             </div>
                         </div>
                     )}
                 </div>
             );
-        };
+        }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
