@@ -10,7 +10,7 @@
    ───────────────────────────────────────────────────────────── */
 @theme {
   /* Surfaces */
-  --color-canvas: #fafafa;
+  --color-canvas: #f5f4f1;
   --color-surface: #ffffff;
   --color-subtle: #f5f5f5;
 
@@ -25,9 +25,9 @@
   --color-faint: #a3a3a3;
 
   /* The single accent */
-  --color-accent: #2563eb;
-  --color-accent-hover: #1d4ed8;
-  --color-accent-soft: #eff6ff;
+  --color-accent: #f0530f;
+  --color-accent-hover: #c43b00;
+  --color-accent-soft: rgba(240, 83, 15, 0.1);
 
   /* Functional status */
   --color-danger: #dc2626;
@@ -41,6 +41,44 @@
   /* One radius scale: 6px controls, 8px containers, full for pills */
   --radius-md: 6px;
   --radius-lg: 8px;
+
+  /* Animations */
+  --animate-fade-in-up: fadeInUp 0.6s ease-out forwards;
+  --animate-slide-up: slideUp 0.3s ease-out forwards;
+  --animate-tl-pulse: tl-pulse 42s linear infinite;
+  --animate-tl-marquee: tl-marquee 42s linear infinite;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes tl-pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@keyframes tl-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+/* Glassmorphism Utilities */
+@utility glass-panel {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@utility glass-modal {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
 }
 
 html {
@@ -88,7 +126,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .input-field:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.12);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 .input-field::placeholder {
   color: var(--color-faint);
@@ -130,11 +168,11 @@ select.input-field {
 
 /* Modifiers below are applied alongside `.btn`, e.g. class="btn btn-primary" */
 .btn-primary {
-  background: var(--color-ink);
+  background: var(--color-accent);
   color: #ffffff;
 }
 .btn-primary:hover:not(:disabled) {
-  background: #000000;
+  background: var(--color-accent-hover);
 }
 
 .btn-secondary {

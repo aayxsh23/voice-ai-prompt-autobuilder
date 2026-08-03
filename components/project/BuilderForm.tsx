@@ -734,7 +734,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
                   id="kb-tip"
                   role="tooltip"
                   onMouseLeave={() => setKbTipOpen(false)}
-                  className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-line bg-surface p-4 shadow-md"
+                  className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-white/20 glass-modal p-4 animate-fade-in-up"
                 >
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <p className="text-[13px] font-semibold text-ink">Anything factual the agent might be asked</p>

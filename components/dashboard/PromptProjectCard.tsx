@@ -37,7 +37,7 @@ export const PromptProjectCard: React.FC<ProjectCardProps> = ({ project, onDupli
     goal && goal.trim() !== 'Custom Voice Agent Prompt' ? goal.charAt(0).toUpperCase() + goal.slice(1) : '';
 
   return (
-    <div className="card group flex flex-col p-4 transition-colors hover:border-line-strong">
+    <div className="card group flex flex-col p-4 transition-all hover:border-accent hover:shadow-sm animate-slide-up">
       <div className="flex items-start justify-between gap-3">
         <Link href={`/project/${project.id}`} className="min-w-0 flex-1">
           <h3 className="truncate text-[14px] font-medium text-ink group-hover:text-accent">{project.name}</h3>

@@ -19,7 +19,7 @@ export const AgentPromptEditor: React.FC<Props> = ({ value, onChange, onSave, sa
   };
 
   return (
-    <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="card flex min-h-0 flex-1 flex-col overflow-hidden animate-slide-up">
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
         <span className="text-[13px] font-medium text-ink">System prompt</span>
         <div className="flex items-center gap-1.5">
