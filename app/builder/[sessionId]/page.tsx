@@ -1,112 +1,153 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BuilderForm, initialData, COUNTRY_CODES } from '@/components/project/BuilderForm';
-import { ArrowRight, Bot, CheckCircle, Edit3 } from 'lucide-react';
-import { PromptPackageDraft } from '@/lib/llm/types';
+import {
+  BuilderForm,
+  PersonaCard,
+  CompletionDot,
+  initialData,
+  getModuleCompletion,
+  getBlockingGaps,
+  MODULES,
+  MODULE_ORDER,
+  type BuilderData,
+  type ModuleId,
+} from '@/components/project/BuilderForm';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bot,
+  CheckCircle,
+  Edit3,
+  Loader2,
+  AlertTriangle,
+  Copy,
+} from 'lucide-react';
+import type { PromptPackageDraft } from '@/lib/llm/types';
 
-function SummaryItem({ label, value }: { label: string, value: string | React.ReactNode }) {
-  if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) return null;
+type Stage = 'form' | 'questions' | 'review' | 'done';
+
+function ReviewField({ label, value, onChange, rows = 2, mono }: {
+  label: string; value: string; onChange: (v: string) => void; rows?: number; mono?: boolean;
+}) {
   return (
-    <div className="mb-4 flex flex-col gap-1">
-      <div className="text-[16px] font-bold text-ink">{label}</div>
-      <div className="text-[16px] text-ink/90 whitespace-pre-wrap">{value}</div>
+    <div className="mb-4">
+      <span className="block text-[13px] font-medium text-graphite mb-1.5">{label}</span>
+      {rows === 1 ? (
+        <input className={`input-field ${mono ? 'font-mono text-[13px]' : ''}`} value={value} onChange={(e) => onChange(e.target.value)} />
+      ) : (
+        <textarea className={`input-field resize-y ${mono ? 'font-mono text-[13px]' : ''}`} rows={rows} value={value} onChange={(e) => onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+
+function ReviewStatic({ label, value }: { label: string; value: string }) {
+  if (!value) return null;
+  return (
+    <div className="mb-3">
+      <span className="block text-[13px] font-medium text-graphite mb-0.5">{label}</span>
+      <p className="text-[14px] text-ink whitespace-pre-wrap">{value}</p>
     </div>
   );
 }
 
 export default function FormBuilderPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const router = useRouter();
-  const [sessionId, setSessionId] = useState<string>('');
+  const [sessionId, setSessionId] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Form State
-  const [formData, setFormData] = useState(initialData);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [phoneError, setPhoneError] = useState('');
+  const [data, setData] = useState<BuilderData>(initialData);
+  const [activeModule, setActiveModule] = useState<ModuleId>('persona');
 
-  // Evaluation / Clarification State
-  const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([]);
-  const [clarificationAnswers, setClarificationAnswers] = useState<Record<number, string>>({});
-  
-  // Review & Generate State
-  const [reviewMode, setReviewMode] = useState(false);
+  const [stage, setStage] = useState<Stage>('form');
+  const [evaluating, setEvaluating] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState('');
+  const [gaps, setGaps] = useState<string[]>([]);
+
+  const [questions, setQuestions] = useState<string[]>([]);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    params.then(p => {
+    params.then((p) => {
       setSessionId(p.sessionId);
       setLoading(false);
     });
   }, [params]);
 
-  const handleEvaluate = async () => {
-    if (formData.phone) {
-      const selectedCountry = COUNTRY_CODES.find(c => c.code === formData.phoneCode);
-      const expectedDigits = selectedCountry?.digits || 10;
-      if (formData.phone.length < expectedDigits) {
-        setPhoneError(`Please provide the expected ${expectedDigits} digits for ${selectedCountry?.country}.`);
-        return;
-      }
-    }
-    setPhoneError('');
+  const completions = useMemo(
+    () => MODULE_ORDER.map((id) => ({ id, status: getModuleCompletion(id, data) })),
+    [data],
+  );
+  const progress = Math.round(
+    (completions.filter((c) => c.status === 'complete').length / MODULE_ORDER.length) * 100,
+  );
 
-    setIsSubmitting(true);
-    setClarificationQuestions([]);
+  /* ── Step 1: judge review ─────────────────────────────────────── */
+  const handleSubmitForm = async () => {
+    const blocking = getBlockingGaps(data);
+    setGaps(blocking);
+    if (blocking.length > 0) return;
+
+    setError('');
+    setEvaluating(true);
     try {
       const res = await fetch('/api/builder/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ form: formData, sessionId })
+        body: JSON.stringify({ form: data, sessionId }),
       });
-      const data = await res.json();
-      if (data.questions && data.questions.length > 0) {
-        setClarificationQuestions(data.questions);
+      const out = await res.json();
+      const qs: string[] = Array.isArray(out?.questions) ? out.questions.slice(0, 5) : [];
+      if (qs.length > 0) {
+        setQuestions(qs);
+        setAnswers({});
+        setStage('questions');
       } else {
-        setReviewMode(true);
+        setStage('review');
       }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to evaluate form.");
+    } catch {
+      setError('The reviewer could not be reached. You can continue to the review step anyway.');
+      setStage('review');
     } finally {
-      setIsSubmitting(false);
+      setEvaluating(false);
     }
   };
 
-  const handleSubmitClarifications = () => {
-    setReviewMode(true);
-  };
-
+  /* ── Step 3: compile ──────────────────────────────────────────── */
   const handleGenerate = async () => {
+    setError('');
     setGenerating(true);
     try {
+      const clarifications = questions.reduce<Record<string, string>>((acc, q, i) => {
+        if (answers[i]?.trim()) acc[q] = answers[i].trim();
+        return acc;
+      }, {});
       const res = await fetch('/api/builder/generate-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          business: { businessName: formData.companyName },
-          languageMode: formData.language,
-          overrides: { faqPairs: [], objectionPairs: [], verbatimLines: [], transferRules: [] },
-          form: formData,
-          clarifications: clarificationAnswers,
-          sessionId
-        })
+        body: JSON.stringify({ form: data, clarifications, sessionId }),
       });
-      const data = await res.json();
-      if (data) {
-        setDraft(data);
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Failed to generate prompt.");
+      if (!res.ok) throw new Error('compile failed');
+      const out = await res.json();
+      setDraft(out);
+      setStage('done');
+    } catch {
+      setError('Compilation failed. Check the server logs and try again.');
     } finally {
       setGenerating(false);
     }
   };
 
   const handleSaveProject = async () => {
+    setSaving(true);
+    setError('');
     try {
       const res = await fetch('/api/builder/create-project', {
         method: 'POST',
@@ -114,123 +155,196 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
         body: JSON.stringify({
           sessionId,
           draft,
-          blueprint: { business: { businessName: formData.companyName }, languageMode: formData.language }
-        })
+          blueprint: {
+            business: { businessName: data.companyName, industry: data.industry, agentName: data.agentName },
+            useCase: data.callPurpose,
+            languageMode: draft?.businessSpec?.meta?.languageMode || 'english',
+            conversation: { opening: data.openingMessage },
+          },
+        }),
       });
       const project = await res.json();
-      if (project && project.id) {
-        router.push(`/project/${project.id}`);
-      } else {
-        alert('Error saving project.');
-      }
-    } catch (err) {
-      alert('Failed to save project workspace.');
+      if (project?.id) router.push(`/project/${project.id}`);
+      else throw new Error('no project id');
+    } catch {
+      setError('Could not save the project workspace.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (loading) return <div className="min-h-[80vh] flex items-center justify-center text-graphite text-[14px]">Initializing session...</div>;
-
-  if (draft) {
+  if (loading) {
     return (
-      <div className="flex-1 max-w-4xl mx-auto w-full p-6 pt-12">
-        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-[24px] font-medium text-ink flex items-center">
-              <CheckCircle className="w-6 h-6 text-mint-signal mr-3" />
-              Prompt Package Ready
-            </h2>
+      <div className="min-h-[70vh] flex items-center justify-center gap-2 text-graphite text-[14px]">
+        <Loader2 className="w-4 h-4 animate-spin" /> Initializing session…
+      </div>
+    );
+  }
+
+  /* ═══════════════ STAGE: compiled prompt ═══════════════ */
+  if (stage === 'done' && draft) {
+    const warnings = draft.validationWarnings ?? [];
+    const errors = draft.validationErrors ?? [];
+    return (
+      <div className="w-full max-w-4xl mx-auto px-6 py-10">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-6 h-6 text-success" aria-hidden="true" />
+            <div>
+              <h1 className="text-[20px] font-semibold text-ink">Prompt package ready</h1>
+              <p className="text-[13px] text-graphite">
+                {draft.estimatedTokens ? `~${draft.estimatedTokens} tokens · ` : ''}
+                {draft.dynamicVariables?.length ?? 0} variables · {draft.suggestedFunctions?.length ?? 0} tools
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
             <button
-              onClick={handleSaveProject}
-              className="inline-flex items-center justify-center h-10 px-6 bg-sunshine-highlight text-ink rounded-buttons font-medium text-[14px] hover:opacity-90 transition-opacity"
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => { setStage('review'); setDraft(null); }}
             >
-              Save Project <ArrowRight className="w-4 h-4 ml-2" />
+              <Edit3 className="w-4 h-4" aria-hidden="true" /> Back to review
+            </button>
+            <button type="button" className="btn btn-primary" onClick={handleSaveProject} disabled={saving}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <>Save project <ArrowRight className="w-4 h-4" /></>}
             </button>
           </div>
-          <div className="bg-white hairline-border-muted p-4 rounded-inputs overflow-y-auto max-h-[600px] whitespace-pre-wrap font-mono text-[13px] leading-relaxed">
-            {draft.finalPrompt}
+        </div>
+
+        {error && <p className="mb-4 text-[13px] text-warning">{error}</p>}
+
+        {(errors.length > 0 || warnings.length > 0) && (
+          <div className="card mb-6 border-warning/30 bg-warning-soft p-4">
+            <p className="flex items-center gap-2 text-[13px] font-semibold text-warning mb-2">
+              <AlertTriangle className="w-4 h-4" aria-hidden="true" /> Reviewer notes
+            </p>
+            <ul className="space-y-1 text-[12px] text-ink-soft list-disc pl-5">
+              {[...errors, ...warnings].slice(0, 12).map((m, i) => <li key={i}>{m}</li>)}
+            </ul>
           </div>
+        )}
+
+        <div className="card p-0 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
+            <span className="text-[13px] font-medium text-graphite">Compiled system prompt</span>
+            <button
+              type="button"
+              className="link inline-flex items-center gap-1.5 text-[12px]"
+              onClick={() => {
+                navigator.clipboard?.writeText(draft.finalPrompt || '');
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1600);
+              }}
+            >
+              <Copy className="w-3.5 h-3.5" aria-hidden="true" /> {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+          <pre className="p-4 overflow-auto max-h-[62vh] whitespace-pre-wrap font-mono text-[13px] leading-[1.6] text-ink-soft">
+            {draft.finalPrompt}
+          </pre>
         </div>
       </div>
     );
   }
 
-  if (reviewMode) {
+  /* ═══════════════ STAGE: final review (editable) ═══════════════ */
+  if (stage === 'review') {
+    const answered = questions.filter((_, i) => answers[i]?.trim());
     return (
-      <div className="flex-1 max-w-4xl mx-auto w-full p-6 lg:p-12 relative pb-24">
-        <div className="mb-8 flex items-center justify-between">
+      <div className="w-full max-w-3xl mx-auto px-6 py-10 pb-28">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-8">
           <div>
-            <h1 className="text-[32px] font-medium text-ink mb-2">Final Review</h1>
-            <p className="text-[16px] text-graphite">Please verify your setup before we generate the system prompt.</p>
+            <h1 className="text-[20px] font-semibold text-ink mb-1">Final review</h1>
+            <p className="text-[14px] text-graphite">Edit anything here before we compile. Changes are saved into the build.</p>
           </div>
-          <button 
-            onClick={() => setReviewMode(false)}
-            className="flex items-center px-4 py-2 rounded-buttons hairline-border bg-white text-ink hover:bg-black/5 text-[14px] font-medium transition-colors"
-          >
-            <Edit3 className="w-4 h-4 mr-2" /> Edit Form
+          <button type="button" className="btn btn-secondary" onClick={() => setStage('form')}>
+            <ArrowLeft className="w-4 h-4" aria-hidden="true" /> Back to builder
           </button>
         </div>
 
-        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
-          <h2 className="text-[20px] font-medium text-ink mb-4">Identity & Basics</h2>
-          <SummaryItem label="Company Name" value={formData.companyName} />
-          <SummaryItem label="Call Direction" value={formData.callDirection} />
-          <SummaryItem label="Primary Goal" value={formData.goalPreset === 'Other' ? formData.goalOther : formData.goalPreset} />
-          <SummaryItem label="Language Mode" value={formData.language} />
-          {formData.language === 'Multilingual' && <SummaryItem label="Sub Languages" value={formData.subLanguages.join(', ')} />}
-          <SummaryItem label="Physical Address" value={formData.isRemote ? 'Remote' : formData.address} />
-          <SummaryItem label="Phone / Website" value={[formData.phone ? `${formData.phoneCode} ${formData.phone}` : '', formData.website].filter(Boolean).join(' | ')} />
+        <div className="card mb-4 p-5">
+          <h2 className="text-[16px] font-semibold text-ink mb-4">Persona</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+            <ReviewField label="Company name" rows={1} value={data.companyName} onChange={(v) => setData((d) => ({ ...d, companyName: v }))} />
+            <ReviewField label="Agent name" rows={1} value={data.agentName} onChange={(v) => setData((d) => ({ ...d, agentName: v }))} />
+          </div>
+          <ReviewField label="Call purpose" rows={3} value={data.callPurpose} onChange={(v) => setData((d) => ({ ...d, callPurpose: v }))} />
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-graphite pt-1">
+            <span>Direction: <span className="text-ink">{data.callDirection}</span></span>
+            <span>Industry: <span className="text-ink">{data.industry || '—'}</span></span>
+            <span>Region: <span className="text-ink">{data.region || 'Generic'}</span></span>
+            <span>Language: <span className="text-ink">{data.primaryLanguage}{data.secondaryLanguage !== 'None' ? ` + ${data.secondaryLanguage}` : ''}</span></span>
+            <span>Voice: <span className="text-ink">{data.voiceGender}</span></span>
+          </div>
         </div>
 
-        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
-          <h2 className="text-[20px] font-medium text-ink mb-4">Team & Services</h2>
-          <SummaryItem label="Staff List" value={formData.staffList.filter(s => s.name).map(s => `${s.name} (${s.role})`).join(', ')} />
-          <SummaryItem label="Services Offered" value={formData.services.filter(s => s.name).map(s => `${s.name}: ${s.desc}`).join('\n')} />
-          <SummaryItem label="Intake Requirements" value={[...formData.intakeReqs].filter(Boolean).join(', ')} />
-          <SummaryItem label="Pre-call Context" value={formData.preCallFields.join(', ')} />
+        <div className="card mb-4 p-5">
+          <h2 className="text-[16px] font-semibold text-ink mb-4">Conversation</h2>
+          <ReviewField label="Opening message" rows={3} value={data.openingMessage} onChange={(v) => setData((d) => ({ ...d, openingMessage: v }))} />
+          <ReviewField label="Call flow" rows={8} mono value={data.callFlow} onChange={(v) => setData((d) => ({ ...d, callFlow: v }))} />
+          <ReviewStatic
+            label="Variables"
+            value={data.variables.filter((v) => v.key.trim()).map((v) => `{{${v.key}}}${v.value ? ` = ${v.value}` : ''}`).join('\n')}
+          />
         </div>
 
-        <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6">
-          <h2 className="text-[20px] font-medium text-ink mb-4">Policies & Mechanics</h2>
-          <SummaryItem label="General FAQs" value={formData.faqsText} />
-          <SummaryItem label="Custom Policies" value={formData.policies.filter(p => p.desc).map(p => `${p.type}: ${p.desc}`).join('\n')} />
-          <SummaryItem label="Live Transfer" value={formData.transferEnabled ? `Yes (To: ${formData.transferNumbers.map(n => n.label).join(', ')})` : 'No'} />
-          <SummaryItem label="Voice & Tone" value={[formData.voiceGender, ...formData.toneWords].join(', ')} />
-          {formData.needsConfirmation && <SummaryItem label="Confirmation" value={`Confirms: ${formData.confirmationScope} (via ${formData.confirmationStyle})`} />}
-          <SummaryItem label="Call Flow Description" value={formData.callFlowDescription} />
+        <div className="card mb-4 p-5">
+          <h2 className="text-[16px] font-semibold text-ink mb-4">Knowledge base</h2>
+          {data.kbEnabled && data.kbContent.trim() ? (
+            <ReviewField label="Source content (facts get extracted into the prompt)" rows={8} value={data.kbContent} onChange={(v) => setData((d) => ({ ...d, kbContent: v }))} />
+          ) : (
+            <p className="text-[13px] text-graphite">Not provided — the agent will answer only from the persona and flow above.</p>
+          )}
         </div>
 
-        {Object.entries(clarificationAnswers).length > 0 && (
-          <div className="bg-cream-paper hairline-border rounded-cards p-8 mb-6 border-sunshine-highlight border-l-4">
-            <h2 className="text-[20px] font-medium text-ink mb-4 flex items-center">
-              <Bot className="w-5 h-5 text-sunshine-highlight mr-2" />
-              Judge Clarifications
+        <div className="card mb-4 p-5">
+          <h2 className="text-[16px] font-semibold text-ink mb-4">Guardrails &amp; call handling</h2>
+          <ReviewField label="Guardrails" rows={5} value={data.guardrails} onChange={(v) => setData((d) => ({ ...d, guardrails: v }))} />
+          <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-graphite">
+            <span>AI disclosure: <span className="text-ink">{data.discloseAI ? 'Yes' : 'No'}</span></span>
+            <span>Recording consent: <span className="text-ink">{data.recordingConsent ? 'Yes' : 'No'}</span></span>
+            <span>Digression: <span className="text-ink">{data.digressionHandling}</span></span>
+            <span>Fallback: <span className="text-ink">{data.retryFallback} after {data.maxRetries}</span></span>
+          </div>
+          {data.liveTransferEnabled && (
+            <div className="mt-3">
+              <ReviewStatic
+                label="Live transfer"
+                value={[
+                  ...data.transferNumbers.filter((t) => t.number.trim()).map((t) => `${t.label || 'Transfer'}: ${t.number}`),
+                  ...(data.transferTriggers.length ? [`Triggers: ${data.transferTriggers.join('; ')}`] : []),
+                  ...(data.afterHoursBehavior ? [`If unavailable: ${data.afterHoursBehavior}`] : []),
+                ].join('\n')}
+              />
+            </div>
+          )}
+        </div>
+
+        {questions.length > 0 && (
+          <div className="card mb-4 p-5">
+            <h2 className="flex items-center gap-2 text-[16px] font-semibold text-ink mb-4">
+              <Bot className="h-4 w-4 text-graphite" aria-hidden="true" /> Reviewer clarifications
             </h2>
-            {Object.entries(clarificationAnswers).map(([idx, ans]) => (
-              <div key={idx} className="mb-4 flex flex-col gap-1">
-                <div className="text-[16px] text-ink/90">
-                  <span className="font-bold text-ink">Question:</span> {clarificationQuestions[Number(idx)]}
-                </div>
-                <div className="text-[16px] text-ink/90 whitespace-pre-wrap">
-                  <span className="font-bold text-ink">Answer:</span> {ans}
-                </div>
+            {answered.length === 0 && <p className="text-[13px] text-graphite mb-3">You skipped these — the compiler will use its own judgement.</p>}
+            {questions.map((q, i) => (
+              <div key={i} className="mb-4">
+                <p className="text-[13px] font-medium text-graphite mb-1.5">{i + 1}. {q}</p>
+                <textarea className="input-field resize-y" rows={2} value={answers[i] || ''}
+                  placeholder="Your answer (optional)"
+                  onChange={(e) => setAnswers((a) => ({ ...a, [i]: e.target.value }))} />
               </div>
             ))}
           </div>
         )}
 
-        <div className="fixed bottom-0 left-0 right-0 bg-cream-paper border-t hairline-border-muted p-4 z-50">
-          <div className="max-w-4xl mx-auto flex items-center justify-between">
-            <span className="text-[14px] text-graphite font-medium">Ready to compile</span>
-            <button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="inline-flex items-center justify-center h-12 px-8 bg-ink text-cream-paper rounded-buttons font-medium text-[16px] hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {generating ? (
-                <span className="flex items-center"><span className="w-4 h-4 rounded-full border-2 border-cream-paper border-t-transparent animate-spin mr-2" /> Compiling...</span>
-              ) : (
-                <span className="flex items-center">Generate Prompt <ArrowRight className="w-4 h-4 ml-2" /></span>
-              )}
+        {error && <p className="mb-4 text-[13px] text-warning">{error}</p>}
+
+        <div className="fixed bottom-0 left-0 right-0 border-t border-line bg-surface px-6 py-3 z-40">
+          <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+            <span className="text-[13px] text-graphite">Everything above goes into the compiler.</span>
+            <button type="button" className="btn btn-primary" onClick={handleGenerate} disabled={generating}>
+              {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Compiling…</> : <>Build prompt <ArrowRight className="w-4 h-4" /></>}
             </button>
           </div>
         </div>
@@ -238,77 +352,124 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
     );
   }
 
+  /* ═══════════════ STAGE: builder ═══════════════ */
   return (
-    <div className="flex-1 max-w-7xl mx-auto w-full p-6 lg:p-12 relative">
-      <div className="mb-8">
-        <h1 className="text-[32px] font-medium text-ink mb-2">Build your Agent</h1>
-        <p className="text-[16px] text-graphite">Fill out the blueprint below to automatically architect a production-grade system prompt.</p>
-      </div>
-      
-      <BuilderForm data={formData} setData={setFormData} phoneError={phoneError} />
-
-      {/* Action Footer */}
-      <div className="fixed bottom-0 left-0 right-0 bg-cream-paper border-t hairline-border-muted p-4 z-50">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <span className="text-[14px] text-graphite font-medium">Session: {sessionId.slice(0, 8)}...</span>
-          <button
-            onClick={handleEvaluate}
-            disabled={isSubmitting}
-            className="inline-flex items-center justify-center h-12 px-8 bg-ink text-cream-paper rounded-buttons font-medium text-[16px] hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {isSubmitting ? (
-              <span className="flex items-center"><span className="w-4 h-4 rounded-full border-2 border-cream-paper border-t-transparent animate-spin mr-2" /> Processing...</span>
-            ) : (
-              <span className="flex items-center">Review & Build <ArrowRight className="w-4 h-4 ml-2" /></span>
-            )}
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-canvas">
+      {/* Top bar */}
+      <header className="shrink-0 bg-surface border-b border-line px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 z-20">
+        <div className="flex items-center gap-3 min-w-0">
+          <h1 className="text-[16px] font-semibold text-ink truncate">
+            {data.companyName ? `${data.companyName} agent` : 'Build your agent'}
+          </h1>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-subtle text-graphite font-medium">{data.callDirection}</span>
+        </div>
+        <div className="flex items-center gap-5">
+          <div className="hidden sm:flex items-center gap-2.5 text-[13px]">
+            <span className="font-medium text-ink tabular-nums">{progress}%</span>
+            <div className="w-28 h-2 bg-subtle rounded-full overflow-hidden" role="progressbar"
+              aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Build progress">
+              <div className="h-full bg-success transition-all duration-300" style={{ width: `${progress}%` }} />
+            </div>
+          </div>
+          <button type="button" className="btn btn-primary" onClick={handleSubmitForm} disabled={evaluating}>
+            {evaluating ? <><Loader2 className="w-4 h-4 animate-spin" /> Reviewing…</> : <>Submit for review <ArrowRight className="w-4 h-4" /></>}
           </button>
         </div>
+      </header>
+
+      <div className="flex-1 flex min-h-0">
+        {/* Module nav */}
+        <nav aria-label="Builder sections" className="hidden md:block w-60 shrink-0 border-r border-line p-4 overflow-y-auto">
+          <div className="space-y-1">
+            {completions.map(({ id, status }) => {
+              const Icon = MODULES[id].icon;
+              return (
+                <button key={id} type="button"
+                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors ${
+                    activeModule === id ? 'bg-subtle text-ink' : 'text-graphite hover:bg-subtle hover:text-ink'
+                  }`}
+                  aria-current={activeModule === id ? 'step' : undefined}
+                  onClick={() => setActiveModule(id)}>
+                  <CompletionDot status={status} />
+                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{MODULES[id].label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* Builder */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-8 min-w-0">
+          <div className="max-w-3xl mx-auto">
+            {/* Mobile module tabs */}
+            <div className="md:hidden flex gap-2 overflow-x-auto pb-3 mb-4 -mx-1 px-1">
+              {completions.map(({ id, status }) => (
+                <button key={id} type="button" onClick={() => setActiveModule(id)}
+                  className={`shrink-0 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium border transition-colors ${
+                    activeModule === id ? 'border-ink bg-surface text-ink' : 'border-line bg-transparent text-graphite'
+                  }`}>
+                  <CompletionDot status={status} />
+                  {MODULES[id].label}
+                </button>
+              ))}
+            </div>
+
+            <PersonaCard data={data} />
+
+            {gaps.length > 0 && (
+              <div className="card mb-6 border-warning/30 bg-warning-soft p-4">
+                <p className="flex items-center gap-2 text-[13px] font-semibold text-warning mb-2">
+                  <AlertTriangle className="w-4 h-4" aria-hidden="true" /> Fill these in before submitting
+                </p>
+                <ul className="space-y-1 text-[13px] text-ink-soft list-disc pl-5">
+                  {gaps.map((g) => <li key={g}>{g}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <BuilderForm data={data} setData={setData} activeModule={activeModule} setActiveModule={setActiveModule} />
+          </div>
+        </main>
       </div>
 
-      {/* Clarification Modal Overlay */}
-      {clarificationQuestions.length > 0 && !reviewMode && (
-        <div className="fixed inset-0 bg-ink/20 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="bg-cream-paper hairline-border rounded-cards w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 rounded-full bg-sunshine-highlight flex items-center justify-center">
-                <Bot className="w-5 h-5 text-ink" />
-              </div>
+      {/* Judge questions */}
+      {stage === 'questions' && (
+        <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="judge-title">
+          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg sm:p-8">
+            <div className="flex items-start gap-3 mb-6">
               <div>
-                <h3 className="text-[20px] font-medium text-ink">A few clarifying questions</h3>
-                <p className="text-[14px] text-graphite">Our LLM Judge needs a bit more detail before compiling the prompt.</p>
+                <h3 id="judge-title" className="text-[16px] font-semibold text-ink">A few clarifying questions</h3>
+                <p className="text-[13px] text-graphite">
+                  Our reviewer read your setup and found {questions.length} thing{questions.length === 1 ? '' : 's'} worth
+                  pinning down. Answer what you can — blanks are fine.
+                </p>
               </div>
             </div>
-            
-            <div className="space-y-6">
-              {clarificationQuestions.map((q, idx) => (
-                <div key={idx} className="space-y-2">
-                  <label className="text-[16px] font-medium text-ink block">{idx + 1}. {q}</label>
-                  <textarea
-                    rows={2}
-                    className="w-full bg-transparent hairline-border-muted rounded-inputs px-3 py-2 text-[16px] text-ink placeholder-graphite focus:outline-none focus:hairline-border transition-colors resize-y"
-                    placeholder="Your answer..."
-                    value={clarificationAnswers[idx] || ''}
-                    onChange={(e) => setClarificationAnswers(prev => ({ ...prev, [idx]: e.target.value }))}
-                  />
+
+            <div className="space-y-5">
+              {questions.map((q, i) => (
+                <div key={i}>
+                  <label htmlFor={`q-${i}`} className="block text-[14px] font-medium text-ink mb-1.5">{i + 1}. {q}</label>
+                  <textarea id={`q-${i}`} rows={2} className="input-field resize-y" placeholder="Your answer…"
+                    value={answers[i] || ''} onChange={(e) => setAnswers((a) => ({ ...a, [i]: e.target.value }))} />
                 </div>
               ))}
             </div>
 
-            <div className="mt-8 flex justify-end gap-3">
-              <button 
-                onClick={() => setClarificationQuestions([])}
-                className="px-6 py-2 rounded-buttons hairline-border text-ink hover:bg-black/5 font-medium text-[14px] transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleSubmitClarifications}
-                className="px-6 py-2 rounded-buttons bg-ink text-cream-paper hover:opacity-90 font-medium text-[14px] transition-opacity flex items-center"
-              >
-                Submit Answers
+            <div className="mt-7 flex flex-wrap justify-end gap-2">
+              <button type="button" className="btn btn-secondary" onClick={() => setStage('form')}>Back to builder</button>
+              <button type="button" className="btn btn-primary" onClick={() => setStage('review')}>
+                Continue to review <ArrowRight className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {error && stage === 'form' && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 bg-surface border border-warning/40 rounded-md px-4 py-2 text-[13px] text-warning shadow-md">
+          {error}
         </div>
       )}
     </div>

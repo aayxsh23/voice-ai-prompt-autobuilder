@@ -6,81 +6,79 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-/* ── Button ── */
+/* ── Button ──────────────────────────────────────────────────────────────
+   One button. `primary` is near-black (the only high-emphasis action on a
+   screen), `secondary` is a bordered white default, `ghost` is for icon and
+   toolbar actions, `danger` reveals red on hover only.
+   Callers should not pass colour classes — if a new emphasis is needed it
+   belongs here as a variant. */
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'default' | 'outline' | 'secondary' | 'ghost' | 'destructive';
-  size?: 'default' | 'sm' | 'lg' | 'icon';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'default' | 'icon';
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'default', ...props }, ref) => {
-    const base = "inline-flex items-center justify-center rounded-[4px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#ff6c02] disabled:pointer-events-none disabled:opacity-50 cursor-pointer tracking-tight";
+  ({ className, variant = 'primary', size = 'default', type = 'button', ...props }, ref) => {
+    const base =
+      'inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent font-medium whitespace-nowrap transition-colors disabled:opacity-50 disabled:pointer-events-none';
     const variants = {
-      default: "bg-[#ff6c02] text-[#f3f3f3] hover:bg-[#ff8025]",
-      outline: "border border-[#303030] bg-transparent hover:bg-[#121212] text-[#909090] hover:text-[#f3f3f3]",
-      secondary: "bg-[#1b1b1b] text-[#f3f3f3] hover:bg-[#252525] border border-[#252525]",
-      ghost: "hover:bg-[#121212] text-[#909090] hover:text-[#f3f3f3]",
-      destructive: "bg-[#eb5757] text-white hover:bg-[#d44040]"
+      primary: 'bg-ink text-white hover:bg-black',
+      secondary: 'bg-surface border-line text-ink hover:bg-subtle hover:border-line-strong',
+      ghost: 'bg-transparent text-graphite hover:bg-subtle hover:text-ink',
+      danger: 'bg-transparent text-graphite hover:bg-danger-soft hover:text-danger',
     };
     const sizes = {
-      default: "h-10 px-4 py-2 text-sm",
-      sm: "h-8 px-3 text-xs",
-      lg: "h-12 px-6 text-base",
-      icon: "h-10 w-10"
+      sm: 'h-7 px-2.5 text-[13px]',
+      default: 'h-8 px-3 text-[13px]',
+      icon: 'h-8 w-8 p-0',
     };
-    return (
-      <button ref={ref} className={cn(base, variants[variant], sizes[size], className)} {...props} />
-    );
-  }
+    return <button ref={ref} type={type} className={cn(base, variants[variant], sizes[size], className)} {...props} />;
+  },
 );
 Button.displayName = 'Button';
 
 /* ── Input ── */
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, type, ...props }, ref) => {
-    return (
-      <input
-        type={type}
-        className={cn(
-          "flex h-10 w-full rounded-[8px] bg-[#1b1b1b] px-3 py-2 text-sm text-[#f3f3f3] placeholder:text-[#646464] border border-[#252525] focus:outline-none focus:border-[#ff6c02] disabled:cursor-not-allowed disabled:opacity-50 transition-colors",
-          className
-        )}
-        ref={ref}
-        {...props}
-      />
-    );
-  }
+  ({ className, type = 'text', ...props }, ref) => (
+    <input ref={ref} type={type} className={cn('input-field', className)} {...props} />
+  ),
 );
 Input.displayName = 'Input';
 
 /* ── Textarea ── */
 export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => {
-    return (
-      <textarea
-        className={cn(
-          "flex min-h-[80px] w-full rounded-[8px] bg-[#1b1b1b] px-3 py-2 text-sm text-[#f3f3f3] placeholder:text-[#646464] border border-[#252525] focus:outline-none focus:border-[#ff6c02] disabled:cursor-not-allowed disabled:opacity-50 font-mono transition-colors",
-          className
-        )}
-        ref={ref}
-        {...props}
-      />
-    );
-  }
+  ({ className, ...props }, ref) => (
+    <textarea ref={ref} className={cn('input-field resize-y', className)} {...props} />
+  ),
 );
 Textarea.displayName = 'Textarea';
 
-/* ── Badge ── */
-export const Badge = ({ children, variant = 'default', className }: { children: React.ReactNode; variant?: 'default' | 'success' | 'warning' | 'info' | 'outline'; className?: string }) => {
+/* ── Badge ──────────────────────────────────────────────────────────────
+   Status only. `neutral` is the default; colour is reserved for states that
+   genuinely mean something. */
+export const Badge = ({
+  children,
+  variant = 'neutral',
+  className,
+}: {
+  children: React.ReactNode;
+  variant?: 'neutral' | 'success' | 'warning' | 'danger';
+  className?: string;
+}) => {
   const variants = {
-    default: "bg-[#1b1b1b] text-[#dedede] border border-[#252525]",
-    success: "bg-[#0c0c0c] text-[#27a644] border border-[#252525]",
-    warning: "bg-[#0c0c0c] text-[#ff6c02] border border-[#ff6c02]/40",
-    info: "bg-transparent text-[#55c2ff] border border-[#55c2ff]/40",
-    outline: "border border-[#303030] text-[#909090] bg-transparent"
+    neutral: 'bg-subtle text-graphite border-line',
+    success: 'bg-surface text-success border-success/30',
+    warning: 'bg-warning-soft text-warning border-warning/30',
+    danger: 'bg-danger-soft text-danger border-danger/30',
   };
   return (
-    <span className={cn("inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium", variants[variant], className)}>
+    <span
+      className={cn(
+        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        variants[variant],
+        className,
+      )}
+    >
       {children}
     </span>
   );
@@ -88,5 +86,5 @@ export const Badge = ({ children, variant = 'default', className }: { children: 
 
 /* ── Card ── */
 export const Card = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <div className={cn("rounded-[12px] border border-[#252525] bg-[#121212] p-6", className)}>{children}</div>
+  <div className={cn('card', className)}>{children}</div>
 );

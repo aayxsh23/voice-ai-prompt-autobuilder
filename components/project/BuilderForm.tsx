@@ -1,929 +1,951 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { FileUploadZone, type UploadedFile } from './FileUploadZone';
+import {
+  UserCircle,
+  MessageSquare,
+  BookOpen,
+  ShieldCheck,
+  Plus,
+  X,
+  Check,
+  Minus,
+  Info,
+  ArrowRight,
+  Loader2,
+} from 'lucide-react';
 
-/* ---------------------------------------------------------
+/* ═══════════════════════════════════════════════════════════════
    STATIC OPTION LISTS
---------------------------------------------------------- */
-const GOAL_PRESETS = [
-  "Appointment booking",
-  "Lead qualification",
-  "Customer support",
-  "Order tracking / status",
-  "Sales & upsell",
-  "Survey / feedback collection",
-  "Other",
-];
-const SUB_LANGUAGES = [
-  "English", "Hindi", "Tamil", "Telugu", "Marathi", "Bengali", "Gujarati", "Kannada",
-];
-const getIntakeOptions = (goalPreset: string) => {
-  switch (goalPreset) {
-    case "Appointment booking":
-      return ["Full name", "Date of birth", "Reason for visit", "Preferred date/time", "Insurance / member ID", "New vs. returning"];
-    case "Customer support":
-      return ["Full name", "Account / Order ID", "Issue category", "Email address", "Phone number"];
-    case "Sales & upsell":
-    case "Lead qualification":
-      return ["Full name", "Company name", "Job title", "Budget", "Timeline", "Current solution"];
-    case "Order tracking / status":
-      return ["Full name", "Order ID", "Shipping zip code"];
-    case "Survey / feedback collection":
-      return ["Full name", "Product / Service used", "Date of experience"];
-    default:
-      return ["Full name", "Date of birth", "Email address", "Phone number", "Account ID"];
-  }
-};
+   ═══════════════════════════════════════════════════════════════ */
 
-const getPrecallOptions = (goalPreset: string) => {
-  switch (goalPreset) {
-    case "Appointment booking":
-      return ["Caller name", "Phone number", "Appointment history", "Preferred provider", "None — cold call"];
-    case "Customer support":
-      return ["Caller name", "Phone number", "Recent tickets", "CRM segment / tag", "Active subscriptions", "None — cold call"];
-    case "Sales & upsell":
-    case "Lead qualification":
-      return ["Lead name", "Company size", "Industry", "Past purchase history", "Lead score", "None — cold call"];
-    default:
-      return ["Caller name", "Phone number", "CRM segment / tag", "Past purchase history", "None — cold call"];
-  }
-};
-const TRANSFER_CONDITIONS = [
-  "Caller explicitly asks for a human",
-  "Caller sounds angry or distressed",
+const INDUSTRIES = [
+  'E-commerce', 'Healthcare', 'Finance', 'Real Estate', 'Education',
+  'Insurance', 'SaaS', 'Travel & Hospitality', 'Logistics', 'Other',
+];
+
+const LANGUAGES = ['English', 'Hindi', 'Spanish', 'French', 'German'];
+
+/**
+ * Deployment region. This is the ONE piece of location data the compiler needs:
+ * it gates emergency numbers, currency and phone-digit validation
+ * (see lib/compiler/assembler/PromptAssembler.ts). Left blank the compiler stays
+ * deliberately generic rather than assuming a country.
+ */
+export const REGIONS = [
+  { code: '', label: 'Not specified' },
+  { code: 'US', label: 'United States' },
+  { code: 'CA', label: 'Canada' },
+  { code: 'GB', label: 'United Kingdom' },
+  { code: 'IN', label: 'India' },
+  { code: 'AE', label: 'United Arab Emirates' },
+  { code: 'SA', label: 'Saudi Arabia' },
+  { code: 'QA', label: 'Qatar' },
+  { code: 'SG', label: 'Singapore' },
+  { code: 'AU', label: 'Australia' },
+  { code: 'NZ', label: 'New Zealand' },
+  { code: 'DE', label: 'Germany' },
+  { code: 'FR', label: 'France' },
+  { code: 'ES', label: 'Spain' },
+  { code: 'BR', label: 'Brazil' },
+  { code: 'MX', label: 'Mexico' },
+  { code: 'ZA', label: 'South Africa' },
+  { code: 'PH', label: 'Philippines' },
+  { code: 'MY', label: 'Malaysia' },
+  { code: 'ID', label: 'Indonesia' },
+];
+
+const TONE_OPTIONS = [
+  { id: 'professional', label: 'Professional', desc: 'Neutral, business-appropriate' },
+  { id: 'friendly', label: 'Friendly & Warm', desc: 'Approachable, conversational' },
+  { id: 'empathetic', label: 'Empathetic', desc: 'Understanding, patient' },
+  { id: 'authoritative', label: 'Authoritative', desc: 'Confident, direct' },
+  { id: 'casual', label: 'Casual', desc: 'Relaxed, informal' },
+  { id: 'persuasive', label: 'Persuasive', desc: 'Convincing, enthusiastic' },
+];
+
+const TRANSFER_TRIGGERS = [
+  'Caller explicitly asks for a human',
+  'Caller sounds angry or distressed',
   "Issue is outside the agent's scope",
-  "Call is after business hours",
-];
-const TONE_WORDS = [
-  "Warm", "Empathetic", "Confident", "Enthusiastic", "Efficient & neutral", "Formal",
+  'Call is after business hours',
 ];
 
-export const COUNTRY_CODES = [
-  { code: '+1', country: 'US/CA', iso: 'US', digits: 10 },
-  { code: '+44', country: 'UK', iso: 'GB', digits: 10 },
-  { code: '+91', country: 'India', iso: 'IN', digits: 10 },
-  { code: '+61', country: 'Australia', iso: 'AU', digits: 9 },
-  { code: '+81', country: 'Japan', iso: 'JP', digits: 10 },
-  { code: '+49', country: 'Germany', iso: 'DE', digits: 11 },
-  { code: '+33', country: 'France', iso: 'FR', digits: 9 },
-  { code: '+39', country: 'Italy', iso: 'IT', digits: 10 },
-  { code: '+34', country: 'Spain', iso: 'ES', digits: 9 },
-  { code: '+55', country: 'Brazil', iso: 'BR', digits: 11 },
-  { code: '+52', country: 'Mexico', iso: 'MX', digits: 10 },
-  { code: '+27', country: 'South Africa', iso: 'ZA', digits: 9 },
-  { code: '+971', country: 'UAE', iso: 'AE', digits: 9 },
-  { code: '+966', country: 'Saudi Arabia', iso: 'SA', digits: 9 },
-  { code: '+974', country: 'Qatar', iso: 'QA', digits: 8 },
-  { code: '+65', country: 'Singapore', iso: 'SG', digits: 8 },
-  { code: '+60', country: 'Malaysia', iso: 'MY', digits: 10 },
-  { code: '+63', country: 'Philippines', iso: 'PH', digits: 10 },
-  { code: '+62', country: 'Indonesia', iso: 'ID', digits: 11 },
-  { code: '+64', country: 'New Zealand', iso: 'NZ', digits: 9 },
-  { code: '+86', country: 'China', iso: 'CN', digits: 11 },
-  { code: '+82', country: 'South Korea', iso: 'KR', digits: 10 },
+/**
+ * Shown as the Knowledge Base tooltip. The compiler runs an extraction pass over
+ * whatever is pasted here and routes the facts into the right prompt sections
+ * (see lib/compiler/planners/KnowledgeExtractor.ts) — so this list doubles as the
+ * spec for what the extractor looks for.
+ */
+export const KB_SOURCE_HINTS = [
+  { title: 'FAQ document', desc: 'Common questions and answers, so the agent responds accurately without leaving the script.' },
+  { title: 'Pricing and product sheet', desc: 'Plans, SKUs and features, so the agent quotes exact details instead of guessing.' },
+  { title: 'Policy and terms doc', desc: 'Refunds, cancellations and compliance rules, for consistent answers.' },
+  { title: 'Objection and comparison notes', desc: 'Approved responses to pushback, to back up your call flow with substance.' },
+  { title: 'Troubleshooting guide', desc: 'Step-by-step fixes, useful for support and service agents.' },
+  { title: 'Company fact sheet', desc: 'Hours, locations and certifications not already covered in Persona.' },
+  { title: 'Past call transcripts', desc: 'Real customer questions, to surface edge cases your FAQ might miss.' },
 ];
 
-const emptyStaff = { name: "", role: "", availability: "" };
-const emptyService = { name: "", desc: "" };
-const emptyPolicy = { type: "Cancellation", customType: "", desc: "" };
-const emptyTransferNum = { label: "", number: "" };
+const PURPOSE_PLACEHOLDER: Record<string, string> = {
+  Healthcare: 'e.g. Confirm patient lab results and schedule follow-up visits',
+  'E-commerce': 'e.g. Recover abandoned carts with a limited-time discount',
+  Finance: 'e.g. Collect overdue EMI payments and agree a flexible plan',
+  'Real Estate': 'e.g. Qualify inbound leads and book site visits',
+  Education: 'e.g. Follow up with demo attendees to close enrolment',
+  default: 'e.g. Book appointments for new and returning callers, and answer basic questions',
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   FORM STATE
+   ═══════════════════════════════════════════════════════════════ */
+
+export interface VariableRow { key: string; value: string }
+export interface TransferNumber { label: string; number: string }
 
 export const initialData = {
-  companyName: "",
-  agentName: "",
-  callDirection: "Inbound",
-  goalPreset: "",
-  goalOther: "",
-  language: "English",
-  subLanguages: [],
-  languageMode: "Ask caller preference at start",
-  isRemote: false,
-  address: "",
-  phoneCode: "+1",
-  phone: "",
-  website: "",
+  /* ── Persona ── */
+  companyName: '',
+  agentName: '',
+  industry: '',
+  region: '',
+  callDirection: 'Inbound',
+  callPurpose: '',
+  primaryLanguage: 'English',
+  secondaryLanguage: 'None',
+  voiceGender: 'Female',
+  voiceTone: 'professional',
 
-  staffList: [{ ...emptyStaff }],
+  /* ── Conversation ── */
+  openingMessage: '',
+  callFlow: '',
+  variables: [] as VariableRow[],
 
-  services: [{ ...emptyService }],
-  intakeReqs: [] as string[],
-  intakeModes: {} as Record<string, string>,
-  customIntake: [] as string[],
-  preCallFields: [] as string[],
-  customPreCall: [] as string[],
-  faqsText: "", // New single block
+  /* ── Knowledge base ── */
+  kbEnabled: false,
+  kbContent: '',
 
-  policies: [{ ...emptyPolicy }],
-  transferEnabled: false,
-  transferNumbers: [{ ...emptyTransferNum }],
-  transferConditions: [],
-  afterHoursBehavior: "",
-  
-  voiceGender: "Female",
-  toneWords: [],
-  aiDisclosure: true,
+  /* ── Guardrails & call handling ── */
+  guardrails: '',
+  discloseAI: true,
   recordingConsent: false,
-  disclosureText: "",
-
-  openingLine: "",
-  closingScript: "",
-  callFlowDescription: "",
-  interruption: true,
-  digression: "Answer briefly, then resume the script",
-  retryFallback: "Transfer to a human agent",
+  disclosureText: '',
+  digressionHandling: 'Answer briefly, then resume the script',
+  retryFallback: 'Transfer to a human agent',
   maxRetries: 2,
-  needsConfirmation: false,
-  confirmationScope: "",
-  confirmationStyle: "Summary / paraphrase back",
+  liveTransferEnabled: false,
+  transferNumbers: [{ label: '', number: '' }] as TransferNumber[],
+  transferTriggers: [] as string[],
+  afterHoursBehavior: '',
 };
 
-/* ---------------------------------------------------------
-   SMALL REUSABLE FIELD COMPONENTS (Pirsch Style)
---------------------------------------------------------- */
-function Field({ label, hint, required, children }: any) {
-  return (
-    <div className="flex flex-col space-y-2 mb-6">
-      <label className="text-[16px] font-medium text-ink">
-        {label}
-        {required && <span className="text-red-500 ml-1">*</span>}
-      </label>
-      {hint && <div className="text-[14px] text-graphite mb-1">{hint}</div>}
-      {children}
-    </div>
-  );
-}
+export type BuilderData = typeof initialData;
 
-function TextInput({ value, onChange, placeholder, mono, type = "text", min, max }: any) {
-  return (
-    <input
-      type={type}
-      min={min}
-      max={max}
-      className={`w-full bg-transparent hairline-border-muted rounded-[6px] px-3 py-2 text-[16px] text-ink placeholder-graphite focus:outline-none focus:hairline-border transition-colors ${mono ? "font-mono" : ""}`}
-      value={value}
-      placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-    />
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   MODULES
+   ═══════════════════════════════════════════════════════════════ */
 
-function TextArea({ value, onChange, placeholder, rows = 3, expandable = false }: any) {
-  const [expanded, setExpanded] = React.useState(false);
-  const currentRows = expanded ? 15 : rows;
-  
-  return (
-    <div className="relative w-full">
-      <textarea
-        className="w-full bg-transparent hairline-border-muted rounded-[6px] px-3 py-2 text-[16px] text-ink placeholder-graphite focus:outline-none focus:hairline-border transition-all resize-y"
-        value={value}
-        rows={currentRows}
-        placeholder={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {expandable && (
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="absolute bottom-3 right-3 px-3 py-1 bg-white/90 hover:bg-white text-graphite hover:text-ink rounded-buttons shadow-sm border hairline-border transition-colors text-[12px] font-medium backdrop-blur-sm z-10"
-        >
-          {expanded ? "Collapse" : "Expand"}
-        </button>
-      )}
-    </div>
-  );
-}
+export type ModuleId = 'persona' | 'conversation' | 'knowledge' | 'rules';
 
-function Select({ value, onChange, options }: any) {
-  return (
-    <select 
-      className="w-full bg-transparent hairline-border-muted rounded-[6px] px-3 py-2 text-[16px] text-ink focus:outline-none focus:hairline-border transition-colors appearance-none cursor-pointer"
-      value={value} 
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o: string) => (
-        <option key={o} value={o}>{o}</option>
-      ))}
-    </select>
-  );
-}
+export const MODULES: Record<ModuleId, { label: string; icon: React.ElementType; blurb: string }> = {
+  persona: { label: 'Persona', icon: UserCircle, blurb: 'Who the agent is, who it works for, and why it is calling.' },
+  conversation: { label: 'Conversation', icon: MessageSquare, blurb: 'The opening, the flow, and the data injected per call.' },
+  knowledge: { label: 'Knowledge Base', icon: BookOpen, blurb: 'Facts the agent answers from instead of guessing.' },
+  rules: { label: 'Guardrails & Call Handling', icon: ShieldCheck, blurb: 'Boundaries, disclosures, fallbacks and human handoff.' },
+};
 
-function PhoneInputWithCode({ codeValue, phoneValue, onCodeChange, onPhoneChange }: any) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
-  const phoneInputRef = useRef<HTMLInputElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+export const MODULE_ORDER: ModuleId[] = ['persona', 'conversation', 'knowledge', 'rules'];
 
-  // Sort by digits numerically
-  const sortedCodes = [...COUNTRY_CODES].sort((a, b) => 
-    parseInt(a.code.replace('+', '')) - parseInt(b.code.replace('+', ''))
-  );
+export type Completion = 'empty' | 'partial' | 'complete';
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const filtered = sortedCodes.filter(c => {
-     const s = search.toLowerCase().replace('+', '');
-     const codeMatch = c.code.replace('+', '').startsWith(s);
-     const nameMatch = c.country.toLowerCase().includes(s);
-     return codeMatch || nameMatch;
-  });
-
-  const selectedCountry = sortedCodes.find(c => c.code === codeValue) || sortedCodes[0];
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (filtered.length > 0) {
-        onCodeChange(filtered[0].code);
-        setIsOpen(false);
-        phoneInputRef.current?.focus();
-      }
-    } else if (e.key === 'Escape') {
-      setIsOpen(false);
-    }
+export function getModuleCompletion(id: ModuleId, d: BuilderData): Completion {
+  const score = (parts: unknown[]) => {
+    const filled = parts.filter(Boolean).length;
+    if (filled === 0) return 'empty' as const;
+    return filled === parts.length ? ('complete' as const) : ('partial' as const);
   };
-
-  return (
-    <div className="flex w-full relative">
-      <div className="relative w-[140px]" ref={ref}>
-        <button 
-          type="button"
-          className="flex items-center justify-between w-full h-full bg-transparent hairline-border-muted rounded-l-[6px] px-3 py-2 text-[16px] text-ink cursor-pointer border-r-0 border transition-colors hover:bg-black/5"
-          onClick={() => {
-            setIsOpen(!isOpen);
-            setSearch('');
-            if (!isOpen) setTimeout(() => searchInputRef.current?.focus(), 10);
-          }}
-        >
-          <span className="font-medium text-[15px]">{selectedCountry.code}</span>
-          <span className="text-[10px] text-graphite ml-1">▼</span>
-        </button>
-        
-        {isOpen && (
-          <div className="absolute top-full left-0 mt-1 w-[260px] bg-cream-paper border hairline-border-muted rounded-cards shadow-lg z-50 overflow-hidden">
-            <div className="p-2 border-b hairline-border-muted">
-              <input 
-                ref={searchInputRef}
-                type="text" 
-                placeholder="Search code or country..."
-                className="w-full bg-transparent outline-none text-[14px] text-ink placeholder-graphite"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-            </div>
-            <div className="max-h-[220px] overflow-y-auto">
-              {filtered.map(c => (
-                <div 
-                  key={c.code}
-                  className="px-3 py-2 text-[14px] hover:bg-sunshine-highlight/50 cursor-pointer flex justify-between items-center transition-colors"
-                  onClick={() => { onCodeChange(c.code); setIsOpen(false); phoneInputRef.current?.focus(); }}
-                >
-                  <span className="font-medium text-ink w-12">{c.code}</span>
-                  <span className="text-graphite text-right flex-1 truncate ml-2">{c.country}</span>
-                </div>
-              ))}
-              {filtered.length === 0 && (
-                <div className="px-3 py-2 text-[14px] text-graphite text-center">No matches</div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+  switch (id) {
+    case 'persona':
+      return score([d.companyName.trim(), d.agentName.trim(), d.industry, d.callPurpose.trim()]);
+    case 'conversation':
+      return score([d.openingMessage.trim(), d.callFlow.trim()]);
+    case 'knowledge':
+      if (!d.kbEnabled) return 'empty';
+      return d.kbContent.trim() ? 'complete' : 'partial';
+    case 'rules': {
+      const hasGuardrails = !!d.guardrails.trim();
+      const hasTransfer = d.liveTransferEnabled;
       
-      <input
-        ref={phoneInputRef}
-        type="text"
-        maxLength={selectedCountry.digits}
-        value={phoneValue}
-        onChange={e => onPhoneChange(e.target.value.replace(/\D/g, ''))}
-        placeholder={`Phone number (${selectedCountry.digits} digits)`}
-        className="flex-1 bg-transparent hairline-border-muted rounded-r-[6px] px-3 py-2 text-[16px] text-ink placeholder-graphite focus:outline-none focus:hairline-border transition-colors font-mono border-l-0"
-      />
+      // If they haven't typed guardrails and haven't enabled transfer, it's untouched.
+      if (!hasGuardrails && !hasTransfer) return 'empty';
+      
+      // If they enabled transfer, they must provide at least one valid number
+      const transferOk = !hasTransfer || d.transferNumbers.some((t) => t.number.trim());
+      
+      return (hasGuardrails && transferOk) ? 'complete' : 'partial';
+    }
+  }
+}
+
+/** Blocks submission — everything else the compiler can reason its way through. */
+export function getBlockingGaps(d: BuilderData): string[] {
+  const gaps: string[] = [];
+  if (!d.companyName.trim()) gaps.push('Company name (Persona)');
+  if (!d.callPurpose.trim()) gaps.push('Call purpose (Persona)');
+  if (!d.callFlow.trim()) gaps.push('Call flow (Conversation)');
+  if (d.kbEnabled && !d.kbContent.trim()) gaps.push('Knowledge base content (Knowledge Base)');
+  if (d.liveTransferEnabled && !d.transferNumbers.some((t) => t.number.trim())) {
+    gaps.push('At least one transfer number (Guardrails & Call Handling)');
+  }
+  return gaps;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PRIMITIVES
+   ═══════════════════════════════════════════════════════════════ */
+
+function Label({ htmlFor, children, badge }: { htmlFor?: string; children: React.ReactNode; badge?: React.ReactNode }) {
+  return (
+    <label htmlFor={htmlFor} className="flex items-center gap-2 text-[14px] font-medium text-ink mb-1.5">
+      <span>{children}</span>
+      {badge}
+    </label>
+  );
+}
+
+function Guide({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="flex items-start gap-1.5 text-[12px] leading-[1.5] text-faint pt-1.5">
+      <Info className="w-[13px] h-[13px] shrink-0 mt-[2px]" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function Hint({ tone, children }: { tone: 'ok' | 'warn' | 'idea'; children: React.ReactNode }) {
+  const color = tone === 'warn' ? 'text-warning' : tone === 'ok' ? 'text-success' : 'text-faint';
+  return (
+    <p className={`flex items-center gap-1.5 text-[12px] pt-1 ${color}`}>
+      <span aria-hidden="true">{tone === 'ok' ? '✓' : tone === 'warn' ? '!' : '○'}</span>
+      <span>{children}</span>
+    </p>
+  );
+}
+
+function GeneratedBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-medium text-graphite">
+      Drafted
+    </span>
+  );
+}
+
+export function CompletionDot({ status }: { status: Completion }) {
+  const bg =
+    status === 'complete' ? 'bg-success text-white'
+      : status === 'partial' ? 'bg-warning text-white'
+        : 'bg-line-strong text-transparent';
+  return (
+    <span className={`w-3 h-3 rounded-full shrink-0 flex items-center justify-center ${bg}`} aria-hidden="true">
+      {status === 'complete' && <Check className="w-2 h-2" strokeWidth={4} />}
+      {status === 'partial' && <Minus className="w-2 h-2" strokeWidth={4} />}
+    </span>
+  );
+}
+
+function Toggle({ id, label, checked, onChange, onText = 'Yes', offText = 'No' }: {
+  id: string; label: string; checked: boolean; onChange: (v: boolean) => void; onText?: string; offText?: string;
+}) {
+  return (
+    <div>
+      <span id={`${id}-label`} className="block text-[14px] font-medium text-ink mb-2.5">{label}</span>
+      <label htmlFor={id} className="inline-flex items-center gap-3 cursor-pointer">
+        <span className="relative inline-block w-11 h-6">
+          <input
+            id={id}
+            type="checkbox"
+            role="switch"
+            aria-checked={checked}
+            aria-labelledby={`${id}-label`}
+            checked={checked}
+            onChange={(e) => onChange(e.target.checked)}
+            className="peer sr-only"
+          />
+          <span className="absolute inset-0 rounded-full bg-line-strong transition-colors peer-checked:bg-ink peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2" />
+          <span className="absolute top-1 left-1 h-4 w-4 rounded-full bg-surface transition-transform peer-checked:translate-x-5" />
+        </span>
+        <span className="text-[14px] font-medium text-ink">{checked ? onText : offText}</span>
+      </label>
     </div>
   );
 }
 
-function Toggle({ checked, onChange, onLabel = "On", offLabel = "Off" }: any) {
+function Segmented<T extends string>({ label, value, options, onChange }: {
+  label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
+}) {
+  return (
+    <fieldset className="border-0 p-0 m-0">
+      <legend className="block text-[14px] font-medium text-ink mb-1.5">{label}</legend>
+      <div role="radiogroup" aria-label={label} className="inline-flex bg-subtle rounded-full p-1">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={`px-4 py-1.5 rounded-full text-[14px] font-medium transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+              value === o.value ? 'bg-surface text-ink shadow-[0_1px_2px_rgba(0,0,0,0.06)]' : 'text-graphite hover:text-ink'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+function ModuleHeader({ id }: { id: ModuleId }) {
+  return (
+    <header className="mb-6">
+      <h2 className="text-[20px] font-semibold text-ink mb-1">{MODULES[id].label}</h2>
+      <p className="text-[14px] text-graphite">{MODULES[id].blurb}</p>
+    </header>
+  );
+}
+
+function NextButton({ label, onClick, busy }: { label: string; onClick: () => void; busy?: boolean }) {
+  return (
+    <div className="pt-5 mt-2 border-t border-line flex justify-end">
+      <button type="button" onClick={onClick} className="btn btn-primary" disabled={busy}>
+        {busy ? <><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Drafting…</> : <>{label} <ArrowRight className="w-4 h-4" aria-hidden="true" /></>}
+      </button>
+    </div>
+  );
+}
+
+function DraftButton({ onClick, busy, children }: { onClick: () => void; busy: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
-      className={`relative inline-flex h-6 w-11 items-center rounded-tags transition-colors ${checked ? "bg-mint-signal" : "bg-graphite"}`}
-      onClick={() => onChange(!checked)}
+      onClick={onClick}
+      disabled={busy}
+      className="link inline-flex items-center gap-1.5 text-[12px]"
     >
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-cream-paper transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`} />
-      <span className="sr-only">{checked ? onLabel : offLabel}</span>
+      {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+      {children}
     </button>
   );
 }
 
-function RadioGroup({ value, onChange, options }: any) {
-  return (
-    <div className="flex flex-col space-y-2">
-      {options.map((opt: string) => (
-        <button
-          type="button"
-          key={opt}
-          className={`flex items-center text-left text-[16px] ${value === opt ? "text-ink font-medium" : "text-graphite"} transition-colors`}
-          onClick={() => onChange(opt)}
-        >
-          <span className={`w-4 h-4 rounded-full border mr-3 flex items-center justify-center ${value === opt ? "border-ink" : "border-graphite"}`}>
-            {value === opt && <span className="w-2 h-2 bg-ink rounded-full" />}
-          </span>
-          {opt}
-        </button>
-      ))}
-    </div>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   PERSONA SUMMARY CARD
+   ═══════════════════════════════════════════════════════════════ */
 
-function CheckboxChips({ values, onToggle, options, customOptions = [], onDeleteRequest }: any) {
-  const allOptions = [...options, ...customOptions];
-
-  const handleDelete = (opt: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDeleteRequest(opt);
-  };
+export function PersonaCard({ data }: { data: BuilderData }) {
+  const tone = TONE_OPTIONS.find((t) => t.id === data.voiceTone)?.label ?? 'Not set';
+  const meta = [
+    data.industry,
+    `${data.voiceGender} · ${tone}`,
+    data.secondaryLanguage !== 'None' ? `${data.primaryLanguage} + ${data.secondaryLanguage}` : data.primaryLanguage,
+  ].filter(Boolean);
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {allOptions.map((opt: string) => {
-        const isActive = values.includes(opt);
-        const isCustom = customOptions.includes(opt);
-        return (
-          <div key={opt} className={`flex items-center rounded-tags hairline-border overflow-hidden transition-colors ${isActive ? "bg-ink border-ink text-cream-paper" : "bg-cream-paper border-transparent text-ink hairline-border"}`}>
-            <button
-              type="button"
-              className={`px-4 py-1.5 text-[14px] font-medium transition-colors`}
-              onClick={() => onToggle(opt)}
-            >
-              {opt}
-            </button>
-            {isCustom && (
-              <button
-                type="button"
-                className={`px-3 py-1.5 text-[18px] font-bold text-red-500 hover:text-red-700 hover:bg-red-500/10 transition-colors border-l ${isActive ? "border-ink/20" : "hairline-border-muted"}`}
-                onClick={(e) => handleDelete(opt, e)}
-                title="Remove custom option"
-              >
-                ×
-              </button>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function IntakeChips({ values, modes, onToggle, onModeChange, options, customOptions = [], onDeleteRequest }: any) {
-  const allOptions = [...options, ...customOptions];
-  const [openMode, setOpenMode] = React.useState<string | null>(null);
-
-  const handleDelete = (opt: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    onDeleteRequest(opt);
-  };
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {allOptions.map((opt: string) => {
-        const isActive = values.includes(opt);
-        const isCustom = customOptions.includes(opt);
-        const mode = modes[opt] || 'collect';
-        const isModeOpen = openMode === opt;
-        
-        return (
-          <div key={opt} className={`flex items-center rounded-tags hairline-border overflow-hidden transition-colors ${isActive ? "bg-cream-paper border-ink" : "bg-cream-paper border-transparent"}`}>
-            <button
-              type="button"
-              className={`px-4 py-1.5 text-[14px] font-medium transition-colors ${isActive ? "bg-ink text-cream-paper" : "bg-cream-paper text-ink hairline-border"}`}
-              onClick={() => {
-                onToggle(opt);
-                if (isActive) setOpenMode(null);
-              }}
-            >
-              {opt}
-            </button>
-            {isCustom && !isActive && (
-              <button
-                type="button"
-                className="px-3 py-1.5 text-[18px] font-bold text-red-500 hover:text-red-700 hover:bg-red-500/10 transition-colors bg-cream-paper hairline-border border-l-0"
-                onClick={(e) => handleDelete(opt, e)}
-                title="Remove custom option"
-              >
-                ×
-              </button>
-            )}
-            {isActive && (
-              <div className="flex text-[12px] bg-cream-paper border-l hairline-border-muted items-center">
-                {!isModeOpen ? (
-                  <button
-                    type="button"
-                    className="px-3 py-1.5 font-bold text-ink hover:bg-black/5 transition-colors"
-                    onClick={() => setOpenMode(opt)}
-                  >
-                    {mode === 'collect' ? 'Collect' : 'Verify'}
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className={`px-3 py-1.5 transition-colors ${mode === 'collect' ? 'font-bold text-ink' : 'text-graphite hover:text-ink'}`}
-                      onClick={() => { onModeChange(opt, 'collect'); setOpenMode(null); }}
-                    >
-                      Collect
-                    </button>
-                    <div className="w-[1px] bg-border-muted h-full min-h-[28px]" />
-                    <button
-                      type="button"
-                      className={`px-3 py-1.5 transition-colors ${mode === 'verify' ? 'font-bold text-ink' : 'text-graphite hover:text-ink'}`}
-                      onClick={() => { onModeChange(opt, 'verify'); setOpenMode(null); }}
-                    >
-                      Verify
-                    </button>
-                  </>
-                )}
-                {isCustom && (
-                  <>
-                    <div className="w-[1px] bg-border-muted h-full min-h-[28px]" />
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 text-[18px] font-bold text-red-500 hover:text-red-700 hover:bg-red-500/10 transition-colors"
-                      onClick={(e) => handleDelete(opt, e)}
-                      title="Remove custom option"
-                    >
-                      ×
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RepeatRow({ children, onRemove, removable = true }: any) {
-  return (
-    <div className="flex items-start gap-3 mb-3">
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {children}
+    <div className="card mb-6 px-4 py-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="min-w-0 truncate text-[14px] font-medium text-ink">
+          {data.agentName || <span className="font-normal text-faint">Unnamed agent</span>}
+          <span className="text-faint"> · </span>
+          {data.companyName || <span className="font-normal text-faint">No company</span>}
+        </p>
+        <p className="truncate text-[12px] text-graphite">{meta.join(' · ')}</p>
       </div>
-      {removable && (
-        <button type="button" className="p-2 text-graphite hover:text-ink transition-colors mt-0.5" onClick={onRemove} aria-label="Remove">
-          <Trash2 size={16} />
-        </button>
+      {data.callPurpose && (
+        <p className="mt-2 line-clamp-2 border-t border-line pt-2 text-[13px] leading-[1.45] text-graphite">
+          {data.callPurpose}
+        </p>
       )}
     </div>
   );
 }
 
-function AddRowButton({ onClick, label }: any) {
-  return (
-    <button type="button" className="inline-flex items-center text-[14px] font-medium text-graphite hover:text-ink transition-colors mt-2" onClick={onClick}>
-      <Plus size={14} className="mr-1" /> {label}
-    </button>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   MAIN FORM
+   ═══════════════════════════════════════════════════════════════ */
 
-/* ---------------------------------------------------------
-   MAIN COMPONENT
---------------------------------------------------------- */
+type AutoField = 'openingMessage' | 'callFlow' | 'guardrails';
+
 interface BuilderFormProps {
-  data: typeof initialData;
-  setData: React.Dispatch<React.SetStateAction<typeof initialData>>;
-  phoneError?: string;
+  data: BuilderData;
+  setData: React.Dispatch<React.SetStateAction<BuilderData>>;
+  activeModule: ModuleId;
+  setActiveModule: (m: ModuleId) => void;
 }
 
-const Section = ({ title, children }: any) => (
-  <div className="bg-cream-paper rounded-cards hairline-border p-8 mb-8">
-    <h2 className="text-[24px] font-medium text-ink mb-6">{title}</h2>
-    {children}
-  </div>
-);
+export function BuilderForm({ data, setData, activeModule, setActiveModule }: BuilderFormProps) {
+  const [drafting, setDrafting] = useState<AutoField[]>([]);
+  const [drafted, setDrafted] = useState<AutoField[]>([]);
+  const [draftError, setDraftError] = useState('');
+  const [kbTipOpen, setKbTipOpen] = useState(false);
+  const [kbFiles, setKbFiles] = useState<UploadedFile[]>([]);
 
-export function BuilderForm({ data, setData, phoneError }: BuilderFormProps) {
-  const [newIntake, setNewIntake] = useState("");
-  const [newIntakeMode, setNewIntakeMode] = useState("collect");
-  const [newPreCall, setNewPreCall] = useState("");
-  const [itemToDelete, setItemToDelete] = useState<{ opt: string, type: 'intake' | 'precall' } | null>(null);
+  /** Append extracted file text to kbContent with a labelled separator. */
+  const handleFileText = useCallback(
+    (text: string, filename: string) => {
+      setData((d) => {
+        const separator = `\n\n--- Uploaded: ${filename} ---\n\n`;
+        const combined = d.kbContent.trim()
+          ? d.kbContent + separator + text
+          : text;
+        return { ...d, kbContent: combined, kbEnabled: true };
+      });
+    },
+    [setData],
+  );
 
-  const set = (key: string, val: any) => setData((d) => ({ ...d, [key]: val }));
-  const addRow = (key: string, empty: any) => setData((d: any) => ({ ...d, [key]: [...d[key], { ...empty }] }));
-  const updateRow = (key: string, idx: number, field: string, val: any) =>
-    setData((d: any) => {
-      const arr = [...d[key]];
-      arr[idx] = { ...arr[idx], [field]: val };
-      return { ...d, [key]: arr };
-    });
-  const removeRow = (key: string, idx: number) =>
-    setData((d: any) => ({ ...d, [key]: d[key].filter((_: any, i: number) => i !== idx) }));
-  const toggleInArray = (key: string, val: any) =>
-    setData((d: any) => {
-      const has = d[key].includes(val);
-      return { ...d, [key]: has ? d[key].filter((v: any) => v !== val) : [...d[key], val] };
-    });
+  /** Remove a file's extracted text from kbContent when it is deleted. */
+  const handleFileRemoved = useCallback(
+    (file: UploadedFile) => {
+      setData((d) => {
+        // Escape filename for regex
+        const escapedName = file.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match from this file's separator up to the next separator or the end of the string
+        const regex = new RegExp(`\\n*--- Uploaded: ${escapedName} ---\\n*[\\s\\S]*?(?=\\n*--- Uploaded:|$)`, 'g');
+        
+        const newContent = d.kbContent.replace(regex, '');
+        return { ...d, kbContent: newContent.trim() };
+      });
+    },
+    [setData],
+  );
 
-  const handleToggleIntakeReq = (val: string) => {
-    setData((d: any) => {
-      const isActive = d.intakeReqs.includes(val);
-      const newReqs = isActive ? d.intakeReqs.filter((v: any) => v !== val) : [...d.intakeReqs, val];
-      const newModes = { ...(d.intakeModes || {}) };
-      
-      if (isActive) {
-        delete newModes[val];
-      } else {
-        newModes[val] = 'collect';
+  const set = <K extends keyof BuilderData>(key: K, val: BuilderData[K]) =>
+    setData((d) => ({ ...d, [key]: val }));
+
+  /**
+   * Asks the model to draft the opening line, the plain-language call flow, and the
+   * guardrails from the call purpose. Only fills fields the user left empty unless
+   * `force` is set (the "Redraft" buttons), so typed content is never clobbered.
+   */
+  const runAutoFill = async (fields: AutoField[], force = false): Promise<void> => {
+    if (!data.callPurpose.trim()) return;
+    const targets = force ? fields : fields.filter((f) => !String(data[f] ?? '').trim());
+    if (targets.length === 0) return;
+
+    setDraftError('');
+    setDrafting(targets);
+    try {
+      const res = await fetch('/api/builder/autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: targets, form: data }),
+      });
+      if (!res.ok) throw new Error('autofill failed');
+      const out = await res.json();
+      const applied = targets.filter((f) => typeof out?.[f] === 'string' && out[f].trim());
+      if (applied.length > 0) {
+        setData((d) => {
+          const next = { ...d };
+          applied.forEach((f) => { next[f] = String(out[f]).trim(); });
+          return next;
+        });
+        setDrafted((prev) => Array.from(new Set([...prev, ...applied])));
       }
-      
-      return {
-        ...d,
-        intakeReqs: newReqs,
-        intakeModes: newModes
-      };
-    });
-  };
-
-  const handleAddCustomIntake = () => {
-    if (!newIntake.trim()) return;
-    const val = newIntake.trim();
-    setData(d => ({
-      ...d,
-      customIntake: d.customIntake?.includes(val) ? d.customIntake : [...(d.customIntake || []), val],
-      intakeReqs: d.intakeReqs?.includes(val) ? d.intakeReqs : [...(d.intakeReqs || []), val],
-      intakeModes: { ...(d.intakeModes || {}), [val]: newIntakeMode }
-    }));
-    setNewIntake("");
-    setNewIntakeMode("collect");
-  };
-
-  const handleDeleteCustomIntake = (val: string) => {
-    setData(d => ({
-      ...d,
-      customIntake: d.customIntake.filter(v => v !== val),
-      intakeReqs: d.intakeReqs.filter(v => v !== val)
-    }));
-  };
-
-  const handleAddCustomPreCall = () => {
-    if (!newPreCall.trim()) return;
-    const val = newPreCall.trim();
-    setData(d => ({
-      ...d,
-      customPreCall: d.customPreCall?.includes(val) ? d.customPreCall : [...(d.customPreCall || []), val],
-      preCallFields: d.preCallFields?.includes(val) ? d.preCallFields : [...(d.preCallFields || []), val]
-    }));
-    setNewPreCall("");
-  };
-
-  const handleDeleteCustomPreCall = (val: string) => {
-    setData(d => ({
-      ...d,
-      customPreCall: d.customPreCall.filter(v => v !== val),
-      preCallFields: d.preCallFields.filter(v => v !== val)
-    }));
-  };
-
-  const handleDeleteConfirm = () => {
-    if (itemToDelete) {
-      if (itemToDelete.type === 'intake') {
-        handleDeleteCustomIntake(itemToDelete.opt);
-      } else {
-        handleDeleteCustomPreCall(itemToDelete.opt);
-      }
-      setItemToDelete(null);
+    } catch {
+      setDraftError('Could not draft that automatically — you can still write it yourself.');
+    } finally {
+      setDrafting([]);
     }
   };
 
-  return (
-    <div className="w-full max-w-4xl mx-auto pb-16">
-      <Section title="Identity, Language & Location">
-        <Field label="Company / project name" required>
-          <TextInput value={data.companyName} onChange={(v: string) => set("companyName", v)} placeholder="e.g. Meridian Dental" />
-        </Field>
-        <Field label="Agent name" hint="The name the agent will use when making calls.">
-          <TextInput value={data.agentName} onChange={(v: string) => set("agentName", v)} placeholder="e.g. Ava" />
-        </Field>
-        <Field label="Call direction" required hint="Is the agent making outbound calls or receiving inbound calls?">
-          <Select value={data.callDirection} onChange={(v: string) => set("callDirection", v)} options={["Inbound", "Outbound"]} />
-        </Field>
-        <Field label="Primary goal" required hint="What is the main objective of this voice agent?">
-          <Select value={data.goalPreset} onChange={(v: string) => set("goalPreset", v)} options={["", ...GOAL_PRESETS]} />
-        </Field>
-        {data.goalPreset === "Other" && (
-          <Field label="Describe the goal">
-            <TextInput value={data.goalOther} onChange={(v: string) => set("goalOther", v)} placeholder="What should the agent accomplish on a call?" />
-          </Field>
-        )}
-        <Field label="Primary language & dialect" required>
-          <Select value={data.language} onChange={(v: string) => set("language", v)} options={["English", "Hindi", "Hinglish", "Multilingual"]} />
-        </Field>
-        {data.language === "Multilingual" && (
-          <>
-            <Field label="Which languages?" hint="Select all that the agent should be able to speak.">
-              <CheckboxChips values={data.subLanguages} onToggle={(v: string) => toggleInArray("subLanguages", v)} options={SUB_LANGUAGES} />
-            </Field>
-            <Field label="How is the language chosen?">
-              <RadioGroup
-                value={data.languageMode}
-                onChange={(v: string) => set("languageMode", v)}
-                options={["Ask caller preference at start", "Auto-detect from caller's speech", "Fixed per phone number / campaign"]}
-              />
-            </Field>
-          </>
-        )}
-        <Field label="Physical location">
-          <div className="flex items-center space-x-3">
-            <Toggle checked={data.isRemote} onChange={(v: boolean) => set("isRemote", v)} />
-            <span className="text-[16px] text-ink">{data.isRemote ? "Remote / no address" : "Has a physical location"}</span>
+  const isDrafting = (f: AutoField) => drafting.includes(f);
+  const wasDrafted = (f: AutoField) => drafted.includes(f);
+
+  const goNext = async (from: ModuleId) => {
+    if (from === 'persona') await runAutoFill(['openingMessage', 'callFlow']);
+    if (from === 'conversation') await runAutoFill(['guardrails']);
+    const idx = MODULE_ORDER.indexOf(from);
+    if (idx >= 0 && idx < MODULE_ORDER.length - 1) setActiveModule(MODULE_ORDER[idx + 1]);
+  };
+
+  /* ── array helpers ── */
+  const addVariable = () => setData((d) => ({ ...d, variables: [...d.variables, { key: '', value: '' }] }));
+  const updateVariable = (i: number, field: keyof VariableRow, val: string) =>
+    setData((d) => ({ ...d, variables: d.variables.map((v, idx) => (idx === i ? { ...v, [field]: val } : v)) }));
+  const removeVariable = (i: number) =>
+    setData((d) => ({ ...d, variables: d.variables.filter((_, idx) => idx !== i) }));
+
+  const addTransferNumber = () =>
+    setData((d) => ({ ...d, transferNumbers: [...d.transferNumbers, { label: '', number: '' }] }));
+  const updateTransferNumber = (i: number, field: keyof TransferNumber, val: string) =>
+    setData((d) => ({ ...d, transferNumbers: d.transferNumbers.map((t, idx) => (idx === i ? { ...t, [field]: val } : t)) }));
+  const removeTransferNumber = (i: number) =>
+    setData((d) => ({ ...d, transferNumbers: d.transferNumbers.filter((_, idx) => idx !== i) }));
+
+  const toggleTrigger = (trigger: string) =>
+    setData((d) => ({
+      ...d,
+      transferTriggers: d.transferTriggers.includes(trigger)
+        ? d.transferTriggers.filter((t) => t !== trigger)
+        : [...d.transferTriggers, trigger],
+    }));
+
+  const draftErrorBanner = draftError ? (
+    <p className="text-[12px] text-warning pt-1">{draftError}</p>
+  ) : null;
+
+  /* ─────────────────────────── PERSONA ─────────────────────────── */
+
+  if (activeModule === 'persona') {
+    return (
+      <section className="space-y-5" aria-labelledby="module-heading">
+        <ModuleHeader id="persona" />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="companyName">Company name *</Label>
+            <input id="companyName" className="input-field" value={data.companyName}
+              onChange={(e) => set('companyName', e.target.value)} placeholder="e.g. Meridian Dental" />
+            <Guide>Used in greetings, disclosures and every reference to “us”.</Guide>
           </div>
-        </Field>
-        {!data.isRemote && (
-          <Field label="Address">
-            <TextArea value={data.address} onChange={(v: string) => set("address", v)} rows={2} placeholder="Street, city, state" />
-          </Field>
-        )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Field label="Phone">
-            <PhoneInputWithCode
-              codeValue={data.phoneCode}
-              phoneValue={data.phone}
-              onCodeChange={(v: string) => set("phoneCode", v)}
-              onPhoneChange={(v: string) => set("phone", v)}
-            />
-            {phoneError && <div className="text-red-500 text-[13px] mt-1.5">{phoneError}</div>}
-          </Field>
-          <Field label="Website">
-            <TextInput mono value={data.website} onChange={(v: string) => set("website", v)} placeholder="www.example.com" />
-          </Field>
+          <div>
+            <Label htmlFor="agentName">Agent name</Label>
+            <input id="agentName" className="input-field" value={data.agentName}
+              onChange={(e) => set('agentName', e.target.value)} placeholder="e.g. Ava" />
+            {!data.agentName && data.companyName
+              ? <Hint tone="idea">A named agent builds trust faster than an anonymous one.</Hint>
+              : <Guide>The name the agent introduces itself with.</Guide>}
+          </div>
         </div>
-      </Section>
 
-      <Section title="Schedule & Team Setup">
-        <Field label="Staff & practitioner roster" hint="Who the agent might mention or book callers with.">
-          {data.staffList.map((s, i) => (
-            <RepeatRow key={i} onRemove={() => removeRow("staffList", i)} removable={data.staffList.length > 1}>
-              <TextInput value={s.name} onChange={(v: string) => updateRow("staffList", i, "name", v)} placeholder="Name" />
-              <TextInput value={s.role} onChange={(v: string) => updateRow("staffList", i, "role", v)} placeholder="Role / specialty" />
-              <TextInput value={s.availability} onChange={(v: string) => updateRow("staffList", i, "availability", v)} placeholder="Availability (optional)" />
-            </RepeatRow>
-          ))}
-          <AddRowButton onClick={() => addRow("staffList", emptyStaff)} label="Add staff member" />
-        </Field>
-      </Section>
-
-      <Section title="Services, Intake & Pre-call Variables">
-        <Field label="Services offered">
-          {data.services.map((s, i) => (
-            <RepeatRow key={i} onRemove={() => removeRow("services", i)} removable={data.services.length > 1}>
-              <TextInput value={s.name} onChange={(v: string) => updateRow("services", i, "name", v)} placeholder="Service name" />
-              <TextInput value={s.desc} onChange={(v: string) => updateRow("services", i, "desc", v)} placeholder="One-line description" />
-            </RepeatRow>
-          ))}
-          <AddRowButton onClick={() => addRow("services", emptyService)} label="Add service" />
-        </Field>
-        <Field label="Intake & qualification requirements" hint="What must be collected or verified before the agent can help.">
-          <IntakeChips 
-            values={data.intakeReqs} 
-            modes={data.intakeModes}
-            customOptions={data.customIntake}
-            onToggle={handleToggleIntakeReq} 
-            onModeChange={(opt: string, mode: string) => set("intakeModes", { ...data.intakeModes, [opt]: mode })}
-            onDeleteRequest={(opt: string) => setItemToDelete({ opt, type: 'intake' })}
-            options={getIntakeOptions(data.goalPreset)} 
-          />
-          <div className="mt-3 flex items-center gap-2">
-            <div className="flex-1">
-              <TextInput value={newIntake} onChange={setNewIntake} placeholder="Add custom requirement" />
-            </div>
-            <div className="w-[120px]">
-              <Select 
-                value={newIntakeMode} 
-                onChange={setNewIntakeMode}
-                options={["collect", "verify"]} 
-              />
-            </div>
-            <button
-              type="button"
-              className="px-4 py-2 bg-cream-paper hairline-border text-ink rounded-[6px] font-medium hover:bg-ink hover:text-cream-paper transition-colors"
-              onClick={handleAddCustomIntake}
-            >
-              Add
-            </button>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="industry">Industry</Label>
+            <select id="industry" className="input-field" value={data.industry} onChange={(e) => set('industry', e.target.value)}>
+              <option value="">Select industry…</option>
+              {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
+            </select>
           </div>
-        </Field>
-        <Field label="Pre-call infields" hint="What the system already knows about the caller before the call starts.">
-          <CheckboxChips 
-            values={data.preCallFields} 
-            customOptions={data.customPreCall}
-            onToggle={(v: string) => toggleInArray("preCallFields", v)} 
-            onDeleteRequest={(opt: string) => setItemToDelete({ opt, type: 'precall' })}
-            options={getPrecallOptions(data.goalPreset)} 
-          />
-          <div className="mt-3 flex items-center gap-2 w-1/2">
-            <div className="flex-1">
-              <TextInput value={newPreCall} onChange={setNewPreCall} placeholder="Add custom infield" />
-            </div>
-            <button
-              type="button"
-              className="px-4 py-2 bg-cream-paper hairline-border text-ink rounded-[6px] font-medium hover:bg-ink hover:text-cream-paper transition-colors"
-              onClick={handleAddCustomPreCall}
-            >
-              Add
-            </button>
+          <div>
+            <Label htmlFor="region">Deployment region</Label>
+            <select id="region" className="input-field" value={data.region} onChange={(e) => set('region', e.target.value)}>
+              {REGIONS.map((r) => <option key={r.code || 'none'} value={r.code}>{r.label}</option>)}
+            </select>
+            <Guide>Sets currency, emergency numbers and phone-number length. Left blank, the agent stays deliberately generic.</Guide>
           </div>
-        </Field>
-      </Section>
+        </div>
 
-      <Section title="Knowledge Base">
-        <Field label="Common caller FAQs" hint="Paste any FAQs, guidelines, or knowledge the agent should use to answer questions.">
-          <TextArea value={data.faqsText} onChange={(v: string) => set("faqsText", v)} rows={6} placeholder="e.g. Do you accept walk-ins? Yes, we accept walk-ins on weekdays between 10am and 4pm." expandable={true} />
-        </Field>
-      </Section>
+        <div>
+          <Segmented
+            label="Call direction"
+            value={data.callDirection}
+            onChange={(v) => set('callDirection', v)}
+            options={[{ value: 'Inbound', label: 'Inbound' }, { value: 'Outbound', label: 'Outbound' }]}
+          />
+        </div>
 
-      <Section title="Policies & Guardrails">
-        <Field label="Key business policies">
-          {data.policies.map((p, i) => (
-            <RepeatRow key={i} onRemove={() => removeRow("policies", i)} removable={data.policies.length > 1}>
-              <div className="flex flex-col gap-2">
-                <Select value={p.type} onChange={(v: string) => updateRow("policies", i, "type", v)} options={["Cancellation", "Late fee", "Refund", "Rescheduling", "Other"]} />
-                {p.type === "Other" && (
-                  <TextInput value={p.customType || ""} onChange={(v: string) => updateRow("policies", i, "customType", v)} placeholder="Policy name (e.g. Return Policy)" />
+        <div>
+          <Label htmlFor="callPurpose">Call purpose *</Label>
+          <textarea id="callPurpose" className="input-field resize-y" rows={3} value={data.callPurpose}
+            onChange={(e) => set('callPurpose', e.target.value)}
+            placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default} />
+          {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20
+            ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint>
+            : data.callPurpose.trim().length >= 20
+              ? <Hint tone="ok">Good specificity.</Hint>
+              : null}
+          <Guide>
+            Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it
+            when you move to the next section.
+          </Guide>
+        </div>
+
+        <div className="my-6 h-px bg-line" />
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="primaryLanguage">Primary language</Label>
+            <select id="primaryLanguage" className="input-field" value={data.primaryLanguage} onChange={(e) => set('primaryLanguage', e.target.value)}>
+              {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="secondaryLanguage">Secondary language</Label>
+            <select id="secondaryLanguage" className="input-field" value={data.secondaryLanguage} onChange={(e) => set('secondaryLanguage', e.target.value)}>
+              <option value="None">None</option>
+              {LANGUAGES.filter((l) => l !== data.primaryLanguage).map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+            <Guide>Adding one puts the agent in multilingual mode — it mirrors whichever language the caller uses.</Guide>
+          </div>
+        </div>
+
+        <div>
+          <Segmented
+            label="Voice gender"
+            value={data.voiceGender}
+            onChange={(v) => set('voiceGender', v)}
+            options={[{ value: 'Female', label: 'Female' }, { value: 'Male', label: 'Male' }]}
+          />
+        </div>
+
+        <fieldset className="border-0 p-0 m-0">
+          <legend className="block text-[14px] font-medium text-ink mb-2">Voice tone</legend>
+          <div role="radiogroup" aria-label="Voice tone" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {TONE_OPTIONS.map((t) => (
+              <button key={t.id} type="button" role="radio" aria-checked={data.voiceTone === t.id}
+                onClick={() => set('voiceTone', t.id)}
+                className={`rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
+                  data.voiceTone === t.id
+                    ? 'border-ink bg-subtle text-ink'
+                    : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                }`}>
+                <span className="block font-medium">{t.label}</span>
+                <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        {draftErrorBanner}
+        <NextButton label="Next: Conversation" onClick={() => void goNext('persona')} busy={drafting.length > 0} />
+      </section>
+    );
+  }
+
+  /* ──────────────────────── CONVERSATION ──────────────────────── */
+
+  if (activeModule === 'conversation') {
+    return (
+      <section className="space-y-5" aria-labelledby="module-heading">
+        <ModuleHeader id="conversation" />
+
+        {!data.callPurpose.trim() && (
+          <div className="card bg-subtle px-4 py-3 text-[13px] text-graphite">
+            Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('persona')}>Persona</button> and
+            we will draft the opening message, call flow and guardrails for you.
+          </div>
+        )}
+
+        <div>
+          <Label htmlFor="openingMessage" badge={wasDrafted('openingMessage') ? <GeneratedBadge /> : undefined}>Opening message</Label>
+          <textarea id="openingMessage" className="input-field resize-y" rows={3} value={data.openingMessage}
+            onChange={(e) => set('openingMessage', e.target.value)}
+            placeholder="Hi, this is Ava from Meridian Dental — how can I help today?" />
+          {data.openingMessage && data.companyName && !data.openingMessage.includes(data.companyName)
+            ? <Hint tone="idea">Naming {data.companyName} in the opener measurably increases engagement.</Hint>
+            : null}
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <Guide>The first five seconds decide whether the caller stays. Say who you are and why you are calling.</Guide>
+            <DraftButton busy={isDrafting('openingMessage')} onClick={() => void runAutoFill(['openingMessage'], true)}>Redraft</DraftButton>
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="callFlow" badge={wasDrafted('callFlow') ? <GeneratedBadge /> : undefined}>Call flow *</Label>
+          <p className="text-[12px] text-faint mb-2">
+            Plain language, one goal per line — this is a sketch for you, not the prompt. The compiler turns it into
+            the full state machine with branching, retries and confirmations.
+          </p>
+          <textarea id="callFlow" className="input-field resize-y font-mono text-[13px]" rows={9} value={data.callFlow}
+            onChange={(e) => set('callFlow', e.target.value)}
+            placeholder={'1. Greet and introduce yourself\n2. Ask what the caller needs\n3. Collect the details you need\n4. Answer questions from the knowledge base\n5. Confirm next steps and close'} />
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <Guide>Four to eight steps works best. Include the close.</Guide>
+            <DraftButton busy={isDrafting('callFlow')} onClick={() => void runAutoFill(['callFlow'], true)}>Redraft</DraftButton>
+          </div>
+        </div>
+
+        <div className="my-6 h-px bg-line" />
+
+        <div>
+          <span className="block text-[14px] font-medium text-ink mb-1.5">Variables</span>
+          <p className="text-[12px] text-faint mb-3">
+            Data your system already knows before the call and injects into the conversation. Reference them as{' '}
+            <code className="font-mono text-ink-soft">{'{{variable_name}}'}</code> in the opening message or call flow.
+            Anything the agent has to <em>ask</em> for does not belong here — the compiler derives those from your flow.
+          </p>
+
+          {data.variables.length === 0 && (
+            <p className="text-[13px] text-faint mb-3 italic">No variables yet — the agent will run without pre-call context.</p>
+          )}
+
+          <div className="space-y-2">
+            {data.variables.map((v, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <input
+                  className="input-field w-2/5 font-mono text-[13px]"
+                  aria-label={`Variable name ${i + 1}`}
+                  placeholder="customer_name"
+                  value={v.key}
+                  onChange={(e) => updateVariable(i, 'key', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase())}
+                />
+                <input
+                  className="input-field flex-1 text-[13px]"
+                  aria-label={`Variable sample value ${i + 1}`}
+                  placeholder="Sample value (e.g. Priya)"
+                  value={v.value}
+                  onChange={(e) => updateVariable(i, 'value', e.target.value)}
+                />
+                <button type="button" aria-label={`Remove variable ${i + 1}`} onClick={() => removeVariable(i)}
+                  className="p-2 text-faint hover:text-ink transition-colors shrink-0">
+                  <X className="w-4 h-4" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]">
+            <Plus className="w-4 h-4" aria-hidden="true" /> Add variable
+          </button>
+        </div>
+
+        {draftErrorBanner}
+        <NextButton label="Next: Knowledge Base" onClick={() => void goNext('conversation')} busy={drafting.length > 0} />
+      </section>
+    );
+  }
+
+  /* ───────────────────────── KNOWLEDGE ────────────────────────── */
+
+  if (activeModule === 'knowledge') {
+    return (
+      <section className="space-y-5" aria-labelledby="module-heading">
+        <ModuleHeader id="knowledge" />
+
+        <div className="card space-y-4 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <Toggle id="kbEnabled" label="Enable knowledge base" checked={data.kbEnabled} onChange={(v) => set('kbEnabled', v)} />
+            <div className="relative">
+              <button
+                type="button"
+                aria-expanded={kbTipOpen}
+                aria-controls="kb-tip"
+                onClick={() => setKbTipOpen((o) => !o)}
+                onMouseEnter={() => setKbTipOpen(true)}
+                className="link inline-flex items-center gap-1.5 text-[12px]"
+              >
+                <Info className="w-4 h-4" aria-hidden="true" /> What should I add here?
+              </button>
+
+              {kbTipOpen && (
+                <div
+                  id="kb-tip"
+                  role="tooltip"
+                  onMouseLeave={() => setKbTipOpen(false)}
+                  className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-line bg-surface p-4 shadow-md"
+                >
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <p className="text-[13px] font-semibold text-ink">Anything factual the agent might be asked</p>
+                    <button type="button" aria-label="Close" onClick={() => setKbTipOpen(false)} className="text-faint hover:text-ink">
+                      <X className="w-4 h-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <p className="text-[12px] text-graphite mb-3">
+                    The compiler reads this and files each fact into the right part of the prompt — business facts,
+                    FAQ answers, policies and objection handling.
+                  </p>
+                  <ul className="space-y-2">
+                    {KB_SOURCE_HINTS.map((h) => (
+                      <li key={h.title} className="text-[12px] leading-[1.5]">
+                        <span className="font-medium text-ink">{h.title}</span>
+                        <span className="text-graphite"> — {h.desc}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {data.kbEnabled ? (
+            <div className="space-y-4">
+              <div>
+                <Label>Upload documents</Label>
+                <p className="text-[12px] text-faint mb-2">
+                  Drop your FAQ docs, pricing sheets, policy files, or past call transcripts.
+                  Text is extracted and added to the content box below.
+                </p>
+                <FileUploadZone
+                  files={kbFiles}
+                  onFilesChange={setKbFiles}
+                  onTextExtracted={handleFileText}
+                  onFileRemoved={handleFileRemoved}
+                />
+              </div>
+
+              <div className="my-2 h-px bg-line" />
+
+              <div>
+                <Label htmlFor="kbContent">Knowledge base content</Label>
+                <textarea id="kbContent" className="input-field resize-y" rows={14} value={data.kbContent}
+                  onChange={(e) => set('kbContent', e.target.value)}
+                  placeholder={'Paste your FAQs, pricing sheet, policies, objection notes, troubleshooting steps, hours and locations — raw text is fine, it does not need formatting.'} />
+                {data.kbContent.trim() && (
+                  <p className="text-[11px] text-faint pt-1 tabular-nums">
+                    {data.kbContent.length.toLocaleString()} chars
+                  </p>
                 )}
+                <Guide>
+                  Raw and messy is fine. Facts get extracted and routed into the prompt automatically; nothing is
+                  pasted in verbatim. Uploaded file text appears here — feel free to edit.
+                </Guide>
               </div>
-              <div className="md:col-span-2">
-                <TextInput value={p.desc} onChange={(v: string) => updateRow("policies", i, "desc", v)} placeholder="Describe the rule" />
-              </div>
-            </RepeatRow>
-          ))}
-          <AddRowButton onClick={() => addRow("policies", emptyPolicy)} label="Add policy" />
-        </Field>
-
-        <Field label="Live transfer / escalation">
-          <div className="flex items-center space-x-3">
-            <Toggle checked={data.transferEnabled} onChange={(v: boolean) => set("transferEnabled", v)} />
-            <span className="text-[16px] text-ink">{data.transferEnabled ? "Enabled" : "Disabled"}</span>
-          </div>
-        </Field>
-        
-        {data.transferEnabled && (
-          <div className="ml-4 pl-4 border-l hairline-border-muted space-y-6">
-            <Field label="Transfer numbers">
-              {data.transferNumbers.map((t, i) => (
-                <RepeatRow key={i} onRemove={() => removeRow("transferNumbers", i)} removable={data.transferNumbers.length > 1}>
-                  <TextInput value={t.label} onChange={(v: string) => updateRow("transferNumbers", i, "label", v)} placeholder="Label (e.g. Manager)" />
-                  <TextInput mono value={t.number} onChange={(v: string) => updateRow("transferNumbers", i, "number", v)} placeholder="Phone number" />
-                </RepeatRow>
-              ))}
-              <AddRowButton onClick={() => addRow("transferNumbers", emptyTransferNum)} label="Add number" />
-            </Field>
-            <Field label="Transfer when...">
-              <CheckboxChips values={data.transferConditions} onToggle={(v: string) => toggleInArray("transferConditions", v)} options={TRANSFER_CONDITIONS} />
-            </Field>
-            <Field label="After-hours behavior if no one can take the transfer">
-              <TextArea value={data.afterHoursBehavior} onChange={(v: string) => set("afterHoursBehavior", v)} rows={2} placeholder="e.g. Take a message and confirm a callback window" />
-            </Field>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          <Field label="Voice Gender">
-            <Select value={data.voiceGender} onChange={(v: string) => set("voiceGender", v)} options={["Female", "Male"]} />
-          </Field>
-          <Field label="Tone">
-            <CheckboxChips values={data.toneWords} onToggle={(v: string) => toggleInArray("toneWords", v)} options={TONE_WORDS} />
-          </Field>
+            </div>
+          ) : (
+            <p className="text-[13px] text-graphite">
+              Optional. Without it the agent answers only from the Persona and Conversation sections, and says it does
+              not have the detail for anything else — which is safe, just less useful.
+            </p>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Field label="Disclose AI identity to caller">
-            <div className="flex items-center space-x-3">
-              <Toggle checked={data.aiDisclosure} onChange={(v: boolean) => set("aiDisclosure", v)} />
-              <span className="text-[16px] text-ink">{data.aiDisclosure ? "Yes" : "No"}</span>
-            </div>
-          </Field>
-          <Field label="Recording consent required">
-            <div className="flex items-center space-x-3">
-              <Toggle checked={data.recordingConsent} onChange={(v: boolean) => set("recordingConsent", v)} />
-              <span className="text-[16px] text-ink">{data.recordingConsent ? "Yes" : "No"}</span>
-            </div>
-          </Field>
+        <NextButton label="Next: Guardrails & Call Handling" onClick={() => void goNext('knowledge')} busy={drafting.length > 0} />
+      </section>
+    );
+  }
+
+  /* ───────────────── GUARDRAILS & CALL HANDLING ───────────────── */
+
+  return (
+    <section className="space-y-6" aria-labelledby="module-heading">
+      <ModuleHeader id="rules" />
+
+      {/* Guardrails */}
+      <div>
+        <Label htmlFor="guardrails" badge={wasDrafted('guardrails') ? <GeneratedBadge /> : undefined}>Guardrails</Label>
+        <textarea id="guardrails" className="input-field resize-y" rows={6} value={data.guardrails}
+          onChange={(e) => set('guardrails', e.target.value)}
+          placeholder={'One rule per line, e.g.\nNever promise a discount without manager approval.\nNever quote an exact price — say "starting from".\nAlways offer a human transfer if asked twice.'} />
+        {data.guardrails.trim() && data.guardrails.trim().length < 20
+          ? <Hint tone="warn">Add specifics — vague guardrails do not prevent off-script behaviour.</Hint>
+          : null}
+        <div className="flex items-center justify-between gap-4 pt-1">
+          <Guide>One rule per line. These become hard prohibitions in the compiled prompt, not suggestions.</Guide>
+          <DraftButton busy={isDrafting('guardrails')} onClick={() => void runAutoFill(['guardrails'], true)}>
+            {data.guardrails.trim() ? 'Redraft' : 'Draft from call purpose'}
+          </DraftButton>
+        </div>
+        {draftErrorBanner}
+      </div>
+
+      <div className="my-6 h-px bg-line" />
+
+      {/* Compliance */}
+      <div>
+        <h3 className="text-[14px] font-semibold text-ink mb-4">Disclosure &amp; compliance</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <Toggle id="discloseAI" label="Disclose AI identity to the caller" checked={data.discloseAI} onChange={(v) => set('discloseAI', v)} />
+          <Toggle id="recordingConsent" label="Recording consent required" checked={data.recordingConsent} onChange={(v) => set('recordingConsent', v)} />
         </div>
         {data.recordingConsent && (
-          <Field label="Exact disclosure line">
-            <TextInput value={data.disclosureText} onChange={(v: string) => set("disclosureText", v)} placeholder="This call may be recorded for quality and training purposes." />
-          </Field>
+          <div className="mt-4">
+            <Label htmlFor="disclosureText">Exact disclosure line</Label>
+            <input id="disclosureText" className="input-field" value={data.disclosureText}
+              onChange={(e) => set('disclosureText', e.target.value)}
+              placeholder="This call may be recorded for quality and training purposes." />
+            <Guide>Leave blank and the agent will phrase it itself.</Guide>
+          </div>
         )}
-      </Section>
+      </div>
 
-      <Section title="Call Flow Design & Mechanics">
-        <Field
-          label="Describe the basic call flow"
-          hint='Plain language is fine — e.g. "After greeting, callers want to book, reschedule, or ask a question. Handle booking by collecting date and service, then confirm and end. For anything else, answer from FAQs and offer to transfer."'
-        >
-          <TextArea
-            value={data.callFlowDescription}
-            onChange={(v: string) => set("callFlowDescription", v)}
-            rows={5}
-            placeholder="Walk through it like you're briefing a new receptionist..."
-          />
-        </Field>
-        <Field label="Opening line (Optional)" hint="If left blank, the AI will generate a natural opening greeting automatically.">
-          <TextArea value={data.openingLine} onChange={(v: string) => set("openingLine", v)} rows={2} placeholder='e.g. "Thanks for calling Meridian Dental, this is Ava — how can I help today?"' />
-        </Field>
-        <Field label="Closing script (Optional)" hint="If left blank, the AI will generate a natural closing automatically.">
-          <TextArea value={data.closingScript} onChange={(v: string) => set("closingScript", v)} rows={2} placeholder='e.g. "Thanks for calling — have a great day!"' />
-        </Field>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          <Field label="Interruption / barge-in">
-            <div className="flex items-center space-x-3">
-              <Toggle checked={data.interruption} onChange={(v: boolean) => set("interruption", v)} />
-              <span className="text-[16px] text-ink">{data.interruption ? "Allowed" : "Disallowed"}</span>
-            </div>
-          </Field>
-          <Field label="Mid-flow digression handling">
-            <Select
-              value={data.digression}
-              onChange={(v: string) => set("digression", v)}
-              options={["Answer briefly, then resume the script", "Note it and continue the script only", "Refuse and redirect to the script"]}
-            />
-          </Field>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Field label="Retry exhaustion fallback">
-            <Select
-              value={data.retryFallback}
-              onChange={(v: string) => set("retryFallback", v)}
-              options={["Transfer to a human agent", "End the call politely", "Offer a callback", "Repeat the request differently"]}
-            />
-          </Field>
-          <Field label="Max retries before fallback">
-            <TextInput type="number" min="1" max="5" mono value={data.maxRetries} onChange={(v: string) => set("maxRetries", Number(v))} />
-          </Field>
-        </div>
-        <Field label="Confirmation & Read-back" hint="Does the agent need to explicitly confirm collected information before proceeding?">
-          <div className="flex items-center space-x-3 mb-2">
-            <Toggle checked={data.needsConfirmation} onChange={(v: boolean) => set("needsConfirmation", v)} />
-            <span className="text-[16px] text-ink">{data.needsConfirmation ? "Yes, confirmation is required" : "No confirmation required"}</span>
+      <div className="my-6 h-px bg-line" />
+
+      {/* Digression + fallback */}
+      <div>
+        <h3 className="text-[14px] font-semibold text-ink mb-4">Digression &amp; fallback</h3>
+
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="digressionHandling">Mid-flow digression handling</Label>
+            <select id="digressionHandling" className="input-field" value={data.digressionHandling} onChange={(e) => set('digressionHandling', e.target.value)}>
+              <option>Answer briefly, then resume the script</option>
+              <option>Note it and continue the script only</option>
+              <option>Refuse and redirect to the script</option>
+            </select>
+            <Guide>What happens when the caller asks something off-flow mid-conversation.</Guide>
           </div>
-          
-          {data.needsConfirmation && (
-            <div className="mt-4 p-5 border hairline-border-muted rounded-cards space-y-6">
-              <Field label="What needs to be confirmed?" required hint="e.g. 'Email, phone number, and appointment time' or 'Order ID'">
-                <TextInput value={data.confirmationScope} onChange={(v: string) => set("confirmationScope", v)} placeholder="List the critical fields to read back..." />
-              </Field>
-              <div className="-mb-6">
-                <Field label="How should it be confirmed?" required>
-                  <RadioGroup
-                    value={data.confirmationStyle}
-                    onChange={(v: string) => set("confirmationStyle", v)}
-                    options={["Character-by-character spelling", "Summary / paraphrase back", "Hybrid — spell critical data, summarize the rest"]}
-                  />
-                </Field>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="retryFallback">Retry exhaustion fallback</Label>
+              <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={(e) => set('retryFallback', e.target.value)}>
+                <option>Transfer to a human agent</option>
+                <option>End the call politely</option>
+                <option>Offer a callback</option>
+                <option>Repeat the request differently</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="maxRetries">Max retries before fallback</Label>
+              <input id="maxRetries" type="number" min={1} max={5} className="input-field font-mono"
+                value={data.maxRetries}
+                onChange={(e) => set('maxRetries', Math.min(5, Math.max(1, Number(e.target.value) || 1)))} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="my-6 h-px bg-line" />
+
+      {/* Live transfer */}
+      <div>
+        <h3 className="text-[14px] font-semibold text-ink mb-4">Live transfer &amp; escalation</h3>
+        <Toggle id="liveTransferEnabled" label="Enable live transfer" checked={data.liveTransferEnabled}
+          onChange={(v) => set('liveTransferEnabled', v)} onText="Enabled" offText="Disabled" />
+
+        {data.liveTransferEnabled && (
+          <div className="mt-4 space-y-6 rounded-lg border border-line bg-surface p-4">
+            <div>
+              <span className="block text-[14px] font-medium text-ink mb-3">Transfer numbers</span>
+              <div className="space-y-3">
+                {data.transferNumbers.map((t, i) => (
+                  <div key={i} className="flex gap-2">
+                    <input className="input-field flex-1" aria-label={`Transfer label ${i + 1}`} placeholder="Label (e.g. Front desk)"
+                      value={t.label} onChange={(e) => updateTransferNumber(i, 'label', e.target.value)} />
+                    <input className="input-field flex-1 font-mono text-[13px]" aria-label={`Transfer number ${i + 1}`} placeholder="+1 415 555 0142"
+                      value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
+                    {data.transferNumbers.length > 1 && (
+                      <button type="button" aria-label={`Remove transfer number ${i + 1}`} onClick={() => removeTransferNumber(i)}
+                        className="p-2 text-faint hover:text-ink transition-colors shrink-0">
+                        <X className="w-4 h-4" aria-hidden="true" />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
+              <button type="button" onClick={addTransferNumber} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]">
+                <Plus className="w-4 h-4" aria-hidden="true" /> Add number
+              </button>
             </div>
-          )}
-        </Field>
-      </Section>
 
-      {itemToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-cream-paper rounded-[12px] max-w-sm w-full p-6 shadow-xl border border-border">
-            <h3 className="text-xl font-bold text-ink mb-2">Delete custom field?</h3>
-            <p className="text-graphite mb-6">
-              Are you sure you want to delete "{itemToDelete.opt}"? This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="px-4 py-2 font-medium text-ink hover:bg-black/5 rounded-[6px] transition-colors"
-                onClick={() => setItemToDelete(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 font-medium bg-red-500 text-white hover:bg-red-600 rounded-[6px] transition-colors"
-                onClick={handleDeleteConfirm}
-              >
-                Delete
-              </button>
+            <fieldset className="border-0 p-0 m-0">
+              <legend className="block text-[14px] font-medium text-ink mb-3">Transfer when…</legend>
+              <div className="flex flex-wrap gap-2">
+                {TRANSFER_TRIGGERS.map((trigger) => {
+                  const active = data.transferTriggers.includes(trigger);
+                  return (
+                    <button key={trigger} type="button" role="checkbox" aria-checked={active} onClick={() => toggleTrigger(trigger)}
+                      className={`px-3 py-1.5 text-[13px] rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+                        active ? 'border-ink bg-subtle font-medium text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                      }`}>
+                      {trigger}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div>
+              <Label htmlFor="afterHoursBehavior">If nobody can take the transfer</Label>
+              <textarea id="afterHoursBehavior" className="input-field resize-y" rows={2} value={data.afterHoursBehavior}
+                onChange={(e) => set('afterHoursBehavior', e.target.value)}
+                placeholder="e.g. Take a message and confirm a callback window" />
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </section>
   );
 }

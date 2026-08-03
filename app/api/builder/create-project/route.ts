@@ -10,7 +10,13 @@ export const POST = apiHandler(async (req: Request) => {
     const user = await getCurrentUser();
 
     const bizName = blueprint?.business?.businessName || "New Prompt Project";
-    const agentName = blueprint?.personality?.phrasesToUse?.[0] || "Sarah";
+    // The compiled spec is authoritative for the agent's name; the legacy
+    // phrasesToUse lookup only applies to blueprints from the older chat builder.
+    const agentName =
+      draft?.businessSpec?.meta?.agentName ||
+      blueprint?.business?.agentName ||
+      blueprint?.personality?.phrasesToUse?.[0] ||
+      "Sarah";
     const useCase = blueprint?.useCase || "Custom Voice Agent Prompt";
     const industry = blueprint?.business?.industry || "Cross-Industry";
 

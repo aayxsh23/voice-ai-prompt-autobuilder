@@ -1,76 +1,85 @@
 import React from 'react';
 import Link from 'next/link';
-import { Card, Badge, Button } from '../ui';
-import { Calendar, ArrowUpRight, Copy, Trash2, Edit2 } from 'lucide-react';
+import { Badge, Button } from '../ui';
+import { Copy, Trash2, Edit2 } from 'lucide-react';
+
+interface Project {
+  id: string;
+  name: string;
+  industry?: string;
+  status?: string;
+  useCase?: string;
+  businessSpec?: string;
+  updatedAt?: string;
+}
 
 interface ProjectCardProps {
-  project: any;
-  onDuplicate?: (project: any) => void;
-  onDelete?: (project: any) => void;
-  onRename?: (project: any) => void;
+  project: Project;
+  onDuplicate?: (project: Project) => void;
+  onDelete?: (project: Project) => void;
+  onRename?: (project: Project) => void;
+}
+
+function resolveGoal(project: Project): string {
+  try {
+    const spec = typeof project.businessSpec === 'string' ? JSON.parse(project.businessSpec) : project.businessSpec;
+    if (spec?.meta?.primaryGoal) return spec.meta.primaryGoal;
+  } catch {
+    // Malformed spec — fall through to the stored use case.
+  }
+  return project.useCase || '';
 }
 
 export const PromptProjectCard: React.FC<ProjectCardProps> = ({ project, onDuplicate, onDelete, onRename }) => {
   const isPublished = project.status === 'published';
-  let primaryGoal = project.useCase;
-  try {
-    const spec = typeof project.businessSpec === 'string' ? JSON.parse(project.businessSpec) : project.businessSpec;
-    if (spec?.meta?.primaryGoal) {
-      primaryGoal = spec.meta.primaryGoal;
-    }
-  } catch (e) {
-    // Ignore parse errors
-  }
+  const goal = resolveGoal(project);
+  const description =
+    goal && goal.trim() !== 'Custom Voice Agent Prompt' ? goal.charAt(0).toUpperCase() + goal.slice(1) : '';
 
   return (
-    <Card className="flex flex-col justify-between p-5 bg-white hairline-border hover:border-black/20 transition-colors rounded-cards">
-      <div className="space-y-3">
-        <div className="flex items-start justify-between">
-          <div>
-            <span className="text-[10px] uppercase font-mono text-graphite tracking-wider">{project.industry}</span>
-            <h3 className="font-medium text-ink text-[16px] line-clamp-1 mt-0.5">{project.name}</h3>
-          </div>
-          <Badge variant={isPublished ? "success" : "outline"} className="capitalize text-[10px] bg-cream-paper border-black/10">
-            <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${isPublished ? 'bg-sunshine-highlight' : 'bg-graphite'}`} />
-            <span className="text-ink">{project.status}</span>
-          </Badge>
-        </div>
-
-        <p className="text-[13px] text-graphite line-clamp-2 leading-relaxed mt-2">
-          {primaryGoal && primaryGoal.trim() !== "Custom Voice Agent Prompt" 
-            ? primaryGoal.charAt(0).toUpperCase() + primaryGoal.slice(1) 
-            : "Custom Voice Agent Prompt Architecture."}
-        </p>
+    <div className="card group flex flex-col p-4 transition-colors hover:border-line-strong">
+      <div className="flex items-start justify-between gap-3">
+        <Link href={`/project/${project.id}`} className="min-w-0 flex-1">
+          <h3 className="truncate text-[14px] font-medium text-ink group-hover:text-accent">{project.name}</h3>
+          {project.industry && <p className="mt-0.5 truncate text-[13px] text-graphite">{project.industry}</p>}
+        </Link>
+        <Badge variant={isPublished ? 'success' : 'neutral'}>
+          <span className={`h-1.5 w-1.5 rounded-full ${isPublished ? 'bg-success' : 'bg-faint'}`} />
+          {isPublished ? 'Published' : 'Draft'}
+        </Badge>
       </div>
 
-      <div className="flex items-center justify-between mt-6">
-        <span className="text-[13px] text-graphite flex items-center gap-1.5 font-mono font-medium">
-          <Calendar className="h-4 w-4" /> {new Date(project.updatedAt || Date.now()).toLocaleDateString()}
+      <p className="mt-3 line-clamp-2 min-h-[2.6em] text-[13px] leading-[1.45] text-graphite">
+        {description || <span className="text-faint">No description</span>}
+      </p>
+
+      <div className="mt-4 flex items-center justify-between border-t border-line pt-3">
+        <span className="text-[12px] text-faint">
+          {project.updatedAt
+            ? `Updated ${new Date(project.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+            : ''}
         </span>
 
-        <div className="flex items-center space-x-1">
+        {/* Secondary actions stay quiet until the card is engaged; they remain
+            reachable by keyboard because focus-within also reveals them. */}
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
           {onRename && (
-            <Button variant="ghost" size="sm" onClick={() => onRename(project)} title="Rename Project" className="h-8 w-8 p-0 text-graphite hover:text-ink hover:bg-black/5">
-              <Edit2 className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={() => onRename(project)} aria-label={`Rename ${project.name}`}>
+              <Edit2 className="h-3.5 w-3.5" />
             </Button>
           )}
           {onDuplicate && (
-            <Button variant="ghost" size="sm" onClick={() => onDuplicate(project)} title="Duplicate Project" className="h-8 w-8 p-0 text-graphite hover:text-ink hover:bg-black/5">
-              <Copy className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={() => onDuplicate(project)} aria-label={`Duplicate ${project.name}`}>
+              <Copy className="h-3.5 w-3.5" />
             </Button>
           )}
           {onDelete && (
-            <Button variant="ghost" size="sm" onClick={() => onDelete(project)} title="Delete Project" className="h-8 w-8 p-0 text-graphite hover:text-red-600 hover:bg-red-50">
-              <Trash2 className="h-4 w-4" />
+            <Button variant="danger" size="icon" onClick={() => onDelete(project)} aria-label={`Delete ${project.name}`}>
+              <Trash2 className="h-3.5 w-3.5" />
             </Button>
           )}
-          <Link href={`/project/${project.id}`}>
-            <Button size="sm" className="text-[13px] px-4 h-8 bg-ink hover:opacity-90 text-cream-paper rounded-buttons font-medium ml-1">
-              Open <ArrowUpRight className="ml-1 h-3.5 w-3.5" />
-            </Button>
-          </Link>
         </div>
       </div>
-    </Card>
+    </div>
   );
 };

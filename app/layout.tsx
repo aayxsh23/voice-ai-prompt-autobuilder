@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
-import { DM_Sans } from "next/font/google";
+import { Inter } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import "./globals.css";
 
-const dmSans = DM_Sans({
+// 400/500/600 only — nothing in the UI uses 700, and loading a weight the design
+// never calls for is dead payload. Every `font-semibold` now resolves to a real
+// cut instead of a browser-synthesised fake bold (DM Sans shipped 400/500 only).
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-dm-sans",
+  variable: "--font-inter",
   display: "swap",
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "VoiceAgent Studio — Telephony Prompt Architecture",
-  description: "Enterprise-grade prompt package builder, simulator, and lifecycle management studio for AI telephony voice agents.",
+  title: "VoiceAgent Studio",
+  description: "Build, version and test system prompts for AI telephony agents.",
 };
 
 export default function RootLayout({
@@ -21,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${dmSans.variable}`}>
-      <body className="min-h-screen bg-cream-paper text-ink antialiased selection:bg-sunshine-highlight selection:text-ink flex flex-col font-sans">
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen bg-canvas text-ink antialiased flex flex-col font-sans">
         <Navbar />
         <main className="flex-1 flex flex-col">{children}</main>
       </body>

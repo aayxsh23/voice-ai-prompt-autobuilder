@@ -1,97 +1,225 @@
 @import "tailwindcss";
 
-:root {
-  /* Colors */
-  --color-sunshine-highlight: #ffda6e;
-  --color-mint-signal: #6ece9d;
-  --color-cream-paper: #f8f5ed;
-  --color-ink: #000000;
-  --color-graphite: #707070;
+/* ─────────────────────────────────────────────────────────────
+   DESIGN TOKENS — one neutral base, one accent.
 
-  /* Typography — Scale */
-  --text-caption: 14px;
-  --leading-caption: 1.5;
-  --text-body-sm: 16px;
-  --leading-body-sm: 1.5;
-  --text-body: 18px;
-  --leading-body: 1.5;
-  --text-subheading: 20px;
-  --leading-subheading: 1.5;
-  --text-heading-sm: 24px;
-  --leading-heading-sm: 1.5;
-  --text-heading: 28px;
-  --leading-heading: 1.25;
-  --text-display: 64px;
-  --leading-display: 1.25;
-  --tracking-display: -1.02px;
+   Neutrals carry the entire interface. `accent` is reserved for
+   things the user can act on (links, focus, active state) and is
+   never used decoratively. danger/success/warning are functional
+   status only — they never appear as ornament.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  /* Surfaces */
+  --color-canvas: #fafafa;
+  --color-surface: #ffffff;
+  --color-subtle: #f5f5f5;
 
-  /* Spacing */
-  --spacing-8: 8px;
-  --spacing-16: 16px;
-  --spacing-24: 24px;
-  --spacing-32: 32px;
-  --spacing-48: 48px;
-  --spacing-64: 64px;
-  --spacing-128: 128px;
-  --spacing-192: 192px;
+  /* Lines */
+  --color-line: #e5e5e5;
+  --color-line-strong: #d4d4d4;
 
-  /* Layout */
-  --page-max-width: 1200px;
-  --section-gap: 64px;
-  --card-padding: 32px;
-  --element-gap: 16px;
+  /* Text — `ink` doubles as the primary-button fill */
+  --color-ink: #171717;
+  --color-ink-soft: #404040;
+  --color-graphite: #737373;
+  --color-faint: #a3a3a3;
 
-  /* Border Radius */
+  /* The single accent */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-soft: #eff6ff;
+
+  /* Functional status */
+  --color-danger: #dc2626;
+  --color-danger-soft: #fef2f2;
+  --color-success: #16a34a;
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* One radius scale: 6px controls, 8px containers, full for pills */
   --radius-md: 6px;
-  --radius-xl: 12px;
-  --radius-3xl: 24px;
-  --radius-tags: 9999px;
+  --radius-lg: 8px;
 }
 
-@theme {
-  --color-sunshine-highlight: var(--color-sunshine-highlight);
-  --color-mint-signal: var(--color-mint-signal);
-  --color-cream-paper: var(--color-cream-paper);
-  --color-ink: var(--color-ink);
-  --color-graphite: var(--color-graphite);
-
-  --font-sans: var(--font-dm-sans);
-  
-  --radius-md: 6px;
-  --radius-xl: 12px;
-  --radius-3xl: 24px;
+html {
+  background-color: var(--color-canvas);
 }
 
 body {
-  background-color: var(--color-cream-paper);
+  background-color: var(--color-canvas);
   color: var(--color-ink);
-  font-family: var(--font-dm-sans), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-feature-settings: "ss03" 1, "ss04" 1;
 }
 
-/* Hairline utilities */
-.hairline-border {
-  border: 1px solid var(--color-ink);
+/* Headings inherit the UI font; hierarchy comes from size and weight,
+   never from a second display family. Capped at 600 — Inter is loaded
+   at 400/500/600 only, so `font-bold` would synthesise a fake weight. */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.011em;
 }
 
-.hairline-border-muted {
-  border: 1px solid var(--color-graphite);
+/* ─────────────────────────────────────────────────────────────
+   COMPONENT PRIMITIVES
+   One button style, one input style, one card. Used everywhere;
+   no per-screen variants.
+   ───────────────────────────────────────────────────────────── */
+
+.input-field {
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-ink);
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.input-field:hover:not(:focus):not(:disabled) {
+  border-color: var(--color-line-strong);
+}
+.input-field:focus {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.12);
+}
+.input-field::placeholder {
+  color: var(--color-faint);
+}
+.input-field:disabled {
+  background: var(--color-subtle);
+  color: var(--color-graphite);
+  cursor: not-allowed;
+}
+select.input-field {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23737373' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
-::-webkit-scrollbar-track {
-  background: var(--color-cream-paper);
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
-::-webkit-scrollbar-thumb {
-  background: var(--color-graphite);
+
+/* Modifiers below are applied alongside `.btn`, e.g. class="btn btn-primary" */
+.btn-primary {
+  background: var(--color-ink);
+  color: #ffffff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #000000;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  border-color: var(--color-line);
+  color: var(--color-ink);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-subtle);
+  border-color: var(--color-line-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-graphite);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-subtle);
+  color: var(--color-ink);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--color-graphite);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+}
+
+/* Text link — the only place accent appears in running text */
+.link {
+  color: var(--color-accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+.link:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+.link:disabled {
+  color: var(--color-faint);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+/* One focus treatment for everything keyboard-reachable */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
   border-radius: 3px;
 }
+.input-field:focus-visible {
+  outline: none;
+}
+
+/* Motion: state feedback only. Respect reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 5px;
+  border: 3px solid var(--color-canvas);
+}
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ink);
+  background: var(--color-graphite);
 }

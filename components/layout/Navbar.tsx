@@ -1,35 +1,30 @@
 import React from 'react';
 import Link from 'next/link';
-import { Plus, List } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
   return (
-    <header className="sticky top-0 z-50 w-full bg-cream-paper hairline-border-muted border-t-0 border-r-0 border-l-0">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6 relative">
-        {/* Left Side: Past Projects */}
-        <div className="flex-1 flex justify-start">
-          <Link href="/dashboard" className="inline-flex items-center justify-center h-10 px-6 font-medium text-[16px] text-ink bg-transparent border border-transparent hover:hairline-border rounded-[24px] transition-all">
-            <List className="w-4 h-4 mr-2" />
-            Past Projects
+    <header className="sticky top-0 z-50 w-full border-b border-line bg-surface">
+      <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-6">
+        <div className="flex items-center gap-6">
+          <Link href="/dashboard" className="text-[14px] font-semibold tracking-[-0.01em] text-ink">
+            TechLadder.ai
+          </Link>
+          <Link
+            href="/dashboard"
+            className="text-[13px] font-medium text-graphite transition-colors hover:text-ink"
+          >
+            Projects
           </Link>
         </div>
 
-        {/* Center: TechLadder.ai Logo */}
-        <div className="flex-1 flex justify-center">
-          <Link href="/" className="flex items-center text-ink hover:text-graphite transition-colors">
-            <span className="font-medium text-[20px] tracking-tight">
-              TechLadder.ai
-            </span>
-          </Link>
-        </div>
-
-        {/* Right Side: New Session */}
-        <div className="flex-1 flex justify-end">
-          <Link href="/builder" className="inline-flex items-center justify-center h-10 px-6 font-medium text-[16px] text-ink bg-sunshine-highlight rounded-[24px] hover:opacity-90 transition-opacity">
-            <Plus className="w-4 h-4 mr-2" />
-            New Session
-          </Link>
-        </div>
+        <Link
+          href="/builder"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-ink px-3 text-[13px] font-medium text-white transition-colors hover:bg-black"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New session
+        </Link>
       </div>
     </header>
   );

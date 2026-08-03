@@ -1,6 +1,6 @@
 import React from 'react';
-import { Card, Button, Textarea } from '../ui';
-import { Save, Copy, Check } from 'lucide-react';
+import { Button } from '../ui';
+import { Copy, Check } from 'lucide-react';
 
 interface Props {
   value: string;
@@ -13,33 +13,32 @@ export const AgentPromptEditor: React.FC<Props> = ({ value, onChange, onSave, sa
   const [copied, setCopied] = React.useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(value);
+    navigator.clipboard?.writeText(value);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <Card className="p-0 overflow-hidden flex flex-col h-full bg-white hairline-border rounded-cards shadow-sm">
-      <div className="bg-cream-paper px-4 py-3 flex items-center justify-between border-b hairline-border-muted shrink-0">
-        <span className="font-semibold text-[14px] text-ink">Prompt</span>
-        <div className="flex items-center space-x-2">
-          <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 text-[12px] text-graphite hover:text-ink hover:bg-black/5 rounded-buttons">
-            {copied ? <Check className="h-4 w-4 mr-1.5 text-sunshine-highlight" /> : <Copy className="h-4 w-4 mr-1.5" />}
-            {copied ? "Copied" : "Copy"}
+    <div className="card flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+        <span className="text-[13px] font-medium text-ink">System prompt</span>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" onClick={handleCopy}>
+            {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? 'Copied' : 'Copy'}
           </Button>
-          <Button size="sm" onClick={onSave} disabled={saving} className="h-8 text-[12px] bg-ink text-cream-paper hover:opacity-90 rounded-buttons font-medium">
-            <Save className="h-4 w-4 mr-1.5" />
-            {saving ? "Saving..." : "Save"}
+          <Button onClick={onSave} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </div>
-      <div className="flex-1 p-0">
-        <Textarea
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="w-full h-full min-h-[650px] bg-white text-ink font-mono text-[13px] leading-relaxed border-none rounded-none p-6 focus:ring-0 resize-none shadow-inner"
-        />
-      </div>
-    </Card>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        spellCheck={false}
+        aria-label="System prompt"
+        className="flex-1 resize-none border-0 bg-surface p-4 font-mono text-[13px] leading-[1.6] text-ink-soft outline-none"
+      />
+    </div>
   );
 };

@@ -8,5 +8,5 @@ export default function TestAlias({ params }: { params: Promise<{ projectId: str
   React.useEffect(() => {
     params.then(p => router.replace(`/project/${p.projectId}?tab=simulator`));
   }, [params, router]);
-  return <div className="p-12 text-center text-slate-500">Opening simulator...</div>;
+  return <p className="py-24 text-center text-[13px] text-graphite">Opening simulator…</p>;
 }
