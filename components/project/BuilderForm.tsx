@@ -27,12 +27,6 @@ const INDUSTRIES = [
 
 const LANGUAGES = ['English', 'Hindi', 'Spanish', 'French', 'German'];
 
-/**
- * Deployment region. This is the ONE piece of location data the compiler needs:
- * it gates emergency numbers, currency and phone-digit validation
- * (see lib/compiler/assembler/PromptAssembler.ts). Left blank the compiler stays
- * deliberately generic rather than assuming a country.
- */
 export const REGIONS = [
   { code: '', label: 'Not specified' },
   { code: 'US', label: 'United States' },
@@ -72,12 +66,6 @@ const TRANSFER_TRIGGERS = [
   'Call is after business hours',
 ];
 
-/**
- * Shown as the Knowledge Base tooltip. The compiler runs an extraction pass over
- * whatever is pasted here and routes the facts into the right prompt sections
- * (see lib/compiler/planners/KnowledgeExtractor.ts) — so this list doubles as the
- * spec for what the extractor looks for.
- */
 export const KB_SOURCE_HINTS = [
   { title: 'FAQ document', desc: 'Common questions and answers, so the agent responds accurately without leaving the script.' },
   { title: 'Pricing and product sheet', desc: 'Plans, SKUs and features, so the agent quotes exact details instead of guessing.' },
@@ -177,10 +165,8 @@ export function getModuleCompletion(id: ModuleId, d: BuilderData): Completion {
       const hasGuardrails = !!d.guardrails.trim();
       const hasTransfer = d.liveTransferEnabled;
       
-      // If they haven't typed guardrails and haven't enabled transfer, it's untouched.
       if (!hasGuardrails && !hasTransfer) return 'empty';
       
-      // If they enabled transfer, they must provide at least one valid number
       const transferOk = !hasTransfer || d.transferNumbers.some((t) => t.number.trim());
       
       return (hasGuardrails && transferOk) ? 'complete' : 'partial';
@@ -188,7 +174,6 @@ export function getModuleCompletion(id: ModuleId, d: BuilderData): Completion {
   }
 }
 
-/** Blocks submission — everything else the compiler can reason its way through. */
 export function getBlockingGaps(d: BuilderData): string[] {
   const gaps: string[] = [];
   if (!d.companyName.trim()) gaps.push('Company name (Persona)');
@@ -201,11 +186,20 @@ export function getBlockingGaps(d: BuilderData): string[] {
   return gaps;
 }
 
+export function getRequiredProgress(d: BuilderData) {
+  const required = [
+      !!d.companyName.trim(),
+      !!d.callPurpose.trim(),
+      !!d.callFlow.trim(),
+  ];
+  return Math.round((required.filter(Boolean).length / required.length) * 100);
+}
+
 /* ═══════════════════════════════════════════════════════════════
    PRIMITIVES
    ═══════════════════════════════════════════════════════════════ */
 
-function Label({ htmlFor, children, badge }: { htmlFor?: string; children: React.ReactNode; badge?: React.ReactNode }) {
+export function Label({ htmlFor, children, badge }: { htmlFor?: string; children: React.ReactNode; badge?: React.ReactNode }) {
   return (
     <label htmlFor={htmlFor} className="flex items-center gap-2 text-[14px] font-medium text-ink mb-1.5">
       <span>{children}</span>
@@ -214,16 +208,16 @@ function Label({ htmlFor, children, badge }: { htmlFor?: string; children: React
   );
 }
 
-function Guide({ children }: { children: React.ReactNode }) {
+export function Guide({ children }: { children: React.ReactNode }) {
   return (
-    <p className="flex items-start gap-1.5 text-[12px] leading-[1.5] text-faint pt-1.5">
+    <p className="flex items-start gap-1.5 text-[12px] leading-[1.5] text-graphite pt-1.5">
       <Info className="w-[13px] h-[13px] shrink-0 mt-[2px]" aria-hidden="true" />
       <span>{children}</span>
     </p>
   );
 }
 
-function Hint({ tone, children }: { tone: 'ok' | 'warn' | 'idea'; children: React.ReactNode }) {
+export function Hint({ tone, children }: { tone: 'ok' | 'warn' | 'idea'; children: React.ReactNode }) {
   const color = tone === 'warn' ? 'text-warning' : tone === 'ok' ? 'text-success' : 'text-faint';
   return (
     <p className={`flex items-center gap-1.5 text-[12px] pt-1 ${color}`}>
@@ -233,12 +227,23 @@ function Hint({ tone, children }: { tone: 'ok' | 'warn' | 'idea'; children: Reac
   );
 }
 
-function GeneratedBadge() {
+export function GeneratedBadge() {
   return (
     <span className="inline-flex items-center rounded-full border border-line bg-subtle px-2 py-0.5 text-[11px] font-medium text-graphite">
       Drafted
     </span>
   );
+}
+
+export function StepDot({ status, index }: { status: Completion; index: number }) {
+  const base = 'w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold tabular-nums';
+  if (status === 'complete') {
+      return <span className={`${base} bg-success text-white`}><Check className="w-3 h-3" strokeWidth="3" /></span>;
+  }
+  if (status === 'partial') {
+      return <span className={`${base} bg-warning text-white`}>{index}</span>;
+  }
+  return <span className={`${base} border border-line-strong bg-surface text-graphite`}>{index}</span>;
 }
 
 export function CompletionDot({ status }: { status: Completion }) {
@@ -254,7 +259,7 @@ export function CompletionDot({ status }: { status: Completion }) {
   );
 }
 
-function Toggle({ id, label, checked, onChange, onText = 'Yes', offText = 'No' }: {
+export function Toggle({ id, label, checked, onChange, onText = 'Yes', offText = 'No' }: {
   id: string; label: string; checked: boolean; onChange: (v: boolean) => void; onText?: string; offText?: string;
 }) {
   return (
@@ -281,7 +286,7 @@ function Toggle({ id, label, checked, onChange, onText = 'Yes', offText = 'No' }
   );
 }
 
-function Segmented<T extends string>({ label, value, options, onChange }: {
+export function Segmented<T extends string>({ label, value, options, onChange }: {
   label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
 }) {
   return (
@@ -307,7 +312,7 @@ function Segmented<T extends string>({ label, value, options, onChange }: {
   );
 }
 
-function ModuleHeader({ id }: { id: ModuleId }) {
+export function ModuleHeader({ id }: { id: ModuleId }) {
   return (
     <header className="mb-6">
       <h2 className="text-[20px] font-semibold text-ink mb-1">{MODULES[id].label}</h2>
@@ -316,17 +321,17 @@ function ModuleHeader({ id }: { id: ModuleId }) {
   );
 }
 
-function NextButton({ label, onClick, busy }: { label: string; onClick: () => void; busy?: boolean }) {
+export function NextButton({ label, onClick, busy, disabled = false }: { label: string; onClick: () => void; busy?: boolean; disabled?: boolean }) {
   return (
     <div className="pt-5 mt-2 border-t border-line flex justify-end">
-      <button type="button" onClick={onClick} className="btn btn-primary" disabled={busy}>
+      <button type="button" onClick={onClick} className="btn btn-primary" disabled={busy || disabled}>
         {busy ? <><Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" /> Drafting…</> : <>{label} <ArrowRight className="w-4 h-4" aria-hidden="true" /></>}
       </button>
     </div>
   );
 }
 
-function DraftButton({ onClick, busy, children }: { onClick: () => void; busy: boolean; children: React.ReactNode }) {
+export function DraftButton({ onClick, busy, children }: { onClick: () => void; busy: boolean; children: React.ReactNode }) {
   return (
     <button
       type="button"
@@ -359,6 +364,8 @@ export function PersonaCard({ data }: { data: BuilderData }) {
           {data.agentName || <span className="font-normal text-faint">Unnamed agent</span>}
           <span className="text-faint"> · </span>
           {data.companyName || <span className="font-normal text-faint">No company</span>}
+          <span className="text-faint"> · </span>
+          <span className={`text-[11px] px-2 py-0.5 rounded-full ${data.callDirection === 'Inbound' ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'} font-medium`}>{data.callDirection}</span>
         </p>
         <p className="truncate text-[12px] text-graphite">{meta.join(' · ')}</p>
       </div>
@@ -377,52 +384,27 @@ export function PersonaCard({ data }: { data: BuilderData }) {
 
 type AutoField = 'openingMessage' | 'callFlow' | 'guardrails';
 
-interface BuilderFormProps {
+export interface BuilderFormProps {
   data: BuilderData;
   setData: React.Dispatch<React.SetStateAction<BuilderData>>;
   activeModule: ModuleId;
   setActiveModule: (m: ModuleId) => void;
+  validationErrors: Record<string, boolean>;
+  setValidationErrors: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
 }
 
-export function BuilderForm({ data, setData, activeModule, setActiveModule }: BuilderFormProps) {
+export function BuilderForm({ data, setData, activeModule, setActiveModule, validationErrors, setValidationErrors }: BuilderFormProps) {
   const [drafting, setDrafting] = useState<AutoField[]>([]);
   const [drafted, setDrafted] = useState<AutoField[]>([]);
   const [draftError, setDraftError] = useState('');
   const [kbTipOpen, setKbTipOpen] = useState(false);
-  const [kbFiles, setKbFiles] = useState<UploadedFile[]>([]);
-
-  /** Append extracted file text to kbContent with a labelled separator. */
-  const handleFileText = useCallback(
-    (text: string, filename: string) => {
-      setData((d) => {
-        const separator = `\n\n--- Uploaded: ${filename} ---\n\n`;
-        const combined = d.kbContent.trim()
-          ? d.kbContent + separator + text
-          : text;
-        return { ...d, kbContent: combined, kbEnabled: true };
-      });
-    },
-    [setData],
-  );
-
-  /** Remove a file's extracted text from kbContent when it is deleted. */
-  const handleFileRemoved = useCallback(
-    (file: UploadedFile) => {
-      setData((d) => {
-        // Escape filename for regex
-        const escapedName = file.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Match from this file's separator up to the next separator or the end of the string
-        const regex = new RegExp(`\\n*--- Uploaded: ${escapedName} ---\\n*[\\s\\S]*?(?=\\n*--- Uploaded:|$)`, 'g');
-        
-        const newContent = d.kbContent.replace(regex, '');
-        return { ...d, kbContent: newContent.trim() };
-      });
-    },
-    [setData],
-  );
 
   const set = <K extends keyof BuilderData>(key: K, val: BuilderData[K]) =>
     setData((d) => ({ ...d, [key]: val }));
+
+  const markTouched = (field: string) => {
+    setValidationErrors((prev) => ({ ...prev, [field]: false }));
+  };
 
   /**
    * Asks the model to draft the opening line, the plain-language call flow, and the
@@ -448,7 +430,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
       if (applied.length > 0) {
         setData((d) => {
           const next = { ...d };
-          applied.forEach((f) => { next[f] = String(out[f]).trim(); });
+          applied.forEach((f) => { (next as any)[f] = String(out[f]).trim(); });
           return next;
         });
         setDrafted((prev) => Array.from(new Set([...prev, ...applied])));
@@ -503,20 +485,31 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
       <section className="space-y-5" aria-labelledby="module-heading">
         <ModuleHeader id="persona" />
 
+        <div>
+            <Segmented label="Call direction" value={data.callDirection} onChange={(v) => set('callDirection', v)} options={[{ value: 'Inbound', label: 'Inbound' }, { value: 'Outbound', label: 'Outbound' }]} />
+            <Guide>Inbound agents answer calls from customers. Outbound agents make calls to prospects or existing customers.</Guide>
+        </div>
+
+        <div className="my-6 h-px bg-line" />
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="companyName">Company name *</Label>
-            <input id="companyName" className="input-field" value={data.companyName}
-              onChange={(e) => set('companyName', e.target.value)} placeholder="e.g. Meridian Dental" />
-            <Guide>Used in greetings, disclosures and every reference to “us”.</Guide>
+            <input
+                id="companyName"
+                className={`input-field ${validationErrors.companyName ? 'error' : ''}`}
+                value={data.companyName}
+                onChange={(e) => { set('companyName', e.target.value); markTouched('companyName'); }}
+                onBlur={() => setValidationErrors((prev) => ({ ...prev, companyName: !data.companyName.trim() }))}
+                placeholder="e.g. Meridian Dental"
+            />
+            {validationErrors.companyName && <p className="text-[12px] text-danger pt-1">Company name is required</p>}
+            <Guide>Used in greetings, disclosures and every reference to "us".</Guide>
           </div>
           <div>
             <Label htmlFor="agentName">Agent name</Label>
-            <input id="agentName" className="input-field" value={data.agentName}
-              onChange={(e) => set('agentName', e.target.value)} placeholder="e.g. Ava" />
-            {!data.agentName && data.companyName
-              ? <Hint tone="idea">A named agent builds trust faster than an anonymous one.</Hint>
-              : <Guide>The name the agent introduces itself with.</Guide>}
+            <input id="agentName" className="input-field" value={data.agentName} onChange={(e) => set('agentName', e.target.value)} placeholder="e.g. Ava" />
+            {!data.agentName && data.companyName ? <Hint tone="idea">A named agent builds trust faster than an anonymous one.</Hint> : <Guide>The name the agent introduces itself with.</Guide>}
           </div>
         </div>
 
@@ -538,28 +531,19 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
         </div>
 
         <div>
-          <Segmented
-            label="Call direction"
-            value={data.callDirection}
-            onChange={(v) => set('callDirection', v)}
-            options={[{ value: 'Inbound', label: 'Inbound' }, { value: 'Outbound', label: 'Outbound' }]}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="callPurpose">Call purpose *</Label>
-          <textarea id="callPurpose" className="input-field resize-y" rows={3} value={data.callPurpose}
-            onChange={(e) => set('callPurpose', e.target.value)}
-            placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default} />
-          {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20
-            ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint>
-            : data.callPurpose.trim().length >= 20
-              ? <Hint tone="ok">Good specificity.</Hint>
-              : null}
-          <Guide>
-            Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it
-            when you move to the next section.
-          </Guide>
+            <Label htmlFor="callPurpose">Call purpose *</Label>
+            <textarea
+                id="callPurpose"
+                className={`input-field resize-y ${validationErrors.callPurpose ? 'error' : ''}`}
+                rows={3}
+                value={data.callPurpose}
+                onChange={(e) => { set('callPurpose', e.target.value); markTouched('callPurpose'); }}
+                onBlur={() => setValidationErrors((prev) => ({ ...prev, callPurpose: !data.callPurpose.trim() }))}
+                placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default}
+            />
+            {validationErrors.callPurpose && <p className="text-[12px] text-danger pt-1">Call purpose is required</p>}
+            {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20 ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint> : data.callPurpose.trim().length >= 20 ? <Hint tone="ok">Good specificity.</Hint> : null}
+            <Guide>Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it when you move to the next section.</Guide>
         </div>
 
         <div className="my-6 h-px bg-line" />
@@ -581,40 +565,29 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
           </div>
         </div>
 
-        <div>
-          <Segmented
-            label="Voice gender"
-            value={data.voiceGender}
-            onChange={(v) => set('voiceGender', v)}
-            options={[{ value: 'Female', label: 'Female' }, { value: 'Male', label: 'Male' }]}
-          />
-        </div>
+        <Segmented label="Voice gender" value={data.voiceGender} onChange={(v) => set('voiceGender', v)} options={[{ value: 'Female', label: 'Female' }, { value: 'Male', label: 'Male' }]} />
 
         <fieldset className="border-0 p-0 m-0">
-          <legend className="block text-[14px] font-medium text-ink mb-2">Voice tone</legend>
-          <div role="radiogroup" aria-label="Voice tone" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {TONE_OPTIONS.map((t) => (
-              <button key={t.id} type="button" role="radio" aria-checked={data.voiceTone === t.id}
-                onClick={() => set('voiceTone', t.id)}
-                className={`rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${
-                  data.voiceTone === t.id
-                    ? 'border-ink bg-subtle text-ink'
-                    : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
-                }`}>
-                <span className="block font-medium">{t.label}</span>
-                <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
-              </button>
-            ))}
-          </div>
+            <legend className="block text-[14px] font-medium text-ink mb-2">Voice tone</legend>
+            <div role="radiogroup" aria-label="Voice tone" className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {TONE_OPTIONS.map((t) => (
+                    <button key={t.id} type="button" role="radio" aria-checked={data.voiceTone === t.id} onClick={() => set('voiceTone', t.id)}
+                        className={`rounded-md border px-3 py-2 text-left text-[13px] transition-colors ${data.voiceTone === t.id ? 'border-ink bg-subtle text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                            }`}>
+                        <span className="block font-medium">{t.label}</span>
+                        <span className="mt-0.5 block text-[11px] text-faint">{t.desc}</span>
+                    </button>
+                ))}
+            </div>
         </fieldset>
 
         {draftErrorBanner}
-        <NextButton label="Next: Conversation" onClick={() => void goNext('persona')} busy={drafting.length > 0} />
+        <NextButton label="Next: Conversation" onClick={() => goNext('persona')} busy={drafting.length > 0} />
       </section>
     );
   }
 
-  /* ──────────────────────── CONVERSATION ──────────────────────── */
+  /* ─────────────────────────── CONVERSATION ─────────────────────────── */
 
   if (activeModule === 'conversation') {
     return (
@@ -622,330 +595,248 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule }: Bu
         <ModuleHeader id="conversation" />
 
         {!data.callPurpose.trim() && (
-          <div className="card bg-subtle px-4 py-3 text-[13px] text-graphite">
-            Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('persona')}>Persona</button> and
-            we will draft the opening message, call flow and guardrails for you.
-          </div>
+            <div className="card bg-subtle px-4 py-3 text-[13px] text-graphite">
+                Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('persona')}>Persona</button> and we will draft the opening message, call flow and guardrails for you.
+            </div>
         )}
 
         <div>
-          <Label htmlFor="openingMessage" badge={wasDrafted('openingMessage') ? <GeneratedBadge /> : undefined}>Opening message</Label>
-          <textarea id="openingMessage" className="input-field resize-y" rows={3} value={data.openingMessage}
-            onChange={(e) => set('openingMessage', e.target.value)}
-            placeholder="Hi, this is Ava from Meridian Dental — how can I help today?" />
-          {data.openingMessage && data.companyName && !data.openingMessage.includes(data.companyName)
-            ? <Hint tone="idea">Naming {data.companyName} in the opener measurably increases engagement.</Hint>
-            : null}
-          <div className="flex items-center justify-between gap-4 pt-1">
-            <Guide>The first five seconds decide whether the caller stays. Say who you are and why you are calling.</Guide>
-            <DraftButton busy={isDrafting('openingMessage')} onClick={() => void runAutoFill(['openingMessage'], true)}>Redraft</DraftButton>
-          </div>
+            <Label htmlFor="openingMessage" badge={wasDrafted('openingMessage') ? <GeneratedBadge /> : undefined}>Opening message</Label>
+            <textarea id="openingMessage" className="input-field resize-y" rows={3} value={data.openingMessage} onChange={(e) => set('openingMessage', e.target.value)}
+                placeholder={data.callDirection === 'Inbound' ? "Hi, this is Ava from Meridian Dental — how can I help today?" : "Hi, this is Ava calling from Meridian Dental about your recent inquiry — do you have a quick minute?"}
+            />
+            {data.openingMessage && data.companyName && !data.openingMessage.includes(data.companyName) ? <Hint tone="idea">Naming {data.companyName} in the opener measurably increases engagement.</Hint> : null}
+            <div className="flex items-center justify-between gap-4 pt-1">
+                <Guide>The first five seconds decide whether the caller stays. Say who you are and why you are calling.</Guide>
+                <DraftButton busy={isDrafting('openingMessage')} onClick={() => runAutoFill(['openingMessage'], true)}>Redraft</DraftButton>
+            </div>
         </div>
 
         <div>
-          <Label htmlFor="callFlow" badge={wasDrafted('callFlow') ? <GeneratedBadge /> : undefined}>Call flow *</Label>
-          <p className="text-[12px] text-faint mb-2">
-            Plain language, one goal per line — this is a sketch for you, not the prompt. The compiler turns it into
-            the full state machine with branching, retries and confirmations.
-          </p>
-          <textarea id="callFlow" className="input-field resize-y font-mono text-[13px]" rows={9} value={data.callFlow}
-            onChange={(e) => set('callFlow', e.target.value)}
-            placeholder={'1. Greet and introduce yourself\n2. Ask what the caller needs\n3. Collect the details you need\n4. Answer questions from the knowledge base\n5. Confirm next steps and close'} />
-          <div className="flex items-center justify-between gap-4 pt-1">
-            <Guide>Four to eight steps works best. Include the close.</Guide>
-            <DraftButton busy={isDrafting('callFlow')} onClick={() => void runAutoFill(['callFlow'], true)}>Redraft</DraftButton>
-          </div>
+            <Label htmlFor="callFlow" badge={wasDrafted('callFlow') ? <GeneratedBadge /> : undefined}>Call flow *</Label>
+            <p className="text-[12px] text-graphite mb-2">Plain language, one goal per line — this is a sketch for you, not the prompt. The system turns it into the full conversation with branching, retries and confirmations.</p>
+            <textarea
+                id="callFlow"
+                className={`input-field resize-y font-mono text-[13px] ${validationErrors.callFlow ? 'error' : ''}`}
+                rows={9}
+                value={data.callFlow}
+                onChange={(e) => { set('callFlow', e.target.value); markTouched('callFlow'); }}
+                onBlur={() => setValidationErrors((prev) => ({ ...prev, callFlow: !data.callFlow.trim() }))}
+                placeholder={'1. Greet and introduce yourself\n2. Ask what the caller needs\n3. Collect the details you need\n4. Answer questions from the knowledge base\n5. Confirm next steps and close'}
+            />
+            {validationErrors.callFlow && <p className="text-[12px] text-danger pt-1">Call flow is required — write a few steps or use Redraft to draft them from your call purpose.</p>}
+            {!validationErrors.callFlow && !data.callFlow.trim() && <Hint tone="warn">Required — write a few steps, or use Redraft to draft them from your call purpose.</Hint>}
+            <div className="flex items-center justify-between gap-4 pt-1">
+                <Guide>Four to eight steps works best. Include the close.</Guide>
+                <DraftButton busy={isDrafting('callFlow')} onClick={() => runAutoFill(['callFlow'], true)}>Redraft</DraftButton>
+            </div>
         </div>
 
         <div className="my-6 h-px bg-line" />
 
         <div>
-          <span className="block text-[14px] font-medium text-ink mb-1.5">Variables</span>
-          <p className="text-[12px] text-faint mb-3">
-            Data your system already knows before the call and injects into the conversation. Reference them as{' '}
-            <code className="font-mono text-ink-soft">{'{{variable_name}}'}</code> in the opening message or call flow.
-            Anything the agent has to <em>ask</em> for does not belong here — the compiler derives those from your flow.
-          </p>
+            <span className="block text-[14px] font-medium text-ink mb-1.5">Pre-loaded customer data</span>
+            <p className="text-[12px] text-graphite mb-3">What information does your system already have about the caller before they pick up? The agent will reference this automatically.</p>
 
-          {data.variables.length === 0 && (
-            <p className="text-[13px] text-faint mb-3 italic">No variables yet — the agent will run without pre-call context.</p>
-          )}
+            {data.variables.length === 0 && <p className="text-[13px] text-faint mb-3 italic">No pre-loaded data yet — the agent will run without pre-call context.</p>}
 
-          <div className="space-y-2">
-            {data.variables.map((v, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <input
-                  className="input-field w-2/5 font-mono text-[13px]"
-                  aria-label={`Variable name ${i + 1}`}
-                  placeholder="customer_name"
-                  value={v.key}
-                  onChange={(e) => updateVariable(i, 'key', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase())}
-                />
-                <input
-                  className="input-field flex-1 text-[13px]"
-                  aria-label={`Variable sample value ${i + 1}`}
-                  placeholder="Sample value (e.g. Priya)"
-                  value={v.value}
-                  onChange={(e) => updateVariable(i, 'value', e.target.value)}
-                />
-                <button type="button" aria-label={`Remove variable ${i + 1}`} onClick={() => removeVariable(i)}
-                  className="p-2 text-faint hover:text-ink transition-colors shrink-0">
-                  <X className="w-4 h-4" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]">
-            <Plus className="w-4 h-4" aria-hidden="true" /> Add variable
-          </button>
+            <div className="space-y-2">
+                {data.variables.map((v, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                        <input className="input-field w-2/5" placeholder="Field name (e.g. First Name)" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value)} />
+                        <input className="input-field flex-1" placeholder="Example value (e.g. John)" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
+                        <button type="button" onClick={() => removeVariable(i)} aria-label="Remove this field" className="icon-btn shrink-0">
+                            <X className="w-4 h-4" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+            <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><Plus className="w-4 h-4" /> Add field</button>
         </div>
 
         {draftErrorBanner}
-        <NextButton label="Next: Knowledge Base" onClick={() => void goNext('conversation')} busy={drafting.length > 0} />
+        <NextButton label="Next: Knowledge Base" onClick={() => goNext('conversation')} busy={drafting.length > 0} disabled={!data.callFlow.trim()} />
       </section>
     );
   }
 
-  /* ───────────────────────── KNOWLEDGE ────────────────────────── */
+  /* ─────────────────────────── KNOWLEDGE BASE ─────────────────────────── */
 
   if (activeModule === 'knowledge') {
     return (
       <section className="space-y-5" aria-labelledby="module-heading">
         <ModuleHeader id="knowledge" />
-
         <div className="card space-y-4 p-4">
-          <div className="flex items-start justify-between gap-4">
-            <Toggle id="kbEnabled" label="Enable knowledge base" checked={data.kbEnabled} onChange={(v) => set('kbEnabled', v)} />
-            <div className="relative">
-              <button
-                type="button"
-                aria-expanded={kbTipOpen}
-                aria-controls="kb-tip"
-                onClick={() => setKbTipOpen((o) => !o)}
-                onMouseEnter={() => setKbTipOpen(true)}
-                className="link inline-flex items-center gap-1.5 text-[12px]"
-              >
-                <Info className="w-4 h-4" aria-hidden="true" /> What should I add here?
-              </button>
-
-              {kbTipOpen && (
-                <div
-                  id="kb-tip"
-                  role="tooltip"
-                  onMouseLeave={() => setKbTipOpen(false)}
-                  className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-white/20 glass-modal p-4 animate-fade-in-up"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <p className="text-[13px] font-semibold text-ink">Anything factual the agent might be asked</p>
-                    <button type="button" aria-label="Close" onClick={() => setKbTipOpen(false)} className="text-faint hover:text-ink">
-                      <X className="w-4 h-4" aria-hidden="true" />
+            <div className="flex items-start justify-between gap-4">
+                <Toggle id="kbEnabled" label="Enable knowledge base" checked={data.kbEnabled} onChange={(v) => set('kbEnabled', v)} />
+                <div className="relative">
+                    <button type="button" onClick={() => setKbTipOpen((o) => !o)} onMouseEnter={() => setKbTipOpen(true)} onMouseLeave={() => setKbTipOpen(false)} className="link inline-flex items-center gap-1.5 text-[12px]">
+                        <Info className="w-4 h-4" /> What should I add here?
                     </button>
-                  </div>
-                  <p className="text-[12px] text-graphite mb-3">
-                    The compiler reads this and files each fact into the right part of the prompt — business facts,
-                    FAQ answers, policies and objection handling.
-                  </p>
-                  <ul className="space-y-2">
-                    {KB_SOURCE_HINTS.map((h) => (
-                      <li key={h.title} className="text-[12px] leading-[1.5]">
-                        <span className="font-medium text-ink">{h.title}</span>
-                        <span className="text-graphite"> — {h.desc}</span>
-                      </li>
-                    ))}
-                  </ul>
+                    {kbTipOpen && (
+                        <div className="absolute right-0 top-full mt-2 z-30 w-[min(92vw,26rem)] rounded-lg border border-line glass-modal p-4 animate-fade-in-up">
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                                <p className="text-[13px] font-semibold text-ink">Anything factual the agent might be asked</p>
+                                <button type="button" onClick={() => setKbTipOpen(false)} className="text-faint hover:text-ink"><X className="w-4 h-4" /></button>
+                            </div>
+                            <p className="text-[12px] text-graphite mb-3">The system reads this and files each fact into the right part of the prompt — business facts, FAQ answers, policies and objection handling.</p>
+                            <ul className="space-y-2">
+                                {KB_SOURCE_HINTS.map((h, i) => (
+                                    <li key={i} className="text-[12px] leading-[1.5]">
+                                        <span className="font-medium text-ink">{h.title}</span><span className="text-graphite"> — {h.desc}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                 </div>
-              )}
             </div>
-          </div>
-
-          {data.kbEnabled ? (
-            <div className="space-y-4">
-              <div>
-                <Label>Upload documents</Label>
-                <p className="text-[12px] text-faint mb-2">
-                  Drop your FAQ docs, pricing sheets, policy files, or past call transcripts.
-                  Text is extracted and added to the content box below.
-                </p>
-                <FileUploadZone
-                  files={kbFiles}
-                  onFilesChange={setKbFiles}
-                  onTextExtracted={handleFileText}
-                  onFileRemoved={handleFileRemoved}
-                />
-              </div>
-
-              <div className="my-2 h-px bg-line" />
-
-              <div>
-                <Label htmlFor="kbContent">Knowledge base content</Label>
-                <textarea id="kbContent" className="input-field resize-y" rows={14} value={data.kbContent}
-                  onChange={(e) => set('kbContent', e.target.value)}
-                  placeholder={'Paste your FAQs, pricing sheet, policies, objection notes, troubleshooting steps, hours and locations — raw text is fine, it does not need formatting.'} />
-                {data.kbContent.trim() && (
-                  <p className="text-[11px] text-faint pt-1 tabular-nums">
-                    {data.kbContent.length.toLocaleString()} chars
-                  </p>
-                )}
-                <Guide>
-                  Raw and messy is fine. Facts get extracted and routed into the prompt automatically; nothing is
-                  pasted in verbatim. Uploaded file text appears here — feel free to edit.
-                </Guide>
-              </div>
-            </div>
-          ) : (
-            <p className="text-[13px] text-graphite">
-              Optional. Without it the agent answers only from the Persona and Conversation sections, and says it does
-              not have the detail for anything else — which is safe, just less useful.
-            </p>
-          )}
+            {data.kbEnabled ? (
+                <div className="space-y-4">
+                    <div>
+                        <Label>Upload documents</Label>
+                        <p className="text-[12px] text-graphite mb-2">Drop your FAQ docs, pricing sheets, policy files, or past call transcripts. Text is extracted and added to the content box below.</p>
+                        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line bg-subtle px-4 py-6 opacity-60 cursor-not-allowed">
+                          <p className="text-[13px] text-graphite text-center">File upload coming soon — please paste text below for this demo</p>
+                        </div>
+                    </div>
+                    <div className="my-2 h-px bg-line" />
+                    <div>
+                        <Label htmlFor="kbContent">Knowledge base content</Label>
+                        <textarea id="kbContent" className="input-field resize-y" rows={14} value={data.kbContent} onChange={(e) => set('kbContent', e.target.value)} placeholder="Paste your FAQs, pricing sheet, policies, objection notes, troubleshooting steps, hours and locations — raw text is fine, it does not need formatting." />
+                        {data.kbContent.trim() && (
+                            <p className="text-[11px] text-faint pt-1 tabular-nums">{data.kbContent.length.toLocaleString()} chars</p>
+                        )}
+                        <Guide>Raw and messy is fine. Facts get extracted and routed into the prompt automatically; nothing is pasted in verbatim. Uploaded file text appears here — feel free to edit.</Guide>
+                    </div>
+                </div>
+            ) : (
+                <p className="text-[13px] text-graphite">Optional. Without it the agent answers only from the Persona and Conversation sections, and says it does not have the detail for anything else — which is safe, just less useful.</p>
+            )}
         </div>
-
-        <NextButton label="Next: Guardrails & Call Handling" onClick={() => void goNext('knowledge')} busy={drafting.length > 0} />
+        <NextButton label="Next: Guardrails & Call Handling" onClick={() => goNext('knowledge')} busy={drafting.length > 0} />
       </section>
     );
   }
 
-  /* ───────────────── GUARDRAILS & CALL HANDLING ───────────────── */
+  /* ─────────────────────────── GUARDRAILS & CALL HANDLING ─────────────────────────── */
 
-  return (
-    <section className="space-y-6" aria-labelledby="module-heading">
-      <ModuleHeader id="rules" />
+  if (activeModule === 'rules') {
+    return (
+      <section className="space-y-6" aria-labelledby="module-heading">
+        <ModuleHeader id="rules" />
 
-      {/* Guardrails */}
-      <div>
-        <Label htmlFor="guardrails" badge={wasDrafted('guardrails') ? <GeneratedBadge /> : undefined}>Guardrails</Label>
-        <textarea id="guardrails" className="input-field resize-y" rows={6} value={data.guardrails}
-          onChange={(e) => set('guardrails', e.target.value)}
-          placeholder={'One rule per line, e.g.\nNever promise a discount without manager approval.\nNever quote an exact price — say "starting from".\nAlways offer a human transfer if asked twice.'} />
-        {data.guardrails.trim() && data.guardrails.trim().length < 20
-          ? <Hint tone="warn">Add specifics — vague guardrails do not prevent off-script behaviour.</Hint>
-          : null}
-        <div className="flex items-center justify-between gap-4 pt-1">
-          <Guide>One rule per line. These become hard prohibitions in the compiled prompt, not suggestions.</Guide>
-          <DraftButton busy={isDrafting('guardrails')} onClick={() => void runAutoFill(['guardrails'], true)}>
-            {data.guardrails.trim() ? 'Redraft' : 'Draft from call purpose'}
-          </DraftButton>
+        <div>
+            <Label htmlFor="guardrails" badge={wasDrafted('guardrails') ? <GeneratedBadge /> : undefined}>Guardrails</Label>
+            <textarea id="guardrails" className="input-field resize-y" rows={6} value={data.guardrails} onChange={(e) => set('guardrails', e.target.value)} placeholder={'One rule per line, e.g.\nNever promise a discount without manager approval.\nNever quote an exact price — say "starting from".\nAlways offer a human transfer if asked twice.'} />
+            {data.guardrails.trim() && data.guardrails.trim().length < 20 ? <Hint tone="warn">Add specifics — vague guardrails do not prevent off-script behaviour.</Hint> : null}
+            <div className="flex items-center justify-between gap-4 pt-1">
+                <Guide>One rule per line, including any custom rules of your own. These become hard prohibitions in the final prompt.</Guide>
+                <DraftButton busy={isDrafting('guardrails')} onClick={() => runAutoFill(['guardrails'], true)}>{data.guardrails.trim() ? 'Redraft' : 'Draft from call purpose'}</DraftButton>
+            </div>
         </div>
-        {draftErrorBanner}
-      </div>
 
-      <div className="my-6 h-px bg-line" />
+        <div className="my-6 h-px bg-line" />
 
-      {/* Compliance */}
-      <div>
-        <h3 className="text-[14px] font-semibold text-ink mb-4">Disclosure &amp; compliance</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <Toggle id="discloseAI" label="Disclose AI identity to the caller" checked={data.discloseAI} onChange={(v) => set('discloseAI', v)} />
-          <Toggle id="recordingConsent" label="Recording consent required" checked={data.recordingConsent} onChange={(v) => set('recordingConsent', v)} />
+        <div>
+            <h3 className="text-[14px] font-semibold text-ink mb-4">Disclosure &amp; compliance</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <Toggle id="discloseAI" label="Disclose AI identity to the caller" checked={data.discloseAI} onChange={(v) => set('discloseAI', v)} />
+                <Toggle id="recordingConsent" label="Recording consent required" checked={data.recordingConsent} onChange={(v) => set('recordingConsent', v)} />
+            </div>
+            {data.recordingConsent && (
+                <div className="mt-4">
+                    <Label htmlFor="disclosureText">Exact disclosure line</Label>
+                    <input id="disclosureText" className="input-field" value={data.disclosureText} onChange={(e) => set('disclosureText', e.target.value)} placeholder="This call may be recorded for quality and training purposes." />
+                    <Guide>Leave blank and the agent will phrase it itself.</Guide>
+                </div>
+            )}
         </div>
-        {data.recordingConsent && (
-          <div className="mt-4">
-            <Label htmlFor="disclosureText">Exact disclosure line</Label>
-            <input id="disclosureText" className="input-field" value={data.disclosureText}
-              onChange={(e) => set('disclosureText', e.target.value)}
-              placeholder="This call may be recorded for quality and training purposes." />
-            <Guide>Leave blank and the agent will phrase it itself.</Guide>
-          </div>
-        )}
-      </div>
 
-      <div className="my-6 h-px bg-line" />
+        <div className="my-6 h-px bg-line" />
 
-      {/* Digression + fallback */}
-      <div>
-        <h3 className="text-[14px] font-semibold text-ink mb-4">Digression &amp; fallback</h3>
-
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="digressionHandling">Mid-flow digression handling</Label>
-            <select id="digressionHandling" className="input-field" value={data.digressionHandling} onChange={(e) => set('digressionHandling', e.target.value)}>
-              <option>Answer briefly, then resume the script</option>
-              <option>Note it and continue the script only</option>
-              <option>Refuse and redirect to the script</option>
-            </select>
-            <Guide>What happens when the caller asks something off-flow mid-conversation.</Guide>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="retryFallback">Retry exhaustion fallback</Label>
-              <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={(e) => set('retryFallback', e.target.value)}>
-                <option>Transfer to a human agent</option>
-                <option>End the call politely</option>
-                <option>Offer a callback</option>
-                <option>Repeat the request differently</option>
-              </select>
+        <div>
+            <h3 className="text-[14px] font-semibold text-ink mb-4">Handling off-topic questions</h3>
+            <div className="space-y-4">
+                <div>
+                    <Label htmlFor="digressionHandling">When the caller asks something unrelated</Label>
+                    <select id="digressionHandling" className="input-field" value={data.digressionHandling} onChange={(e) => set('digressionHandling', e.target.value)}>
+                        <option>Answer briefly, then resume the script</option>
+                        <option>Note it and continue the script only</option>
+                        <option>Refuse and redirect to the script</option>
+                    </select>
+                    <Guide>What happens when the caller asks something off-flow mid-conversation.</Guide>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <Label htmlFor="retryFallback">If the AI doesn't understand the caller</Label>
+                        <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={(e) => set('retryFallback', e.target.value)}>
+                            <option>Transfer to a human agent</option>
+                            <option>End the call politely</option>
+                            <option>Offer a callback</option>
+                            <option>Repeat the request differently</option>
+                        </select>
+                    </div>
+                    <div>
+                        <Label htmlFor="maxRetries">Number of attempts before fallback</Label>
+                        <input id="maxRetries" type="number" min="1" max="5" className="input-field font-mono" value={data.maxRetries} onChange={(e) => set('maxRetries', Math.min(5, Math.max(1, Number(e.target.value) || 1)))} />
+                        <Guide>How many times the agent rephrases and retries before using the fallback above.</Guide>
+                    </div>
+                </div>
             </div>
-            <div>
-              <Label htmlFor="maxRetries">Max retries before fallback</Label>
-              <input id="maxRetries" type="number" min={1} max={5} className="input-field font-mono"
-                value={data.maxRetries}
-                onChange={(e) => set('maxRetries', Math.min(5, Math.max(1, Number(e.target.value) || 1)))} />
-            </div>
-          </div>
         </div>
-      </div>
 
-      <div className="my-6 h-px bg-line" />
+        <div className="my-6 h-px bg-line" />
 
-      {/* Live transfer */}
-      <div>
-        <h3 className="text-[14px] font-semibold text-ink mb-4">Live transfer &amp; escalation</h3>
-        <Toggle id="liveTransferEnabled" label="Enable live transfer" checked={data.liveTransferEnabled}
-          onChange={(v) => set('liveTransferEnabled', v)} onText="Enabled" offText="Disabled" />
+        <div>
+            <h3 className="text-[14px] font-semibold text-ink mb-4">Live transfer &amp; escalation</h3>
+            <Toggle id="liveTransferEnabled" label="Enable live transfer" checked={data.liveTransferEnabled} onChange={(v) => set('liveTransferEnabled', v)} onText="Enabled" offText="Disabled" />
+            {data.liveTransferEnabled && (
+                <div className="mt-4 space-y-6 rounded-lg border border-line bg-surface p-4">
+                    <div>
+                        <span className="block text-[14px] font-medium text-ink mb-3">Transfer numbers</span>
+                        <div className="space-y-3">
+                            {data.transferNumbers.map((t, i) => (
+                                <div key={i} className="flex gap-2">
+                                    <input className="input-field flex-1" placeholder="Label (e.g. Front desk)" value={t.label} onChange={(e) => updateTransferNumber(i, 'label', e.target.value)} />
+                                    <input className="input-field flex-1 font-mono text-[13px]" placeholder="+1 415 555 0142" value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
+                                    {data.transferNumbers.length > 1 && (
+                                        <button type="button" onClick={() => removeTransferNumber(i)} aria-label="Remove this number" className="icon-btn shrink-0">
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        <button type="button" onClick={addTransferNumber} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><Plus className="w-4 h-4" /> Add number</button>
+                    </div>
 
-        {data.liveTransferEnabled && (
-          <div className="mt-4 space-y-6 rounded-lg border border-line bg-surface p-4">
-            <div>
-              <span className="block text-[14px] font-medium text-ink mb-3">Transfer numbers</span>
-              <div className="space-y-3">
-                {data.transferNumbers.map((t, i) => (
-                  <div key={i} className="flex gap-2">
-                    <input className="input-field flex-1" aria-label={`Transfer label ${i + 1}`} placeholder="Label (e.g. Front desk)"
-                      value={t.label} onChange={(e) => updateTransferNumber(i, 'label', e.target.value)} />
-                    <input className="input-field flex-1 font-mono text-[13px]" aria-label={`Transfer number ${i + 1}`} placeholder="+1 415 555 0142"
-                      value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
-                    {data.transferNumbers.length > 1 && (
-                      <button type="button" aria-label={`Remove transfer number ${i + 1}`} onClick={() => removeTransferNumber(i)}
-                        className="p-2 text-faint hover:text-ink transition-colors shrink-0">
-                        <X className="w-4 h-4" aria-hidden="true" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={addTransferNumber} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]">
-                <Plus className="w-4 h-4" aria-hidden="true" /> Add number
-              </button>
-            </div>
+                    <fieldset className="border-0 p-0 m-0">
+                        <legend className="block text-[14px] font-medium text-ink mb-3">Transfer when…</legend>
+                        <div className="flex flex-wrap gap-2">
+                            {TRANSFER_TRIGGERS.map((trigger) => {
+                                const active = data.transferTriggers.includes(trigger);
+                                return (
+                                    <button key={trigger} type="button" role="checkbox" aria-checked={active} onClick={() => toggleTrigger(trigger)}
+                                        className={`px-3 py-1.5 text-[13px] rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${active ? 'border-ink bg-subtle font-medium text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
+                                            }`}>
+                                        {trigger}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </fieldset>
 
-            <fieldset className="border-0 p-0 m-0">
-              <legend className="block text-[14px] font-medium text-ink mb-3">Transfer when…</legend>
-              <div className="flex flex-wrap gap-2">
-                {TRANSFER_TRIGGERS.map((trigger) => {
-                  const active = data.transferTriggers.includes(trigger);
-                  return (
-                    <button key={trigger} type="button" role="checkbox" aria-checked={active} onClick={() => toggleTrigger(trigger)}
-                      className={`px-3 py-1.5 text-[13px] rounded-lg border transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
-                        active ? 'border-ink bg-subtle font-medium text-ink' : 'border-line bg-surface text-graphite hover:border-line-strong hover:text-ink'
-                      }`}>
-                      {trigger}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
+                    <div>
+                        <Label htmlFor="afterHoursBehavior">If nobody can take the transfer</Label>
+                        <textarea id="afterHoursBehavior" className="input-field resize-y" rows={2} value={data.afterHoursBehavior} onChange={(e) => set('afterHoursBehavior', e.target.value)} placeholder="e.g. Take a message and confirm a callback window" />
+                    </div>
+                </div>
+            )}
+        </div>
+      </section>
+    );
+  }
 
-            <div>
-              <Label htmlFor="afterHoursBehavior">If nobody can take the transfer</Label>
-              <textarea id="afterHoursBehavior" className="input-field resize-y" rows={2} value={data.afterHoursBehavior}
-                onChange={(e) => set('afterHoursBehavior', e.target.value)}
-                placeholder="e.g. Take a message and confirm a callback window" />
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
+  return null;
 }

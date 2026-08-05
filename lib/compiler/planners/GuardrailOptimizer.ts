@@ -48,6 +48,7 @@ Output ONLY the optimized guardrail text. Format as a markdown bulleted list.`;
       const optimized = await client.generateRaw!(userPrompt, 0, {
         systemInstruction: systemPrompt,
         contextLabel: 'guardrail-optimizer',
+        sessionId: meta.sessionId,
       });
 
       return optimized.trim();

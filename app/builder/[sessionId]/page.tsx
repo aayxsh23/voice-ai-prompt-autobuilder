@@ -25,8 +25,9 @@ import {
   Copy,
 } from 'lucide-react';
 import type { PromptPackageDraft } from '@/lib/llm/types';
+import { AgentPromptEditor } from '@/components/project/AgentPromptEditor';
 
-type Stage = 'form' | 'questions' | 'review' | 'done';
+type Stage = 'form' | 'questions' | 'review' | 'editor';
 
 function ReviewField({ label, value, onChange, rows = 2, mono }: {
   label: string; value: string; onChange: (v: string) => void; rows?: number; mono?: boolean;
@@ -73,6 +74,7 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     params.then((p) => {
@@ -93,6 +95,14 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
   const handleSubmitForm = async () => {
     const blocking = getBlockingGaps(data);
     setGaps(blocking);
+    
+    const errors = {
+      companyName: !data.companyName.trim(),
+      callPurpose: !data.callPurpose.trim(),
+      callFlow: !data.callFlow.trim(),
+    };
+    setValidationErrors(errors);
+
     if (blocking.length > 0) return;
 
     setError('');
@@ -137,7 +147,7 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
       if (!res.ok) throw new Error('compile failed');
       const out = await res.json();
       setDraft(out);
-      setStage('done');
+      setStage('editor');
     } catch {
       setError('Compilation failed. Check the server logs and try again.');
     } finally {
@@ -181,70 +191,16 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
     );
   }
 
-  /* ═══════════════ STAGE: compiled prompt ═══════════════ */
-  if (stage === 'done' && draft) {
-    const warnings = draft.validationWarnings ?? [];
-    const errors = draft.validationErrors ?? [];
+  /* ═══════════════ STAGE: editor ═══════════════ */
+  if (stage === 'editor' && draft) {
     return (
-      <div className="w-full max-w-4xl mx-auto px-6 py-10">
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3">
-            <CheckCircle className="w-6 h-6 text-success" aria-hidden="true" />
-            <div>
-              <h1 className="text-[20px] font-semibold text-ink">Prompt package ready</h1>
-              <p className="text-[13px] text-graphite">
-                {draft.estimatedTokens ? `~${draft.estimatedTokens} tokens · ` : ''}
-                {draft.dynamicVariables?.length ?? 0} variables · {draft.suggestedFunctions?.length ?? 0} tools
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => { setStage('review'); setDraft(null); }}
-            >
-              <Edit3 className="w-4 h-4" aria-hidden="true" /> Back to review
-            </button>
-            <button type="button" className="btn btn-primary" onClick={handleSaveProject} disabled={saving}>
-              {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</> : <>Save project <ArrowRight className="w-4 h-4" /></>}
-            </button>
-          </div>
-        </div>
-
-        {error && <p className="mb-4 text-[13px] text-warning">{error}</p>}
-
-        {(errors.length > 0 || warnings.length > 0) && (
-          <div className="card mb-6 border-warning/30 bg-warning-soft p-4">
-            <p className="flex items-center gap-2 text-[13px] font-semibold text-warning mb-2">
-              <AlertTriangle className="w-4 h-4" aria-hidden="true" /> Reviewer notes
-            </p>
-            <ul className="space-y-1 text-[12px] text-ink-soft list-disc pl-5">
-              {[...errors, ...warnings].slice(0, 12).map((m, i) => <li key={i}>{m}</li>)}
-            </ul>
-          </div>
-        )}
-
-        <div className="card p-0 overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
-            <span className="text-[13px] font-medium text-graphite">Compiled system prompt</span>
-            <button
-              type="button"
-              className="link inline-flex items-center gap-1.5 text-[12px]"
-              onClick={() => {
-                navigator.clipboard?.writeText(draft.finalPrompt || '');
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1600);
-              }}
-            >
-              <Copy className="w-3.5 h-3.5" aria-hidden="true" /> {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-          <pre className="p-4 overflow-auto max-h-[62vh] whitespace-pre-wrap font-mono text-[13px] leading-[1.6] text-ink-soft">
-            {draft.finalPrompt}
-          </pre>
-        </div>
-      </div>
+      <AgentPromptEditor
+        draft={draft}
+        onChangeDraft={setDraft}
+        onSave={handleSaveProject}
+        onBack={() => { setStage('review'); setDraft(null); }}
+        saving={saving}
+      />
     );
   }
 
@@ -428,16 +384,19 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
               </div>
             )}
 
-            <BuilderForm data={data} setData={setData} activeModule={activeModule} setActiveModule={setActiveModule} />
+            <BuilderForm data={data} setData={setData} activeModule={activeModule} setActiveModule={setActiveModule} validationErrors={validationErrors} setValidationErrors={setValidationErrors} />
           </div>
         </main>
       </div>
 
       {/* Judge questions */}
       {stage === 'questions' && (
-        <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="judge-title">
-          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg sm:p-8">
+        <div className="fixed inset-0 z-50 bg-ink/30 flex items-center justify-center p-4 animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="judge-title">
+          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-line bg-surface p-6 shadow-lg sm:p-8 animate-fade-in-up">
             <div className="flex items-start gap-3 mb-6">
+              <div className="rounded-full bg-accent-soft p-2.5 shrink-0 text-accent mt-0.5">
+                <Bot className="w-5 h-5" aria-hidden="true" />
+              </div>
               <div>
                 <h3 id="judge-title" className="text-[16px] font-semibold text-ink">A few clarifying questions</h3>
                 <p className="text-[13px] text-graphite">

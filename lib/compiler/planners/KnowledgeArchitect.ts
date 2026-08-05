@@ -91,7 +91,9 @@ Return a JSON object with:
       const response = await llmClient.generate({
         systemInstruction: `You are a knowledge base curation specialist. Return ONLY valid JSON.${isHindiOrHinglish ? " All FAQ answers and objection responses MUST be written in Devanagari script (देवनागरी). ENGLISH WORDS RULE: Any word originating from English (WhatsApp, registered, training, billing, software, demo, email, phone, callback, status, schedule, slot, reach, team, etc.) MUST remain in Roman/English script inside the Devanagari sentence. NEVER transliterate English words to Devanagari." : ""}`,
         prompt,
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        contextLabel: "KnowledgeArchitect",
+        sessionId: meta.sessionId
       });
       const kb = safeParseJson(response.text, fallbackKB);
       const rawFaqs = Array.isArray(kb?.faqs) ? kb.faqs : [];

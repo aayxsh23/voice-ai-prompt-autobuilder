@@ -151,6 +151,8 @@ export const POST = apiHandler(async (req: Request) => {
     knowledgeBase: {
       faqs: knowledge.faqs,
       objections: knowledge.objections,
+      troubleshootingSteps: knowledge.troubleshootingSteps,
+      competitorComparisons: knowledge.competitorComparisons,
     },
     tools: [],
     capturedTopics,

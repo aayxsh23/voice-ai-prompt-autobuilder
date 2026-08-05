@@ -101,6 +101,7 @@ ${a.finalPrompt}`;
           json: true,
           systemInstruction: JUDGE_SYSTEM_INSTRUCTION,
           contextLabel: "PromptJudge LLM Audit",
+          sessionId: a.spec.meta?.sessionId,
         });
         if (rawResp) {
           const parsed = safeParseJson<JudgeReport>(rawResp, { verdict: 'pass', score: 100, issues: [], blockingCount: 0 });
@@ -152,6 +153,7 @@ export async function repairFromJudge(a: {
   report: JudgeReport;
   policy: LanguagePolicy;
   agentGender?: string;
+  sessionId?: string;
 }): Promise<string> {
   const issuesToRepair = (a.report?.issues || []).filter(i => i.severity === 'critical' || i.severity === 'major');
   if (issuesToRepair.length === 0) {
@@ -204,6 +206,7 @@ ${currentPrompt}`;
       json: false,
       systemInstruction: PROMPT_EDITOR_INSTRUCTION,
       contextLabel: "PromptJudge Repair",
+      sessionId: a.sessionId,
     });
     if (!rawOut) return currentPrompt;
 

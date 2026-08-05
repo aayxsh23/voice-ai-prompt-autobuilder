@@ -168,6 +168,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 14. COMPLEX PUSHBACK ROUTING: If a specific branch requires a multi-step response (e.g., 'acknowledge -> note follow-up -> redirect once -> close if still declined'), you MUST encode this exactly using a combination of a \`subLoop\` (for the redirect) and a terminal \`edge\` (for the close). Do not simplify it to a single edge.
 15. SYNC PROSE AND EDGES: If the user specified handling for objections, digressions, or edge cases (like 'customer busy' or 'why are you calling'), you MUST create explicit conditional edges or a subLoop in the relevant states to handle these paths structurally. Do not rely entirely on implicit LLM reasoning for explicit business rules.
 16. END_CALL REASONS: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number.
+17. DATE/TIME VALIDATION: If a state collects a date or time slot, you MUST add specific constraints to its 'notes' array instructing the agent to validate the provided date/time against the system variables {{current_date}} and {{current_time}} to reject past dates or invalid slots.
 
 Generate the strict JSON array of FsmStateNode now.`;
 
@@ -179,7 +180,9 @@ Generate the strict JSON array of FsmStateNode now.`;
       const response = await llmClient.generate({
         systemInstruction: `You are a structured JSON FSM planning specialist. Return ONLY a valid JSON array of FsmStateNode objects.`,
         prompt,
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        contextLabel: "WorkflowArchitect",
+        sessionId: meta.sessionId
       });
       let parsed = safeParseJson(response.text, fallbackStates);
       

@@ -11,7 +11,7 @@ export const POST = apiHandler(async (req: Request) => {
     throw new ApiError(429, 'Too many requests. Please wait a moment and try again.');
   }
 
-  const { form } = await req.json().catch(() => ({ form: null }));
+  const { form, sessionId } = await req.json().catch(() => ({ form: null, sessionId: null }));
   if (!form) throw new ApiError(400, 'Missing form data');
 
   // Only what the judge can act on. Long free text is truncated so a pasted manual
@@ -88,6 +88,7 @@ Return ONLY valid JSON: { "questions": ["...", "..."] }`;
       prompt,
       responseMimeType: 'application/json',
       contextLabel: 'builder-evaluate',
+      sessionId,
     });
 
     const parsed = safeParseJson<{ questions?: unknown }>(response.text, { questions: [] });

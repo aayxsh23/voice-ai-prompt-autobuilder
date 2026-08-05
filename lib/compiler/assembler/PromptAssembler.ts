@@ -637,7 +637,7 @@ VOICE RULES & TOOL SILENCE
   const markdownScript = spec?.callFlowPlan?.script || draft?.callFlowScript || "";
   const needsDatetime = /date|time|appointment|schedule|booking/i.test(spec?.meta?.primaryGoal || "") || /date|time|appointment/i.test(markdownScript || JSON.stringify(steps));
   if (needsDatetime) {
-    const sysVars = `#### SYSTEM VARIABLES\nThe following variables are automatically injected by the system. Use them exactly as formatted if you need to reference the current date/time:\nCURRENT_DAY      : "{{current_day}}"\nCURRENT_DATE     : "{{current_date}}"\nCURRENT_TIME     : "{{current_time}}"\n\n- **Date/Time Validation**: Always validate any user-provided booking dates or times against these system variables. Politely reject requests for past dates or times that have already passed, and ask the caller for a valid future slot.`;
+    const sysVars = `#### SYSTEM VARIABLES\nThe following variables are automatically injected by the system. Use them exactly as formatted if you need to reference the current date/time:\nCURRENT_DAY      : "{{current_day}}"\nCURRENT_DATE     : "{{current_date}}"\nCURRENT_TIME     : "{{current_time}}"`;
     dynamicVariables = dynamicVariables ? `${dynamicVariables}\n\n${sysVars}` : `### DYNAMIC VARIABLES\n\n${sysVars}`;
   }
 
@@ -898,7 +898,19 @@ VOICE RULES & TOOL SILENCE
     : "";
   const objectionHandling = `### OBJECTION HANDLING\nHandle pushback with judgment, not a script: (1) acknowledge the concern warmly, (2) address it in one line using a relevant fact or benefit from your context, (3) steer back toward ${primaryGoal}. Keep it to 1-2 sentences, never argue, and respect a firm "no" by closing politely.${knownConcerns}`;
 
-  // 11. SYSTEM TOOLS & EXECUTION
+  // 11. TROUBLESHOOTING & PROCEDURES
+  const troubleshootingSteps = Array.isArray(spec?.knowledgeBase?.troubleshootingSteps) ? spec.knowledgeBase.troubleshootingSteps : [];
+  const tsContent = troubleshootingSteps.length > 0
+    ? `### TROUBLESHOOTING & PROCEDURES\nWhen guiding a caller through a procedure, follow these steps exactly:\n${troubleshootingSteps.map((t: any) => `- Problem: ${t.problem}\n  Steps:\n${t.steps.map((s: string, i: number) => `    ${i + 1}. ${s}`).join('\n')}`).join('\n\n')}\n\nIMPORTANT: State exactly ONE step at a time. Wait for the caller to confirm completion or ask for help before giving the next step. Never read a list of steps all at once.`
+    : "";
+
+  // 12. COMPETITIVE COMPARISONS
+  const competitorComparisons = Array.isArray(spec?.knowledgeBase?.competitorComparisons) ? spec.knowledgeBase.competitorComparisons : [];
+  const compContent = competitorComparisons.length > 0
+    ? `### COMPETITIVE COMPARISONS\nWhen a caller asks how you compare to a specific competitor, use the following differentiators conversationally (do not read them as a list):\n${competitorComparisons.map((c: any) => `- Vs ${c.competitor}: ${c.differentiation}`).join('\n')}`
+    : "";
+
+  // 13. SYSTEM TOOLS & EXECUTION
   let toolsContent = "";
   if (Array.isArray(spec?.tools) && spec.tools.length > 0) {
     const descriptions = spec.tools.map((t, index) => ToolPlanner.describeToolForPrompt(t as any, index + 1)).filter(Boolean);
@@ -920,10 +932,12 @@ VOICE RULES & TOOL SILENCE
     businessContext,
     escalationAndRouting,
     dynamicVariables,
-    toolsContent,
     flow,
     knowledge,
-    objectionHandling
+    objectionHandling,
+    tsContent,
+    compContent,
+    toolsContent
   ].filter(s => Boolean(s && s.trim().length > 0));
 
   return sections.join('\n\n---\n\n');

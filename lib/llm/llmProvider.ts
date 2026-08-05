@@ -24,6 +24,7 @@ import { CallFlowPlan } from "@/lib/llm/types/CallFlowPlan";
 import { llmConfig } from "@/lib/config";
 import { fewShotBlock } from "@/lib/llm/fewshot";
 import { logger } from "@/lib/logger";
+import { logTokenUsage } from "@/lib/tokenLogger";
 
 export const COMPILER_GENERATION_CONFIG = {
   temperature: 0.1,
@@ -126,7 +127,7 @@ function stripThinkTags(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
-function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string {
+function extractAndLogThinking(response: any, contextLabel = "LLM Call", sessionId?: string): string {
   const choice = response.choices?.[0];
   const message = choice?.message || {};
   
@@ -146,6 +147,9 @@ function extractAndLogThinking(response: any, contextLabel = "LLM Call"): string
   if (response.usage) {
     const { prompt_tokens, completion_tokens, total_tokens } = response.usage;
     logger.info(`[TOKEN_USAGE] [${contextLabel}] Prompt: ${prompt_tokens} | Completion: ${completion_tokens} | Total: ${total_tokens}`);
+    if (sessionId) {
+      logTokenUsage(sessionId, contextLabel, { prompt_tokens, completion_tokens, total_tokens });
+    }
   }
 
   return rawContent;
@@ -162,7 +166,7 @@ function getOpenAIClient(apiKey?: string, baseUrl?: string): OpenAI {
 }
 
 export const llmClient = {
-  async generate({ systemInstruction, prompt, responseMimeType, contextLabel }: { systemInstruction: string, prompt: string, responseMimeType?: string, contextLabel?: string }) {
+  async generate({ systemInstruction, prompt, responseMimeType, contextLabel, sessionId }: { systemInstruction: string, prompt: string, responseMimeType?: string, contextLabel?: string, sessionId?: string }) {
     const isJson = responseMimeType === "application/json" || systemInstruction?.toLowerCase().includes("json") || prompt?.includes("JSON");
     const client = getOpenAIClient();
     const model = llmConfig.model;
@@ -181,7 +185,7 @@ export const llmClient = {
       
     } as any);
 
-    const rawContent = extractAndLogThinking(response, contextLabel || "llmClient.generate");
+    const rawContent = extractAndLogThinking(response, contextLabel || "llmClient.generate", sessionId);
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent) {
@@ -203,7 +207,7 @@ export class llmProvider implements LlmService {
     this.client = getOpenAIClient(apiKey, baseUrl);
   }
 
-  private async generateJson<T>(prompt: string): Promise<T> {
+  private async generateJson<T>(prompt: string, options?: { contextLabel?: string, sessionId?: string }): Promise<T> {
     const jsonInstruction = `\n\nCRITICAL INSTRUCTION:\nReturn valid JSON only.\nDo not include markdown.\nDo not include code fences.\nDo not include explanations outside the JSON object.`;
     const response = await this.client.chat.completions.create({
       model: this.modelName,
@@ -215,7 +219,7 @@ export class llmProvider implements LlmService {
       
     } as any);
 
-    const rawContent = extractAndLogThinking(response, "generateJson");
+    const rawContent = extractAndLogThinking(response, options?.contextLabel || "generateJson", options?.sessionId);
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent) {
@@ -246,7 +250,7 @@ export class llmProvider implements LlmService {
     } as any);
 
     const label = options?.contextLabel || "generateRaw";
-    const rawContent = extractAndLogThinking(response, label);
+    const rawContent = extractAndLogThinking(response, label, options?.sessionId);
     const cleanContent = stripThinkTags(rawContent);
 
     if (!cleanContent || cleanContent.trim() === "") {
@@ -295,14 +299,16 @@ MANDATORY RULES FOR CALL FLOW GENERATION:
 Business input:\n${JSON.stringify(llmInput, null, 2)}`;
     // Plain-text pass-1: `json: false`, editor-style system prompt, so the model
     // returns Markdown directly and we never call JSON.parse on it.
+    const specMeta = (input as any).businessSpec?.meta || {};
+    const sessionId = specMeta.sessionId || (input as any).sessionId;
+
     const pass1Raw = await this.generateRaw(pass1Prompt, 0.1, {
       contextLabel: "WorkflowArchitect Pass 1 (Structure)",
       json: false,
       systemInstruction: "You are a voice agent call flow architect. Output ONLY well-structured Markdown script for the call flow. Do not wrap the output in JSON, do not use code fences, do not add prose commentary. Start directly with the first heading.",
+      sessionId,
     });
     const scriptRaw = (pass1Raw || '').replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    // Structured fields are derived from the spec (never from a fragile JSON parse).
-    const specMeta = (input as any).businessSpec?.meta || {};
     const plan: CallFlowPlan = {
       agentName: specMeta.agentName || (input.business as { agentName?: string } | undefined)?.agentName || "Voice Assistant",
       primaryGoal: specMeta.primaryGoal || input.mission?.primaryGoal || "Assist callers",
@@ -341,7 +347,10 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
     // Structure (pass 1) stays deterministic; the dialogue-heavy draft (pass 2)
     // gets a modest temperature bump for more natural spoken lines. JSON validity
     // is still enforced by response_format.
-    const pass2Raw = await this.generateRaw(pass2Prompt, 0.35, { contextLabel: "WorkflowArchitect Pass 2 (Draft)" });
+    const pass2Raw = await this.generateRaw(pass2Prompt, 0.35, { 
+      contextLabel: "WorkflowArchitect Pass 2 (Draft)",
+      sessionId
+    });
     let draft: PromptPackageDraft = safeParseJson<PromptPackageDraft>(pass2Raw, {} as any);
     if (!draft || (!draft.systemPrompt && !draft.faqCards)) {
       try {

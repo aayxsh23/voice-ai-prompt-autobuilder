@@ -261,3 +261,22 @@ select.input-field {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-graphite);
 }
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  color: var(--color-graphite);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover {
+  background: var(--color-danger-soft);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: var(--color-danger);
+}

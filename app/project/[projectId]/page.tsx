@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { AgentPromptEditor } from '@/components/project/AgentPromptEditor';
 import { Badge } from '@/components/ui';
 
@@ -16,6 +17,7 @@ interface Project {
 }
 
 export default function ProjectStudioPage({ params }: { params: Promise<{ projectId: string }> }) {
+  const router = useRouter();
   const [projectId, setProjectId] = React.useState('');
   const [project, setProject] = React.useState<Project | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -77,11 +79,12 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
         </div>
       </div>
 
-      <div className="flex min-h-[70vh] flex-1 flex-col">
+      <div className="flex min-h-[70vh] flex-1 flex-col -mx-6 -my-6">
         <AgentPromptEditor
-          value={project.finalPrompt || ''}
-          onChange={(v) => setProject({ ...project, finalPrompt: v })}
+          draft={{ finalPrompt: project.finalPrompt || '' } as any}
+          onChangeDraft={(d) => setProject({ ...project, finalPrompt: d.finalPrompt })}
           onSave={handleSavePrompt}
+          onBack={() => router.push('/dashboard')}
           saving={saving}
         />
       </div>

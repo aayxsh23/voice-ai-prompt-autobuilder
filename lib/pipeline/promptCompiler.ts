@@ -228,6 +228,10 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   spec.knowledgeBase.objections = spec.knowledgeBase.objections || [];
   spec.tools = spec.tools || [];
 
+  if (input.sessionId) {
+    spec.meta.sessionId = input.sessionId;
+  }
+
   // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and
   // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
@@ -397,7 +401,8 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
             finalPrompt: best.prompt,
             report: best.report,
             policy,
-            agentGender: policy.agentGender
+            agentGender: policy.agentGender,
+            sessionId: spec.meta.sessionId
           });
         }
         if (!structurePreserved(repaired, best.prompt)) {

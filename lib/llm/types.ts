@@ -245,6 +245,7 @@ export interface GenerateRawOptions {
    */
   systemInstruction?: string;
   contextLabel?: string;
+  sessionId?: string;
 }
 
 export interface LlmService {
@@ -422,6 +423,7 @@ export interface BusinessSpecification {
      * (language, safety, disclosure, goal) is never skippable — see ALWAYS_ASK.
      */
     notApplicableTopics?: string[];
+    sessionId?: string;
   };
   businessSnapshot: {
     operatingHours: string | { standard?: string; exceptions?: string[] };
@@ -498,6 +500,8 @@ export interface BusinessSpecification {
   knowledgeBase: {
     faqs: Array<{ question: string; answer: string; isFallback?: boolean }>;
     objections: Array<{ trigger: string; response: string; isFallback?: boolean }>;
+    troubleshootingSteps?: Array<{ problem: string; steps: string[] }>;
+    competitorComparisons?: Array<{ competitor: string; differentiation: string }>;
   };
   tools: Array<{
     name: string;

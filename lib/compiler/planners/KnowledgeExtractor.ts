@@ -23,6 +23,8 @@ export interface ExtractedKnowledge {
   capturedTopics: Array<{ topic: string; summary: string }>;
   faqs: Array<{ question: string; answer: string }>;
   objections: Array<{ trigger: string; response: string }>;
+  troubleshootingSteps: Array<{ problem: string; steps: string[] }>;
+  competitorComparisons: Array<{ competitor: string; differentiation: string }>;
 }
 
 export const EMPTY_KNOWLEDGE: ExtractedKnowledge = {
@@ -32,6 +34,8 @@ export const EMPTY_KNOWLEDGE: ExtractedKnowledge = {
   capturedTopics: [],
   faqs: [],
   objections: [],
+  troubleshootingSteps: [],
+  competitorComparisons: [],
 };
 
 /** Guards against a pasted 200-page manual blowing the model's context. */
@@ -97,10 +101,12 @@ EXTRACTION RULES:
    - policies.otherPolicies: every other rule, term or compliance requirement, prefixed with its name (e.g. "Warranty: ...").
    - capturedTopics: operational detail that is neither a policy nor a question — locations, certifications, escalation runbooks, and step-by-step troubleshooting procedures. Each becomes { topic, summary }.
    - faqs: questions a caller actually asks, with the answer as the agent should speak it (1-2 short spoken sentences).
-   - objections: pushback or comparisons ("too expensive", "competitor X is cheaper", "not interested"), with the approved response (1-2 short spoken sentences).
+   - objections: pushback or general concerns ("too expensive", "not interested"), with the approved response (1-2 short spoken sentences).
+   - troubleshootingSteps: multi-step repair flows or procedural guides. Each becomes { problem, steps: ["step 1", "step 2"] }.
+   - competitorComparisons: how the company is different from or better than a specific competitor. Each becomes { competitor, differentiation }.
 4. Past call transcripts are a source of REAL caller questions — mine them for faqs and objections that the FAQ document missed.
 5. Spoken answers only in 'answer' and 'response': no bullet points, markdown, list syntax or reference numbers a person would not say aloud.
-6. Deduplicate aggressively. At most 40 faqs, 15 objections, 20 services, 15 otherPolicies, 15 capturedTopics.
+6. Deduplicate aggressively. At most 40 faqs, 15 objections, 10 troubleshootingSteps, 10 competitorComparisons, 20 services, 15 otherPolicies, 15 capturedTopics.
 
 Return ONLY valid JSON:
 {
@@ -109,7 +115,9 @@ Return ONLY valid JSON:
   "policies": { "cancellation": "string", "refunds": "string", "otherPolicies": ["string"] },
   "capturedTopics": [{ "topic": "string", "summary": "string" }],
   "faqs": [{ "question": "string", "answer": "string" }],
-  "objections": [{ "trigger": "string", "response": "string" }]
+  "objections": [{ "trigger": "string", "response": "string" }],
+  "troubleshootingSteps": [{ "problem": "string", "steps": ["string"] }],
+  "competitorComparisons": [{ "competitor": "string", "differentiation": "string" }]
 }`;
 
     try {
@@ -142,6 +150,14 @@ Return ONLY valid JSON:
           .map((o) => ({ trigger: String(o?.trigger || '').trim(), response: String(o?.response || '').trim() }))
           .filter((o) => o.trigger && o.response)
           .slice(0, 15),
+        troubleshootingSteps: (Array.isArray(parsed.troubleshootingSteps) ? parsed.troubleshootingSteps : [])
+          .map((t) => ({ problem: String(t?.problem || '').trim(), steps: asStringArray(t?.steps, 20) }))
+          .filter((t) => t.problem && t.steps.length > 0)
+          .slice(0, 10),
+        competitorComparisons: (Array.isArray(parsed.competitorComparisons) ? parsed.competitorComparisons : [])
+          .map((c) => ({ competitor: String(c?.competitor || '').trim(), differentiation: String(c?.differentiation || '').trim() }))
+          .filter((c) => c.competitor && c.differentiation)
+          .slice(0, 10),
       };
     } catch (err) {
       // Non-fatal: the prompt still compiles, it just has no knowledge-base facts.
