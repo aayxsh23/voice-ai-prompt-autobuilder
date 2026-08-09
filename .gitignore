@@ -56,6 +56,6 @@ scratch/
 AGENTS.md
 .agents/
 
-# UI prototypes
-UI changes/VoiceAgentBuilder.html
-
+# custom ignored directories
+UI changes/
+logs/
