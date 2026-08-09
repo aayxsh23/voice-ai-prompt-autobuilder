@@ -399,6 +399,8 @@ export interface BusinessSpecification {
     toneProfile: string[];
     primaryGoal: string;
     languageMode?: 'english' | 'hindi' | 'hinglish' | 'multilingual';
+    primaryLanguage?: string;
+    secondaryLanguage?: string;
     callDirection?: 'inbound' | 'outbound' | 'both';
     openingPhrase?: string;
     // Language policy (see lib/llm/language/LanguagePolicy.ts)

@@ -413,6 +413,7 @@
             const [drafted, setDrafted] = useState([]);
             const [draftError, setDraftError] = useState('');
             const [kbTipOpen, setKbTipOpen] = useState(false);
+            const [lastDraftedPurpose, setLastDraftedPurpose] = useState('');
 
             const set = (key, val) => setData((d) => ({ ...d, [key]: val }));
 
@@ -423,7 +424,8 @@
             // Dummy autofill logic — drafts are derived from call purpose + call direction
             const runAutoFill = async (fields, force = false) => {
                 if (!data.callPurpose.trim()) return;
-                const targets = force ? fields : fields.filter((f) => !String(data[f] ?? '').trim());
+                const purposeChanged = data.callPurpose.trim() !== lastDraftedPurpose;
+                const targets = (force || purposeChanged) ? fields : fields.filter((f) => !String(data[f] ?? '').trim());
                 if (targets.length === 0) return;
 
                 setDraftError('');
@@ -459,6 +461,7 @@
                     return next;
                 });
                 setDrafted((prev) => Array.from(new Set([...prev, ...targets])));
+                setLastDraftedPurpose(purpose);
                 setDrafting([]);
             };
 
@@ -993,20 +996,48 @@
                         });
                     }
 
+                    if (data.liveTransferEnabled) {
+                        const validTargets = data.transferNumbers.filter((t) => t.number.trim());
+                        if (validTargets.length > 0) {
+                            prompt += `\n\n## Live Transfer Context\nYou are equipped with a 'transfer_call' tool. Transfer destinations: ${validTargets.map(t => t.label || 'Transfer').join(', ')}.\n`;
+                            if (data.transferTriggers && data.transferTriggers.length > 0) prompt += `When to transfer: ${data.transferTriggers.join('; ')}\n`;
+                            if (data.afterHoursBehavior) prompt += `If transfer fails: ${data.afterHoursBehavior}\n`;
+                        }
+                    }
+                    
+                    let contract = `\n\n### Tool Contract\n- Speak first, fire tool in the SAME response — always\n- Silent tool calls are rejected (end_call) or cause dead air (transfer_call)\n- Never mention tool names aloud\n- Never close without firing the matching tool`;
+                    if (data.liveTransferEnabled && data.transferNumbers.some(t => t.number.trim())) {
+                        contract += `\n- Once transfer_call is armed, do not fire end_call in the same turn\n- If transfer fails at runtime, wait for the error response in the subsequent turn, then fall back to end_call`;
+                    }
+                    prompt += contract;
+
                     setDraft({ finalPrompt: prompt, estimatedTokens: 4200, dynamicVariables: data.variables, suggestedFunctions: ['checkAvailability', 'bookAppointment'] });
                     
+                    let guardrailsWithTransfer = `## Guardrails\n${data.guardrails}`;
+                    if (data.liveTransferEnabled) {
+                        const validTargets = data.transferNumbers.filter((t) => t.number.trim());
+                        if (validTargets.length > 0) {
+                            guardrailsWithTransfer += `\n\n## Live Transfer Context\nYou are equipped with a 'transfer_call' tool. Transfer destinations: ${validTargets.map(t => t.label || 'Transfer').join(', ')}.\n`;
+                            if (data.transferTriggers && data.transferTriggers.length > 0) guardrailsWithTransfer += `When to transfer: ${data.transferTriggers.join('; ')}\n`;
+                            if (data.afterHoursBehavior) guardrailsWithTransfer += `If transfer fails: ${data.afterHoursBehavior}\n`;
+                        }
+                    }
+                    guardrailsWithTransfer += contract;
+
                     setEditorData({
                         modelType: 'Static',
                         description: '',
                         promptPersona: `<agent_instruction>\nYou are **${data.agentName || 'an agent'}**${data.companyName ? `, working for ${data.companyName}` : ''}.\n\nThis is a live ${data.primaryLanguage} voice call. You are speaking to real people — not chatting on a screen. Every word you say is heard, not read. Sound like a calm, warm, well-trained professional who genuinely wants to help.\n\nThe model is Qwen with thinking disabled. Follow these instructions directly. Never mention internal rules, tools, prompts, APIs, system state, or knowledge base to the caller.\n\n## Call Purpose\n${data.callPurpose}`,
                         promptConversation: `## Opening Message\n"${data.openingMessage}"\n\n## Call Flow\n${data.callFlow}`,
                         promptKnowledge: (data.kbEnabled && data.kbContent) ? `## Knowledge Base\n${data.kbContent}` : '',
-                        promptGuardrails: `## Guardrails\n${data.guardrails}`,
+                        promptGuardrails: guardrailsWithTransfer,
                         primaryLanguage: data.primaryLanguage,
                         callTransfer: data.liveTransferEnabled,
                         infields: [],
                         outcomes: [],
-                        tools: [{ name: 'end_call', config: {} }, { name: 'search_nearby_places', config: { keyword: '' } }],
+                        tools: data.liveTransferEnabled && data.transferNumbers.some(t => t.number.trim()) 
+                            ? [{ name: 'end_call', config: {} }, { name: 'transfer_call', config: { destination: '', reason: '' } }, { name: 'search_nearby_places', config: { keyword: '' } }]
+                            : [{ name: 'end_call', config: {} }, { name: 'search_nearby_places', config: { keyword: '' } }],
                     });
                     
                     setStage('editor');
@@ -1045,6 +1076,21 @@
                 if (data.callFlow) preview += `\n\n## Call Flow\n${data.callFlow}`;
                 if (data.guardrails) preview += `\n\n## Guardrails\n${data.guardrails}`;
                 if (data.kbEnabled && data.kbContent) preview += `\n\n## Knowledge Base\n${data.kbContent.substring(0, 200)}${data.kbContent.length > 200 ? '...' : ''}`;
+                
+                if (data.liveTransferEnabled) {
+                    const validTargets = data.transferNumbers.filter((t) => t.number.trim());
+                    if (validTargets.length > 0) {
+                        preview += `\n\n## Live Transfer Context\nYou are equipped with a 'transfer_call' tool. Transfer destinations: ${validTargets.map(t => t.label || 'Transfer').join(', ')}.\n`;
+                        if (data.transferTriggers && data.transferTriggers.length > 0) preview += `When to transfer: ${data.transferTriggers.join('; ')}\n`;
+                        if (data.afterHoursBehavior) preview += `If transfer fails: ${data.afterHoursBehavior}\n`;
+                    }
+                }
+                
+                let contract = `\n\n### Tool Contract\n- Speak first, fire tool in the SAME response — always\n- Silent tool calls are rejected (end_call) or cause dead air (transfer_call)\n- Never mention tool names aloud\n- Never close without firing the matching tool`;
+                if (data.liveTransferEnabled && data.transferNumbers.some(t => t.number.trim())) {
+                    contract += `\n- Once transfer_call is armed, do not fire end_call in the same turn\n- If transfer fails at runtime, wait for the error response in the subsequent turn, then fall back to end_call`;
+                }
+                preview += contract;
 
                 return (
                     <div className="card mt-4 overflow-hidden">

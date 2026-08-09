@@ -1,0 +1,11 @@
+{"timestamp":"2026-08-08T10:54:05.642Z","contextLabel":"builder-evaluate","usage":{"prompt_tokens":2308,"completion_tokens":157,"total_tokens":2465}}
+{"timestamp":"2026-08-08T10:58:31.219Z","contextLabel":"WorkflowArchitect","usage":{"prompt_tokens":2492,"completion_tokens":1561,"total_tokens":4053}}
+{"timestamp":"2026-08-08T10:58:35.030Z","contextLabel":"WorkflowArchitect Pass 1 (Structure)","usage":{"prompt_tokens":4785,"completion_tokens":822,"total_tokens":5607}}
+{"timestamp":"2026-08-08T10:58:40.303Z","contextLabel":"WorkflowArchitect Pass 2 (Draft)","usage":{"prompt_tokens":5714,"completion_tokens":1510,"total_tokens":7224}}
+{"timestamp":"2026-08-08T10:58:42.649Z","contextLabel":"guardrail-optimizer","usage":{"prompt_tokens":1240,"completion_tokens":470,"total_tokens":1710}}
+{"timestamp":"2026-08-08T10:58:59.778Z","contextLabel":"PromptJudge Repair","usage":{"prompt_tokens":7060,"completion_tokens":6546,"total_tokens":13606}}
+{"timestamp":"2026-08-08T11:02:47.679Z","contextLabel":"WorkflowArchitect","usage":{"prompt_tokens":2492,"completion_tokens":1593,"total_tokens":4085}}
+{"timestamp":"2026-08-08T11:02:51.498Z","contextLabel":"WorkflowArchitect Pass 1 (Structure)","usage":{"prompt_tokens":4813,"completion_tokens":825,"total_tokens":5638}}
+{"timestamp":"2026-08-08T11:02:56.825Z","contextLabel":"WorkflowArchitect Pass 2 (Draft)","usage":{"prompt_tokens":5747,"completion_tokens":1582,"total_tokens":7329}}
+{"timestamp":"2026-08-08T11:02:58.394Z","contextLabel":"guardrail-optimizer","usage":{"prompt_tokens":1031,"completion_tokens":307,"total_tokens":1338}}
+{"timestamp":"2026-08-08T11:03:14.457Z","contextLabel":"PromptJudge Repair","usage":{"prompt_tokens":6883,"completion_tokens":6448,"total_tokens":13331}}

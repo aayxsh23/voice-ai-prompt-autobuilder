@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { FileUploadZone, type UploadedFile } from './FileUploadZone';
 import {
   UserCircle,
@@ -14,7 +14,20 @@ import {
   Info,
   ArrowRight,
   Loader2,
+  Trash2,
 } from 'lucide-react';
+
+/* ═══════════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+
+export function formatVariableKey(input: string) {
+  const clean = input.replace(/[^a-zA-Z0-9]/g, ' ').trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+  if (words.length === 1) return '{{' + words[0].toLowerCase() + '}}';
+  return '{{' + words[0].toLowerCase() + '_' + words.slice(1).join('').toLowerCase() + '}}';
+}
 
 /* ═══════════════════════════════════════════════════════════════
    STATIC OPTION LISTS
@@ -108,7 +121,7 @@ export const initialData = {
   /* ── Conversation ── */
   openingMessage: '',
   callFlow: '',
-  variables: [] as VariableRow[],
+  variables: [{ key: 'Full Name', value: 'John Doe' }] as VariableRow[],
 
   /* ── Knowledge base ── */
   kbEnabled: false,
@@ -398,6 +411,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
   const [drafted, setDrafted] = useState<AutoField[]>([]);
   const [draftError, setDraftError] = useState('');
   const [kbTipOpen, setKbTipOpen] = useState(false);
+  const purposeAtLastDraft = useRef(data.callPurpose);
 
   const set = <K extends keyof BuilderData>(key: K, val: BuilderData[K]) =>
     setData((d) => ({ ...d, [key]: val }));
@@ -446,7 +460,15 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
   const wasDrafted = (f: AutoField) => drafted.includes(f);
 
   const goNext = async (from: ModuleId) => {
-    if (from === 'persona') await runAutoFill(['openingMessage', 'callFlow']);
+    if (from === 'persona') {
+      const purposeChanged = data.callPurpose !== purposeAtLastDraft.current;
+      if (purposeChanged) {
+        await runAutoFill(['openingMessage', 'callFlow', 'guardrails'], true);
+        purposeAtLastDraft.current = data.callPurpose;
+      } else {
+        await runAutoFill(['openingMessage', 'callFlow']);
+      }
+    }
     if (from === 'conversation') await runAutoFill(['guardrails']);
     const idx = MODULE_ORDER.indexOf(from);
     if (idx >= 0 && idx < MODULE_ORDER.length - 1) setActiveModule(MODULE_ORDER[idx + 1]);
@@ -640,16 +662,32 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
 
             {data.variables.length === 0 && <p className="text-[13px] text-faint mb-3 italic">No pre-loaded data yet — the agent will run without pre-call context.</p>}
 
-            <div className="space-y-2">
-                {data.variables.map((v, i) => (
-                    <div key={i} className="flex gap-2 items-center">
-                        <input className="input-field w-2/5" placeholder="Field name (e.g. First Name)" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value)} />
-                        <input className="input-field flex-1" placeholder="Example value (e.g. John)" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
-                        <button type="button" onClick={() => removeVariable(i)} aria-label="Remove this field" className="icon-btn shrink-0">
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
-                ))}
+            <div className="space-y-3">
+                {data.variables.map((v, i) => {
+                    const agentVar = formatVariableKey(v.key);
+                    return (
+                        <div key={i} className="flex gap-3 items-start">
+                            <div className="flex-1 grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Field name</label>}
+                                    <input className="input-field w-full" placeholder="e.g. First Name" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value)} />
+                                    {agentVar && (
+                                        <p className="text-[11px] text-faint ml-1">
+                                            Agent will see this as: <code className="text-ink bg-canvas px-1.5 py-0.5 rounded font-mono font-medium">{agentVar}</code>
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="space-y-1.5">
+                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Example value</label>}
+                                    <input className="input-field w-full" placeholder="e.g. John" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => removeVariable(i)} aria-label="Remove this field" className={`p-2.5 text-graphite hover:text-danger hover:bg-danger/10 rounded-md transition-colors shrink-0 ${i === 0 ? 'mt-[22px]' : 'mt-0'}`}>
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
             <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><Plus className="w-4 h-4" /> Add field</button>
         </div>

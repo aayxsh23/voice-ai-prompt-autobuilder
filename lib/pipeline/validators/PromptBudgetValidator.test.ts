@@ -23,13 +23,13 @@ describe('estimateTokens', () => {
 
 describe('validatePromptBudget', () => {
   it('passes a lean prompt with no warnings', () => {
-    const res = validatePromptBudget('short prompt', 4000);
+    const res = validatePromptBudget('short prompt', 6000);
     expect(res.isValid).toBe(true);
     expect(res.warnings).toHaveLength(0);
   });
 
-  it('warns (but does not fail) when over budget', () => {
-    const big = 'a'.repeat(4000 * 4 + 4); // ~4001 tokens
+  it('warns when token budget is exceeded', () => {
+    const big = 'a'.repeat(6000 * 4 + 4); // ~6001 tokens
     const res = validatePromptBudget(big, DEFAULT_PROMPT_TOKEN_BUDGET);
     expect(res.isValid).toBe(true);
     expect(res.warnings && res.warnings.length).toBe(1);

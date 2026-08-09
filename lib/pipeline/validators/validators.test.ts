@@ -72,4 +72,27 @@ describe('validateFlowCompleteness', () => {
     ]);
     expect(res.isValid).toBe(true);
   });
+
+  it('accepts FSM state nodes', () => {
+    const res = validateFlowCompleteness({
+      callFlowPlan: {
+        fsmStates: [
+          {
+            id: 'collect_slots',
+            objective: 'Collect info',
+            slotsToCollect: ['slot1'],
+            retryPolicy: { maxAttempts: 3, onExhausted: { targetStateId: 'end_call' } },
+            edges: [{ condition: 'done', targetStateId: 'end_call' }]
+          },
+          {
+            id: 'end_call',
+            objective: 'Close call',
+            entryAction: { tool: 'end_call', args: {} },
+            edges: []
+          }
+        ]
+      }
+    } as any, []);
+    expect(res.isValid).toBe(true);
+  });
 });

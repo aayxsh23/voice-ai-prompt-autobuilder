@@ -150,6 +150,19 @@ function buildGlobalInterrupts(customRules?: string, region?: string): string {
   return lines.join("\n");
 }
 
+function buildPronunciationRules(primary?: string, secondary?: string): string {
+  const langs = [primary, secondary]
+    .filter(Boolean)
+    .map(l => String(l).trim())
+    .filter(l => l !== 'English' && l !== 'None' && l !== 'Hinglish'); // 'Hinglish' is already handled by hindiSpeakability
+    
+  const uniqueLangs = Array.from(new Set(langs));
+  if (uniqueLangs.length === 0) return "";
+
+  const langStr = uniqueLangs.join(" and ");
+  return `\n- Pronunciation Rule: When speaking ${langStr}, ensure you pronounce its words correctly and naturally according to native ${langStr} phonetics.\n  - DO: Use native ${langStr} vowel sounds, intonation, and consonants.\n  - DO NOT: Read ${langStr} words using English phonetics (e.g., do not apply an American/British accent to ${langStr} words).`;
+}
+
 export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any): string {
   const specFaqs = Array.isArray(spec?.knowledgeBase?.faqs) ? spec.knowledgeBase.faqs : [];
   const draftFaqs = Array.isArray(draft?.faqCards) ? draft.faqCards : [];
@@ -503,6 +516,11 @@ LANGUAGE DETECTION & RESPONSE PROTOCOL:
 - NEVER switch languages into Arabic, Hindi, or any other language under any circumstance, even if the caller speaks in another language.
 - CRITICAL SCRIPT RULE: Your spoken output must consist ONLY of English words using the Latin alphabet. NEVER output sentences in Devanagari (देवनागरी), Arabic script, or any other non-Latin script.
 - Confirm all collected variables (names, dates, numbers, codes) clearly and unambiguously before proceeding.`.trim();
+  }
+  
+  const pronunciationRules = buildPronunciationRules(spec?.meta?.primaryLanguage, spec?.meta?.secondaryLanguage);
+  if (pronunciationRules) {
+    languageHandling += pronunciationRules;
   }
 
   // 2. OUTPUT / VOICE MECHANICS
@@ -914,8 +932,23 @@ VOICE RULES & TOOL SILENCE
   let toolsContent = "";
   if (Array.isArray(spec?.tools) && spec.tools.length > 0) {
     const descriptions = spec.tools.map((t, index) => ToolPlanner.describeToolForPrompt(t as any, index + 1)).filter(Boolean);
+    
+    const hasTransferCall = spec.tools.some((t: any) => t?.name === 'transfer_call');
+    
+    let contract = `### Tool Contract
+- Speak first, fire tool in the SAME response — always
+- Silent tool calls are rejected (end_call) or cause dead air (transfer_call)
+- Never mention tool names aloud
+- Never close without firing the matching tool`;
+
+    if (hasTransferCall) {
+      contract += `
+- Once transfer_call is armed, do not fire end_call in the same turn
+- If transfer fails at runtime, wait for the error response in the subsequent turn, then fall back to end_call`;
+    }
+
     if (descriptions.length > 0) {
-      toolsContent = `### SYSTEM TOOLS & EXECUTION\nYou have access to the following strictly defined tools. Do not invent any other tools. Call these tools exactly when their usage conditions are met.\n\n${descriptions.join('\n\n')}`;
+      toolsContent = `### SYSTEM TOOLS & EXECUTION\nYou have access to the following strictly defined tools. Do not invent any other tools. Call these tools exactly when their usage conditions are met.\n\n${descriptions.join('\n\n')}\n\n${contract}`;
     }
   }
 

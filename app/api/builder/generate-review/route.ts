@@ -116,6 +116,8 @@ export const POST = apiHandler(async (req: Request) => {
       toneProfile: TONE_LABELS[form.voiceTone] || TONE_LABELS.professional,
       primaryGoal,
       languageMode,
+      primaryLanguage: String(form.primaryLanguage || 'English'),
+      secondaryLanguage: String(form.secondaryLanguage || 'None'),
       callDirection: String(form.callDirection || 'Inbound').toLowerCase() === 'outbound' ? 'outbound' : 'inbound',
       openingPhrase: String(form.openingMessage || '').trim() || undefined,
       aiDisclosure: form.discloseAI ? 'disclose' : 'deny',
@@ -174,7 +176,12 @@ export const POST = apiHandler(async (req: Request) => {
      the call flow — the form no longer collects an intake list. */
   const seenKeys = new Set<string>();
   (Array.isArray(form.variables) ? form.variables : []).forEach((v: { key?: string; value?: string }) => {
-    const key = String(v?.key || '').trim().replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+    const rawKey = String(v?.key || '').replace(/[^a-zA-Z0-9]/g, ' ').trim();
+    const words = rawKey.split(/\s+/).filter(Boolean);
+    let key = '';
+    if (words.length === 1) key = words[0].toLowerCase();
+    else if (words.length > 1) key = words[0].toLowerCase() + '_' + words.slice(1).join('').toLowerCase();
+    
     if (!key || seenKeys.has(key)) return;
     seenKeys.add(key);
     spec.dynamicVariables!.push({

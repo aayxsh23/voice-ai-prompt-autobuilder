@@ -84,6 +84,28 @@ export class WorkflowArchitect {
       ? `\nLANGUAGE DIRECTIVE: Write all 'speechPrompt' lines inside the FSM nodes in Devanagari script (देवनागरी) Hindi. English terminology should be romanized.`
       : "";
 
+    const transferTopic = spec.capturedTopics?.find(t => t.topic === 'Live transfer & escalation');
+    const escalationNumbers = spec.businessSnapshot?.policies?.escalationNumbers || [];
+    const transferDestinations = escalationNumbers
+      .map((n: string) => { const match = n.match(/^([^:]+):/); return match ? `"${match[1].trim()}"` : ''; })
+      .filter(Boolean)
+      .join(', ');
+
+    let transferContext = '';
+    if (registeredToolNames.includes('transfer_call') && transferTopic) {
+      transferContext = `\nLIVE TRANSFER ENABLED:
+The tool \`transfer_call\` is registered. Available destinations: [${transferDestinations}].
+Transfer should be offered (with caller consent) based on these rules:
+${transferTopic.summary}
+
+TRANSFER RULES FOR FSM GENERATION:
+- Generate a transfer consent state: offer the transfer, wait for consent, then fire the tool.
+- The consent-ask itself fires no tool. Only fire \`transfer_call\` after a "yes."
+- If the caller declines the transfer but has other intent, return them to the pending step.
+- If transfer fails at runtime, the agent should fall back to a callback close using \`end_call\`.
+- Generate appropriate terminal closeVariants for: transfer accepted, transfer declined, transfer failed.\n`;
+    }
+
     const prompt = `You are a WorkflowArchitect specializing in designing robust voice AI call flow state machines using a Graph-Based FSM topology.
 Given the business goal, metadata, and operational topics, design a comprehensive, multi-step Finite State Machine (FSM).${langDirective}
 
@@ -94,7 +116,7 @@ BUSINESS SNAPSHOT:
 - **Operating Hours:** ${snap.operatingHours || "N/A"}
 - **Services:** ${snap.servicesOffered?.join(', ') || "N/A"}
 - **Call Direction:** ${isInbound ? "INBOUND (Customer calls us)" : "OUTBOUND (We call customer)"}
-${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}
+${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}${transferContext}
 
 CONTEXT VARIABLES & EXTRACTIONS:
 ${infieldsList.length > 0 ? `Known Pre-Call Infields (Available before call): ${JSON.stringify(infieldsList.map((v: any) => v.key))}\n` : ""}
@@ -167,8 +189,10 @@ MANDATORY STATE MACHINE DESIGN RULES:
 13. DATA LOSS IN PARAPHRASING: You may paraphrase user scripts for natural conversational flow, but you MUST NOT DROP any specific instructions, facts, policies, disclosures (like call recording), or identity checks that the user provided in their script. If the user said 'confirm identity first', your generated speechPrompt MUST include a question confirming identity. If the user said 'state the call is recorded', your generated speechPrompt MUST state the call is recorded.
 14. COMPLEX PUSHBACK ROUTING: If a specific branch requires a multi-step response (e.g., 'acknowledge -> note follow-up -> redirect once -> close if still declined'), you MUST encode this exactly using a combination of a \`subLoop\` (for the redirect) and a terminal \`edge\` (for the close). Do not simplify it to a single edge.
 15. SYNC PROSE AND EDGES: If the user specified handling for objections, digressions, or edge cases (like 'customer busy' or 'why are you calling'), you MUST create explicit conditional edges or a subLoop in the relevant states to handle these paths structurally. Do not rely entirely on implicit LLM reasoning for explicit business rules.
-16. END_CALL REASONS: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number.
+16. END_CALL REASONS & TERMINAL TAXONOMY: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number. Your closeVariants SHOULD map to these terminal states (e.g., T-BOOKED -> success, T-CALLBACK -> callback_handoff, T-DEAD -> declined, T-WRONGNUM -> wrong_number, T-DNC -> opt_out).
 17. DATE/TIME VALIDATION: If a state collects a date or time slot, you MUST add specific constraints to its 'notes' array instructing the agent to validate the provided date/time against the system variables {{current_date}} and {{current_time}} to reject past dates or invalid slots.
+18. MANDATORY RETRY POLICIES: EVERY state that has a \`slotsToCollect\` array MUST include a \`retryPolicy\` with \`maxAttempts\` and an \`onExhausted\` target state. Do not leave capture states open-ended.
+19. CONFIRMATION READ-BACK: If the overall flow collects 2 or more slots, you MUST include a dedicated confirmation state (id containing 'confirm' or 'readback') before the final resolution/booking step. This state must read back all collected details and allow the user to confirm or correct them via a subLoop.
 
 Generate the strict JSON array of FsmStateNode now.`;
 

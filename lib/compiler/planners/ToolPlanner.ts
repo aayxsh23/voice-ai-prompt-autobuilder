@@ -33,6 +33,44 @@ export class ToolPlanner {
       immutableSystemTools.push(emailTool);
     }
 
+    /**
+     * Conditionally register transfer_call tool.
+     * The tool is added if there are escalation numbers defined or if the tool was already requested.
+     */
+    const escalationNumbers = spec.businessSnapshot?.policies?.escalationNumbers || [];
+    
+    // Extract destination labels for the JSON schema enum to prevent LLM hallucinations
+    const transferLabels = escalationNumbers
+      .map((n: string) => { const match = n.match(/^([^:]+):/); return match ? match[1].trim() : ''; })
+      .filter(Boolean);
+
+    const hasTransferDestinations = (Array.isArray(escalationNumbers) && escalationNumbers.length > 0)
+      || (Array.isArray(spec.tools) && spec.tools.some((t: any) => t?.name === 'transfer_call'));
+
+    if (hasTransferDestinations) {
+      immutableSystemTools.push({
+        name: 'transfer_call',
+        description: 'Blind-transfer the caller to a human agent or specialist. Fire in the SAME turn as the bridge line.',
+        parameters: {
+          type: 'object',
+          properties: {
+            destination: {
+              type: 'string',
+              ...(transferLabels.length > 0 ? { enum: transferLabels } : {}),
+              description: 'The label of the transfer target.'
+            },
+            reason: {
+              type: 'string',
+              description: 'Brief summary of why the call is being transferred.'
+            }
+          },
+          required: ['destination', 'reason']
+        },
+        associatedStateId: 'transfer_offer',
+        usageProtocol: `#### CALL TRANSFER PROTOCOL (transfer_call)\nSpeak the bridge line first, then invoke transfer_call in the SAME turn. Never fire end_call after arming transfer_call. If transfer fails at runtime, wait for the error response in the subsequent turn, then fall back to end_call with callback reason.`
+      });
+    }
+
     // Only return already available/configured tools; never generate new tools via LLM
     // or inject hardcoded fallbacks like transfer_call.
     const existingTools = Array.isArray(spec.tools)

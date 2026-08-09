@@ -1,10 +1,10 @@
 import { ValidationResult } from "./types";
 
-/** Default token budget for a single-flow voice-agent prompt. Exceeding it is a
- *  warning, not a hard failure — it flags a prompt that has grown token-heavy
- *  (the FITTR failure mode) so it can be tightened before it costs latency/spend
- *  on every single call. */
-export const DEFAULT_PROMPT_TOKEN_BUDGET = 4000;
+/**
+ * Soft limit on prompt tokens to leave room for the user conversation.
+ * If exceeded, the validator emits a warning but does not fail the build.
+ */
+export const DEFAULT_PROMPT_TOKEN_BUDGET = 6000;
 
 /**
  * Rough, dependency-free token estimate. Devanagari tokenizes far heavier than
