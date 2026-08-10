@@ -59,3 +59,9 @@ AGENTS.md
 # custom ignored directories
 UI changes/
 logs/
+Structure/
+
+# Junk and temporary files
+.claude/
+*.restored
+DB_INSPECTION.md
