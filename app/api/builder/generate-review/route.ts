@@ -5,6 +5,20 @@ import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { BusinessSpecification } from '@/lib/llm/types';
 import { KnowledgeExtractor, EMPTY_KNOWLEDGE } from '@/lib/compiler/planners/KnowledgeExtractor';
 
+const REGION_PHONE_CODES: Record<string, string> = {
+  US: '+1',
+  CA: '+1',
+  GB: '+44',
+  IN: '+91',
+  AU: '+61',
+  DE: '+49',
+  FR: '+33',
+  ES: '+34',
+  IT: '+39',
+  BR: '+55',
+  MX: '+52'
+};
+
 /**
  * Barge-in is not configurable. Every prompt is compiled with interruption handling,
  * so this policy is a constant rather than a form field.
@@ -88,7 +102,7 @@ export const POST = apiHandler(async (req: Request) => {
     const triggers: string[] = Array.isArray(form.transferTriggers) ? form.transferTriggers : [];
     const parts = [
       triggers.length ? `Transfer to a human when: ${triggers.join('; ')}.` : 'Transfer to a human when the situation clearly exceeds the agent\'s scope.',
-      transferNumbers.length ? `Available transfer targets: ${transferNumbers.map((t) => `${t.label || 'Transfer'} (${t.number})`).join(', ')}.` : '',
+      transferNumbers.length ? `Available transfer targets: ${transferNumbers.map((t) => `${t.label || 'Transfer'}`).join(', ')}.` : '',
       String(form.afterHoursBehavior || '').trim() ? `If nobody can take the transfer: ${String(form.afterHoursBehavior).trim()}` : '',
     ].filter(Boolean);
     capturedTopics.push({ topic: 'Live transfer & escalation', summary: parts.join(' ') });
@@ -131,7 +145,15 @@ export const POST = apiHandler(async (req: Request) => {
       policies: {
         cancellation: knowledge.policies.cancellation || 'None — not specified',
         refunds: knowledge.policies.refunds || 'None — not specified',
-        escalationNumbers: transferNumbers.map((t) => `${t.label || 'Transfer'}: ${t.number}`),
+        escalationNumbers: transferNumbers.map((t) => {
+          let num = String(t.number).trim();
+          if (num && !num.startsWith('+')) {
+            const r = String(form.region || '').toUpperCase().slice(0, 2);
+            const prefix = REGION_PHONE_CODES[r] || '';
+            num = prefix + num;
+          }
+          return `${t.label || 'Transfer'}: ${num}`;
+        }),
         disclosures,
         otherPolicies: knowledge.policies.otherPolicies,
       },

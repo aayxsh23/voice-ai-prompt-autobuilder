@@ -49,9 +49,14 @@ export class WorkflowArchitect {
         speechPrompt: meta.openingPhrase || (isInbound 
           ? `Thank you for calling ${companyStr}. My name is ${agentStr}. How can I help you today?`
           : `Hello, I'm ${agentStr} calling from ${companyStr}. Am I speaking with the right contact?`),
+        closeVariants: [
+          { variant: "wrong_number", script: "I apologize, I must have the wrong number. Have a great day." },
+          { variant: "opt_out", script: "I understand, I will remove you from our list and we won't call again. Goodbye." }
+        ],
         edges: [
           { condition: "Identity verified / ready to proceed", targetStateId: "capture_intent" },
-          { condition: "Wrong number / caller busy", targetStateId: "end_call", speechPrompt: "I will call back later. Goodbye." }
+          { condition: "Wrong number / caller busy", targetStateId: "end_call", closeVariant: "wrong_number" },
+          { condition: "Caller asks to stop calling / opt out", targetStateId: "end_call", closeVariant: "opt_out" }
         ]
       },
       {
@@ -180,7 +185,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
    - If Inbound: State 1 MUST greet and ask how to help.
    - If Outbound: State 1 MUST introduce the agent and verify the caller's identity.
    - AI DISCLOSURE: ${denyAiDisclosure ? "DO NOT disclose AI identity. Present as a human." : "Proactively disclose that the agent is an AI."}
-7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. For the closing state (or any state preceding end_call), you MUST provide distinct closeVariants for different outcomes (e.g., success, declined, opt_out, callback_handoff) so the agent's sign-off matches the actual conversation outcome (e.g. not saying 'see you soon' to someone who opted out).
+7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. For the closing state (or any state preceding end_call/transfer_call), you MUST provide distinct closeVariants for different outcomes (e.g., success, declined, opt_out, callback_handoff, transfer_accepted, transfer_declined, transfer_failed) so the agent's sign-off matches the actual conversation outcome (e.g. not saying 'see you soon' to someone who opted out).
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
 9. SLOT NAMING & TOOLS: 'slotsToCollect' must be 1-2 words (e.g. 'phone_number', 'booking_date').
 10. DEEP TOOL INJECTION: Do NOT hardcode generic arguments (e.g., expected_digits) into tool invocations. Simply specify the "tool" name in entryAction or inTurnTool. The compiler will map the appropriate robust, region-aware parameters dynamically.
@@ -189,7 +194,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 13. DATA LOSS IN PARAPHRASING: You may paraphrase user scripts for natural conversational flow, but you MUST NOT DROP any specific instructions, facts, policies, disclosures (like call recording), or identity checks that the user provided in their script. If the user said 'confirm identity first', your generated speechPrompt MUST include a question confirming identity. If the user said 'state the call is recorded', your generated speechPrompt MUST state the call is recorded.
 14. COMPLEX PUSHBACK ROUTING: If a specific branch requires a multi-step response (e.g., 'acknowledge -> note follow-up -> redirect once -> close if still declined'), you MUST encode this exactly using a combination of a \`subLoop\` (for the redirect) and a terminal \`edge\` (for the close). Do not simplify it to a single edge.
 15. SYNC PROSE AND EDGES: If the user specified handling for objections, digressions, or edge cases (like 'customer busy' or 'why are you calling'), you MUST create explicit conditional edges or a subLoop in the relevant states to handle these paths structurally. Do not rely entirely on implicit LLM reasoning for explicit business rules.
-16. END_CALL REASONS & TERMINAL TAXONOMY: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number. Your closeVariants SHOULD map to these terminal states (e.g., T-BOOKED -> success, T-CALLBACK -> callback_handoff, T-DEAD -> declined, T-WRONGNUM -> wrong_number, T-DNC -> opt_out).
+16. END_CALL REASONS & TERMINAL TAXONOMY: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number. Your closeVariants SHOULD map to these terminal states (e.g., T-BOOKED -> success, T-CALLBACK -> callback_handoff, T-DEAD -> declined, T-WRONGNUM -> wrong_number, T-DNC -> opt_out). CRITICAL: If the business context implies outbound calling or lead generation, you MUST explicitly generate edges for "wrong number" and "ask to stop calling / opt out", mapped to the \`wrong_number\` and \`opt_out\` terminal reasons.
 17. DATE/TIME VALIDATION: If a state collects a date or time slot, you MUST add specific constraints to its 'notes' array instructing the agent to validate the provided date/time against the system variables {{current_date}} and {{current_time}} to reject past dates or invalid slots.
 18. MANDATORY RETRY POLICIES: EVERY state that has a \`slotsToCollect\` array MUST include a \`retryPolicy\` with \`maxAttempts\` and an \`onExhausted\` target state. Do not leave capture states open-ended.
 19. CONFIRMATION READ-BACK: If the overall flow collects 2 or more slots, you MUST include a dedicated confirmation state (id containing 'confirm' or 'readback') before the final resolution/booking step. This state must read back all collected details and allow the user to confirm or correct them via a subLoop.

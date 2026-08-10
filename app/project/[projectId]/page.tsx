@@ -14,6 +14,9 @@ interface Project {
   industry?: string;
   finalPrompt?: string;
   welcomeMessage?: string;
+  businessSpec?: string;
+  variables?: any[];
+  functions?: any[];
 }
 
 export default function ProjectStudioPage({ params }: { params: Promise<{ projectId: string }> }) {
@@ -42,7 +45,11 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
     await fetch(`/api/projects/${projectId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ finalPrompt: project.finalPrompt }),
+      body: JSON.stringify({ 
+        finalPrompt: project.finalPrompt,
+        businessSpec: project.businessSpec,
+        languageMode: project.businessSpec ? JSON.parse(project.businessSpec)?.meta?.languageMode : undefined,
+      }),
     });
     await fetchProject(projectId);
     setSaving(false);
@@ -60,34 +67,26 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
   const isPublished = project.status === 'published';
 
   return (
-    <div className="mx-auto flex w-full max-w-[1000px] flex-1 flex-col px-6 py-6">
-      <div className="mb-4 shrink-0">
-        <Link
-          href="/dashboard"
-          className="inline-flex items-center gap-1.5 text-[13px] text-graphite transition-colors hover:text-ink"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Projects
-        </Link>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-[20px] font-semibold text-ink">{project.name}</h1>
-          <Badge variant={isPublished ? 'success' : 'neutral'}>
-            <span className={`h-1.5 w-1.5 rounded-full ${isPublished ? 'bg-success' : 'bg-faint'}`} />
-            {isPublished ? 'Published' : 'Draft'}
-          </Badge>
-        </div>
-      </div>
-
-      <div className="flex min-h-[70vh] flex-1 flex-col -mx-6 -my-6">
-        <AgentPromptEditor
-          draft={{ finalPrompt: project.finalPrompt || '' } as any}
-          onChangeDraft={(d) => setProject({ ...project, finalPrompt: d.finalPrompt })}
-          onSave={handleSavePrompt}
-          onBack={() => router.push('/dashboard')}
-          saving={saving}
-        />
-      </div>
+    <div className="flex flex-col h-screen w-full bg-canvas animate-fade-in-up">
+      <AgentPromptEditor
+        projectName={project.name}
+        draft={{ 
+          finalPrompt: project.finalPrompt || '',
+          businessSpec: project.businessSpec ? JSON.parse(project.businessSpec) : undefined,
+          dynamicVariables: project.variables || [],
+          suggestedFunctions: project.functions || [],
+        } as any}
+        onChangeDraft={(d) => setProject({ 
+          ...project, 
+          finalPrompt: d.finalPrompt,
+          businessSpec: d.businessSpec ? JSON.stringify(d.businessSpec) : project.businessSpec,
+          variables: d.dynamicVariables || project.variables,
+          functions: d.suggestedFunctions || project.functions
+        })}
+        onSave={handleSavePrompt}
+        onBack={() => router.push('/dashboard')}
+        saving={saving}
+      />
     </div>
   );
 }

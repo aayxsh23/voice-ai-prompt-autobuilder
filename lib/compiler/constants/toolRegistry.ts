@@ -58,7 +58,7 @@ export const SYSTEM_RUNTIME_TOOLS: ToolDefinition[] = [
     parameters: {
       type: "object",
       properties: {
-        reason: { type: "string", description: "Standardized reason for outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number." }
+        reason: { type: "string", description: "Standardized reason for outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number, hangup_request." }
       },
       required: []
     },

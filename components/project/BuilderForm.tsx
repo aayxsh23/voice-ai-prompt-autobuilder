@@ -15,11 +15,26 @@ import {
   ArrowRight,
   Loader2,
   Trash2,
+  Target,
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════════════════════ */
+
+const REGION_PHONE_CODES: Record<string, string> = {
+  US: '+1',
+  CA: '+1',
+  GB: '+44',
+  IN: '+91',
+  AU: '+61',
+  DE: '+49',
+  FR: '+33',
+  ES: '+34',
+  IT: '+39',
+  BR: '+55',
+  MX: '+52'
+};
 
 export function formatVariableKey(input: string) {
   const clean = input.replace(/[^a-zA-Z0-9]/g, ' ').trim();
@@ -121,7 +136,7 @@ export const initialData = {
   /* ── Conversation ── */
   openingMessage: '',
   callFlow: '',
-  variables: [{ key: 'Full Name', value: 'John Doe' }] as VariableRow[],
+  variables: [] as VariableRow[],
 
   /* ── Knowledge base ── */
   kbEnabled: false,
@@ -147,16 +162,17 @@ export type BuilderData = typeof initialData;
    MODULES
    ═══════════════════════════════════════════════════════════════ */
 
-export type ModuleId = 'persona' | 'conversation' | 'knowledge' | 'rules';
+export type ModuleId = 'persona' | 'objective' | 'conversation' | 'knowledge' | 'rules';
 
 export const MODULES: Record<ModuleId, { label: string; icon: React.ElementType; blurb: string }> = {
-  persona: { label: 'Persona', icon: UserCircle, blurb: 'Who the agent is, who it works for, and why it is calling.' },
-  conversation: { label: 'Conversation', icon: MessageSquare, blurb: 'The opening, the flow, and the data injected per call.' },
+  persona: { label: 'Persona', icon: UserCircle, blurb: 'Who the agent is and who it works for.' },
+  objective: { label: 'Objective & Data', icon: Target, blurb: 'Why the agent is calling and the data it needs.' },
+  conversation: { label: 'Conversation', icon: MessageSquare, blurb: 'The opening and the flow.' },
   knowledge: { label: 'Knowledge Base', icon: BookOpen, blurb: 'Facts the agent answers from instead of guessing.' },
   rules: { label: 'Guardrails & Call Handling', icon: ShieldCheck, blurb: 'Boundaries, disclosures, fallbacks and human handoff.' },
 };
 
-export const MODULE_ORDER: ModuleId[] = ['persona', 'conversation', 'knowledge', 'rules'];
+export const MODULE_ORDER: ModuleId[] = ['persona', 'objective', 'conversation', 'knowledge', 'rules'];
 
 export type Completion = 'empty' | 'partial' | 'complete';
 
@@ -168,7 +184,9 @@ export function getModuleCompletion(id: ModuleId, d: BuilderData): Completion {
   };
   switch (id) {
     case 'persona':
-      return score([d.companyName.trim(), d.agentName.trim(), d.industry, d.callPurpose.trim()]);
+      return score([d.companyName.trim(), d.agentName.trim(), d.industry]);
+    case 'objective':
+      return score([d.callPurpose.trim()]);
     case 'conversation':
       return score([d.openingMessage.trim(), d.callFlow.trim()]);
     case 'knowledge':
@@ -190,7 +208,7 @@ export function getModuleCompletion(id: ModuleId, d: BuilderData): Completion {
 export function getBlockingGaps(d: BuilderData): string[] {
   const gaps: string[] = [];
   if (!d.companyName.trim()) gaps.push('Company name (Persona)');
-  if (!d.callPurpose.trim()) gaps.push('Call purpose (Persona)');
+  if (!d.callPurpose.trim()) gaps.push('Call purpose (Objective & Data)');
   if (!d.callFlow.trim()) gaps.push('Call flow (Conversation)');
   if (d.kbEnabled && !d.kbContent.trim()) gaps.push('Knowledge base content (Knowledge Base)');
   if (d.liveTransferEnabled && !d.transferNumbers.some((t) => t.number.trim())) {
@@ -382,11 +400,6 @@ export function PersonaCard({ data }: { data: BuilderData }) {
         </p>
         <p className="truncate text-[12px] text-graphite">{meta.join(' · ')}</p>
       </div>
-      {data.callPurpose && (
-        <p className="mt-2 line-clamp-2 border-t border-line pt-2 text-[13px] leading-[1.45] text-graphite">
-          {data.callPurpose}
-        </p>
-      )}
     </div>
   );
 }
@@ -460,7 +473,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
   const wasDrafted = (f: AutoField) => drafted.includes(f);
 
   const goNext = async (from: ModuleId) => {
-    if (from === 'persona') {
+    if (from === 'objective') {
       const purposeChanged = data.callPurpose !== purposeAtLastDraft.current;
       if (purposeChanged) {
         await runAutoFill(['openingMessage', 'callFlow', 'guardrails'], true);
@@ -552,23 +565,6 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
           </div>
         </div>
 
-        <div>
-            <Label htmlFor="callPurpose">Call purpose *</Label>
-            <textarea
-                id="callPurpose"
-                className={`input-field resize-y ${validationErrors.callPurpose ? 'error' : ''}`}
-                rows={3}
-                value={data.callPurpose}
-                onChange={(e) => { set('callPurpose', e.target.value); markTouched('callPurpose'); }}
-                onBlur={() => setValidationErrors((prev) => ({ ...prev, callPurpose: !data.callPurpose.trim() }))}
-                placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default}
-            />
-            {validationErrors.callPurpose && <p className="text-[12px] text-danger pt-1">Call purpose is required</p>}
-            {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20 ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint> : data.callPurpose.trim().length >= 20 ? <Hint tone="ok">Good specificity.</Hint> : null}
-            <Guide>Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it when you move to the next section.</Guide>
-        </div>
-
-        <div className="my-6 h-px bg-line" />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
@@ -604,7 +600,93 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
         </fieldset>
 
         {draftErrorBanner}
-        <NextButton label="Next: Conversation" onClick={() => goNext('persona')} busy={drafting.length > 0} />
+        <NextButton label="Next: Objective & Data" onClick={() => goNext('persona')} />
+      </section>
+    );
+  }
+
+  /* ─────────────────────────── OBJECTIVE ─────────────────────────── */
+
+  if (activeModule === 'objective') {
+    return (
+      <section className="space-y-5" aria-labelledby="module-heading">
+        <ModuleHeader id="objective" />
+
+        <div>
+            <Label htmlFor="callPurpose">Call purpose *</Label>
+            <textarea
+                id="callPurpose"
+                className={`input-field resize-y ${validationErrors.callPurpose ? 'error' : ''}`}
+                rows={4}
+                value={data.callPurpose}
+                onChange={(e) => { set('callPurpose', e.target.value); markTouched('callPurpose'); }}
+                onBlur={() => setValidationErrors((prev) => ({ ...prev, callPurpose: !data.callPurpose.trim() }))}
+                placeholder={PURPOSE_PLACEHOLDER[data.industry] || PURPOSE_PLACEHOLDER.default}
+            />
+            {validationErrors.callPurpose && <p className="text-[12px] text-danger pt-1">Call purpose is required</p>}
+            {data.callPurpose.trim().length > 0 && data.callPurpose.trim().length < 20 ? <Hint tone="warn">This is thin — add the outcome you expect from the call.</Hint> : data.callPurpose.trim().length >= 20 ? <Hint tone="ok">Good specificity.</Hint> : null}
+            <Guide>Everything downstream keys off this — your opening line, call flow and guardrails are drafted from it when you move to the next section.</Guide>
+        </div>
+
+        <div className="my-6 h-px bg-line" />
+
+        <div>
+            <span className="block text-[14px] font-medium text-ink mb-1.5">Pre-loaded customer data</span>
+            <p className="text-[12px] text-graphite mb-3">What information does your system already have about the caller before they pick up? The agent will reference this automatically.</p>
+
+            {data.variables.length === 0 && (
+                <div className="mb-3 rounded-lg border border-dashed border-line bg-subtle/50 p-4">
+                    <p className="text-[13px] text-graphite mb-3">No pre-loaded data yet. Example of what you could add:</p>
+                    <div className="flex gap-3 items-start opacity-50 pointer-events-none select-none">
+                        <div className="flex-1 grid grid-cols-2 gap-4">
+                            <div className="space-y-1.5">
+                                <label className="block text-[12px] font-medium text-ink">Field name</label>
+                                <input className="input-field w-full" value="Full Name" readOnly tabIndex={-1} />
+                                <p className="text-[11px] text-faint ml-1">
+                                    Agent will see this as: <code className="text-ink bg-canvas px-1.5 py-0.5 rounded font-mono font-medium">{'{{full_name}}'}</code>
+                                </p>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="block text-[12px] font-medium text-ink">Example value</label>
+                                <input className="input-field w-full" value="John Doe" readOnly tabIndex={-1} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="space-y-3">
+                {data.variables.map((v, i) => {
+                    const agentVar = formatVariableKey(v.key);
+                    return (
+                        <div key={i} className="flex gap-3 items-start">
+                            <div className="flex-1 grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Field name</label>}
+                                    <input className="input-field w-full" placeholder="e.g. First Name" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value)} />
+                                    {agentVar && (
+                                        <p className="text-[11px] text-faint ml-1">
+                                            Agent will see this as: <code className="text-ink bg-canvas px-1.5 py-0.5 rounded font-mono font-medium">{agentVar}</code>
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="space-y-1.5">
+                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Example value</label>}
+                                    <input className="input-field w-full" placeholder="e.g. John" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => removeVariable(i)} aria-label="Remove this field" className={`p-2.5 text-graphite hover:text-danger hover:bg-danger/10 rounded-md transition-colors shrink-0 ${i === 0 ? 'mt-[22px]' : 'mt-0'}`}>
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+            <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><Plus className="w-4 h-4" /> Add field</button>
+        </div>
+
+        {draftErrorBanner}
+        <NextButton label="Next: Conversation" onClick={() => goNext('objective')} busy={drafting.length > 0} disabled={!data.callPurpose.trim()} />
       </section>
     );
   }
@@ -618,7 +700,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
 
         {!data.callPurpose.trim() && (
             <div className="card bg-subtle px-4 py-3 text-[13px] text-graphite">
-                Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('persona')}>Persona</button> and we will draft the opening message, call flow and guardrails for you.
+                Add a call purpose in <button type="button" className="underline font-medium" onClick={() => setActiveModule('objective')}>Objective &amp; Data</button> and we will draft the opening message, call flow and guardrails for you.
             </div>
         )}
 
@@ -654,43 +736,6 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
             </div>
         </div>
 
-        <div className="my-6 h-px bg-line" />
-
-        <div>
-            <span className="block text-[14px] font-medium text-ink mb-1.5">Pre-loaded customer data</span>
-            <p className="text-[12px] text-graphite mb-3">What information does your system already have about the caller before they pick up? The agent will reference this automatically.</p>
-
-            {data.variables.length === 0 && <p className="text-[13px] text-faint mb-3 italic">No pre-loaded data yet — the agent will run without pre-call context.</p>}
-
-            <div className="space-y-3">
-                {data.variables.map((v, i) => {
-                    const agentVar = formatVariableKey(v.key);
-                    return (
-                        <div key={i} className="flex gap-3 items-start">
-                            <div className="flex-1 grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5">
-                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Field name</label>}
-                                    <input className="input-field w-full" placeholder="e.g. First Name" value={v.key} onChange={(e) => updateVariable(i, 'key', e.target.value)} />
-                                    {agentVar && (
-                                        <p className="text-[11px] text-faint ml-1">
-                                            Agent will see this as: <code className="text-ink bg-canvas px-1.5 py-0.5 rounded font-mono font-medium">{agentVar}</code>
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="space-y-1.5">
-                                    {i === 0 && <label className="block text-[12px] font-medium text-ink">Example value</label>}
-                                    <input className="input-field w-full" placeholder="e.g. John" value={v.value} onChange={(e) => updateVariable(i, 'value', e.target.value)} />
-                                </div>
-                            </div>
-                            <button type="button" onClick={() => removeVariable(i)} aria-label="Remove this field" className={`p-2.5 text-graphite hover:text-danger hover:bg-danger/10 rounded-md transition-colors shrink-0 ${i === 0 ? 'mt-[22px]' : 'mt-0'}`}>
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-            <button type="button" onClick={addVariable} className="link mt-3 inline-flex items-center gap-1.5 text-[13px]"><Plus className="w-4 h-4" /> Add field</button>
-        </div>
 
         {draftErrorBanner}
         <NextButton label="Next: Knowledge Base" onClick={() => goNext('conversation')} busy={drafting.length > 0} disabled={!data.callFlow.trim()} />
@@ -837,7 +882,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
                             {data.transferNumbers.map((t, i) => (
                                 <div key={i} className="flex gap-2">
                                     <input className="input-field flex-1" placeholder="Label (e.g. Front desk)" value={t.label} onChange={(e) => updateTransferNumber(i, 'label', e.target.value)} />
-                                    <input className="input-field flex-1 font-mono text-[13px]" placeholder="+1 415 555 0142" value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
+                                    <input className="input-field flex-1 font-mono text-[13px]" placeholder={`${REGION_PHONE_CODES[data.region] || '+1'} 415 555 0142`} value={t.number} onChange={(e) => updateTransferNumber(i, 'number', e.target.value)} />
                                     {data.transferNumbers.length > 1 && (
                                         <button type="button" onClick={() => removeTransferNumber(i)} aria-label="Remove this number" className="icon-btn shrink-0">
                                             <X className="w-4 h-4" />

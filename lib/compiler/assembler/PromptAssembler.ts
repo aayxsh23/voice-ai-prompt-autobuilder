@@ -596,8 +596,12 @@ VOICE RULES & TOOL SILENCE
   const contactsList = Array.isArray(entities?.namedContacts) ? entities.namedContacts : [];
   const deptsList = Array.isArray(entities?.departments) ? entities.departments : [];
   const routingLines = [
-    ...escalationList.map((num: any) => `- Escalation Number: ${String(num)}`),
-    ...contactsList.map((c: any) => `- ${c?.label || 'Transfer Contact'}: ${c?.value || ''}`),
+    ...escalationList.map((num: any) => {
+      const str = String(num);
+      const match = str.match(/^([^:]+):/);
+      return `- Escalation Number: ${match ? match[1].trim() : str}`;
+    }),
+    ...contactsList.map((c: any) => `- Transfer Contact: ${c?.label || 'Human Agent'}`),
     ...deptsList.map((d: any) => `- Department: ${String(d)}`)
   ];
   const escalationAndRouting = routingLines.length > 0
@@ -667,6 +671,13 @@ VOICE RULES & TOOL SILENCE
   if (spec?.callFlowPlan?.digressionPolicy) {
     callFlowPolicies.push(`* **Mid-Flow Digression Handling:** ${spec.callFlowPlan.digressionPolicy}`);
   }
+
+  // Comprehensive Telephony Realism & Constraints
+  callFlowPolicies.push(`* **ASR Echoes:** Treat perfect user repetition of your line as an ASR echo; continue without asking why.`);
+  callFlowPolicies.push(`* **Loop Prevention:** If caller repeats the same question 3 times, apologize and escalate or end_call.`);
+  callFlowPolicies.push(`* **Tool Failure:** If a tool fails, read the exact error payload and ask how to proceed. Never invent a generic apology or fake success.`);
+  callFlowPolicies.push(`* **Hang-up/Abuse Path:** If the user explicitly asks you to stop talking, opt out, or hang up -> invoke end_call(reason="hangup_request").`);
+  callFlowPolicies.push(`* **Ledgers & Budgets:** Never invent or assume financial figures, budgets, or discounts not explicitly provided in the context.`);
 
   if (spec?.callFlowPlan?.confirmationStyle) {
     callFlowPolicies.push(`* **Confirmation Read-back Style:** ${spec.callFlowPlan.confirmationStyle}`);
@@ -931,7 +942,34 @@ VOICE RULES & TOOL SILENCE
   // 13. SYSTEM TOOLS & EXECUTION
   let toolsContent = "";
   if (Array.isArray(spec?.tools) && spec.tools.length > 0) {
-    const descriptions = spec.tools.map((t, index) => ToolPlanner.describeToolForPrompt(t as any, index + 1)).filter(Boolean);
+    const safeTools = spec.tools.map((t: any) => t.name === 'end_call' ? JSON.parse(JSON.stringify(t)) : t);
+    
+    const endCallTool = safeTools.find((t: any) => t.name === 'end_call');
+    if (endCallTool && endCallTool.parameters?.properties?.reason) {
+      const usedReasons = new Set<string>();
+      const fsmStates = Array.isArray(spec?.callFlowPlan?.fsmStates) ? spec.callFlowPlan.fsmStates : [];
+      for (const state of fsmStates) {
+        if (state.entryAction?.tool === 'end_call' && state.entryAction.args?.reason) {
+          usedReasons.add(state.entryAction.args.reason);
+        }
+        for (const edge of state.edges || []) {
+          if (edge.action === 'end_call' && edge.reason) {
+            usedReasons.add(edge.reason);
+          }
+          if (edge.closeVariant) {
+            usedReasons.add(edge.closeVariant);
+          }
+        }
+      }
+      const standardReasons = ['success', 'declined', 'opt_out', 'callback_handoff', 'abusive_caller', 'language_barrier', 'out_of_scope', 'wrong_number', 'hangup_request'];
+      const reachableReasons = standardReasons.filter(r => usedReasons.has(r));
+      if (reachableReasons.length > 0) {
+        endCallTool.parameters.properties.reason.description = `Standardized reason for outcome: ${reachableReasons.join(', ')}.`;
+        endCallTool.parameters.properties.reason.enum = reachableReasons;
+      }
+    }
+    
+    const descriptions = safeTools.map((t: any, index: number) => ToolPlanner.describeToolForPrompt(t, index + 1)).filter(Boolean);
     
     const hasTransferCall = spec.tools.some((t: any) => t?.name === 'transfer_call');
     

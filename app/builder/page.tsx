@@ -1,11 +1,12 @@
 'use client';
 
 import React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
 export default function BuilderRootPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [failed, setFailed] = React.useState(false);
 
   React.useEffect(() => {
@@ -17,14 +18,17 @@ export default function BuilderRootPage() {
           body: JSON.stringify({ currentStep: 1 }),
         });
         const data = await res.json();
-        if (data?.id) router.replace(`/builder/${data.id}`);
+        if (data?.id) {
+          const mode = searchParams.get('mode') || 'auto';
+          router.replace(`/builder/${data.id}?mode=${mode}`);
+        }
         else setFailed(true);
       } catch {
         setFailed(true);
       }
     };
     initSession();
-  }, [router]);
+  }, [router, searchParams]);
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-32 text-center">

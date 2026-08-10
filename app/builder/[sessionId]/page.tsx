@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   BuilderForm,
   PersonaCard,
@@ -56,6 +56,9 @@ function ReviewStatic({ label, value }: { label: string; value: string }) {
 
 export default function FormBuilderPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const mode = searchParams.get('mode') || 'auto';
+  
   const [sessionId, setSessionId] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -79,9 +82,36 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
   useEffect(() => {
     params.then((p) => {
       setSessionId(p.sessionId);
+      if (mode === 'scratch') {
+        setDraft({
+          finalPrompt: '',
+          dynamicVariables: [],
+          suggestedFunctions: [],
+          knowledgeBaseSuggestions: [],
+          faqCards: [],
+          objectionCards: [],
+          edgeCaseRules: [],
+          testScenarios: [],
+          qualityReview: {
+            overallScore: 0,
+            completionScore: 0,
+            safetyScore: 0,
+            voiceStyleScore: 0,
+            structureScore: 0,
+            edgeCaseScore: 0,
+            humanQualityScore: 0,
+            hallucinationResistanceScore: 0,
+            minimumManualEditScore: 0,
+            issues: [],
+            recommendedImprovements: [],
+            readyToPublish: false,
+          },
+        });
+        setStage('editor');
+      }
       setLoading(false);
     });
-  }, [params]);
+  }, [params, mode]);
 
   const completions = useMemo(
     () => MODULE_ORDER.map((id) => ({ id, status: getModuleCompletion(id, data) })),
@@ -195,10 +225,17 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
   if (stage === 'editor' && draft) {
     return (
       <AgentPromptEditor
+        mode={mode as 'auto' | 'scratch'}
         draft={draft}
         onChangeDraft={setDraft}
         onSave={handleSaveProject}
-        onBack={() => { setStage('review'); setDraft(null); }}
+        onBack={() => {
+          if (mode === 'scratch') router.push('/dashboard');
+          else {
+            setStage('review');
+            setDraft(null);
+          }
+        }}
         saving={saving}
       />
     );

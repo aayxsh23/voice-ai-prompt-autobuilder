@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { Plus, Search, Loader2 } from 'lucide-react';
 import { Button, Input } from '@/components/ui';
 import { PromptProjectCard } from '@/components/dashboard/PromptProjectCard';
-
+import { CreateAgentModal } from '@/components/dashboard/CreateAgentModal';
+import { useRouter } from 'next/navigation';
 interface Project {
   id: string;
   name: string;
@@ -21,7 +22,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
   const [projectToDelete, setProjectToDelete] = React.useState<Project | null>(null);
-
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const router = useRouter();
   // No synchronous setState here: `loading` starts true and the first statement is
   // an await, so mounting doesn't trigger a cascading render. Refreshes after a
   // mutation deliberately skip the spinner — the list is already on screen and
@@ -98,12 +100,10 @@ export default function DashboardPage() {
             Prompt packages for your telephony agents.
           </p>
         </div>
-        <Link href="/builder">
-          <Button>
-            <Plus className="h-3.5 w-3.5" />
-            New session
-          </Button>
-        </Link>
+        <Button onClick={() => setIsModalOpen(true)}>
+          <Plus className="h-3.5 w-3.5" />
+          New session
+        </Button>
       </div>
 
       <div className="mb-6 flex items-center justify-between gap-4">
@@ -142,12 +142,10 @@ export default function DashboardPage() {
               : `Nothing matches “${search}”.`}
           </p>
           {projects.length === 0 ? (
-            <Link href="/builder" className="mt-4 inline-block">
-              <Button>
-                <Plus className="h-3.5 w-3.5" />
-                New session
-              </Button>
-            </Link>
+            <Button className="mt-4" onClick={() => setIsModalOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              New session
+            </Button>
           ) : (
             <Button variant="secondary" className="mt-4" onClick={() => setSearch('')}>
               Clear search
@@ -194,6 +192,16 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {isModalOpen && (
+        <CreateAgentModal
+          onClose={() => setIsModalOpen(false)}
+          onSelectMode={(mode) => {
+            setIsModalOpen(false);
+            router.push(`/builder?mode=${mode}`);
+          }}
+        />
       )}
     </div>
   );
