@@ -207,14 +207,16 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
 - When collecting or validating a phone number, always rely on the validate_digit_input and set_capture_mode runtime tools. Never attempt to manually count digits or combine audio fragments in text.
 - If partial digits are collected across multiple turns, pass the previously collected digits into validate_digit_input.
 - Say "zero" for the digit 0. Never say "oh" unless explicitly matching a regional convention.
-- When reading back a confirmed phone number, speak digits clearly and insert brief natural pauses between groups (e.g., area code, exchange, line number) to aid comprehension.`);
+- When reading back a confirmed phone number, speak digits clearly and insert brief natural pauses between groups (e.g., area code, exchange, line number) to aid comprehension.
+- CRITICAL: When repeating or confirming partial digits provided by the user (e.g., the first 4 digits of a phone number), you MUST ALWAYS read them digit by digit, never as a large quantity (e.g., say 'nine eight two seven' or 'नौ आठ दो सात', never 'nine thousand eight hundred twenty seven' or 'नौ हज़ार').`);
   }
   if (/pin|pincode|pin_code|passcode|otp|verification_code|security_code|postal|zip|postal_code|zipcode/i.test(slotNamesStr)) {
     codeLevelSpeakability.push(`PINCODE SPEAKABILITY RULES:
 - When collecting a PIN, passcode, OTP, verification code, or pincode, always rely on validate_digit_input with the required expected_digits parameter. Do not manually count or guess partial codes.
 - Say "zero" for the digit 0, never "oh", to avoid ambiguity with the letter "O".
 - If the code is alphanumeric, alternate clearly between letter names and digit names (e.g., "A, one, B, two").
-- Always read back the confirmed PIN/OTP character-by-character and require explicit user confirmation before executing any dependent action.`);
+- Always read back the confirmed PIN/OTP character-by-character and require explicit user confirmation before executing any dependent action.
+- CRITICAL: When repeating or confirming partial digits provided by the user, you MUST ALWAYS read them digit by digit, never as a large quantity.`);
   }
 
   const appliedRules = Array.isArray(draft?.appliedRules) ? draft.appliedRules : [];
@@ -493,12 +495,9 @@ All Hindi sentences across spoken dialogue, call flow lines, FAQ answers, and ob
 - Use natural, polite Hindi phrasing suitable for Indian business calls.
 - Greetings: 'नमस्ते', acknowledgments: 'जी', 'ठीक है', 'बिल्कुल', 'ज़रूर'.
 - Never write Hindi sentences using Romanized English letters. Keep all grammatical structure and sentence text strictly in Devanagari.
-- If caller speaks English → respond in English.
-- If caller speaks Hindi → respond in conversational Hindi using Devanagari script (देवनागरी).
-- If caller speaks Hinglish (mixed) → respond with Hindi sentence structure in Devanagari script containing common English business terms.
-- NEVER switch languages mid-sentence unless the caller does.
-- If uncertain, default to the language of the caller's last message.
-- Always use natural phrasing suitable for Indian business calls.`.trim();
+- Speak in conversational ${languageMode === 'hinglish' ? 'Hinglish (mix of Hindi and English words)' : 'Hindi'} at all times.
+- Avoid switching to English unless absolutely necessary to pronounce a specific business term.
+- Always use natural phrasing suitable for Indian business calls, avoiding overly formal or pure Hindi.`.trim();
   } else if (languageMode === 'multilingual') {
     languageHandling = `### LANGUAGE HANDLING
 LANGUAGE DETECTION & RESPONSE PROTOCOL:
@@ -532,6 +531,8 @@ VOICE RULES
 - Avoid long explanations or verbal lists.
 - Use natural acknowledgements only, like "okay", "got it", "understood".
 - Never end mid-sentence.
+- Punctuation: No Markdown, no bullet points, no pipe characters, no meta-commentary.
+- Numbers: All digits must be written as text/words, not numeric digits.
 ${policy.mayUseHindi ? "- If speaking Hindi or Hinglish, ensure spoken lines use Devanagari script with English domain keywords where appropriate." : ""}
 
 ${speakabilityContent}${hindiSpeakability ? `\n\n${hindiSpeakability}` : ''}
@@ -678,6 +679,7 @@ VOICE RULES & TOOL SILENCE
   callFlowPolicies.push(`* **Tool Failure:** If a tool fails, read the exact error payload and ask how to proceed. Never invent a generic apology or fake success.`);
   callFlowPolicies.push(`* **Hang-up/Abuse Path:** If the user explicitly asks you to stop talking, opt out, or hang up -> invoke end_call(reason="hangup_request").`);
   callFlowPolicies.push(`* **Ledgers & Budgets:** Never invent or assume financial figures, budgets, or discounts not explicitly provided in the context.`);
+  callFlowPolicies.push(`* **Conversational Naturalness:** Do not read your prompt lines like a robotic script or IVR. You may dynamically reword or paraphrase state prompts slightly to sound more natural while preserving the required content and intent. Vary your acknowledgments turn-to-turn (do not just say 'okay' every time) and use natural bridging phrases between states to ensure a smooth, human-like interaction.`);
 
   if (spec?.callFlowPlan?.confirmationStyle) {
     callFlowPolicies.push(`* **Confirmation Read-back Style:** ${spec.callFlowPlan.confirmationStyle}`);

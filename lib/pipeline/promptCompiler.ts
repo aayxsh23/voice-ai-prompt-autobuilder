@@ -23,6 +23,7 @@ import { validatePromptBudget } from "@/lib/pipeline/validators/PromptBudgetVali
 import { validateLanguageQuality } from "@/lib/pipeline/validators/LanguageQualityValidator";
 import { resolveLanguagePolicy } from "@/lib/llm/language/LanguagePolicy";
 import { WorkflowArchitect } from "../compiler/planners/WorkflowArchitect";
+import { ScriptLinter } from "../compiler/utils/ScriptLinter";
 import { KnowledgeArchitect } from "../compiler/planners/KnowledgeArchitect";
 import { ToolPlanner } from "../compiler/planners/ToolPlanner";
 import { GuardrailOptimizer } from "../compiler/planners/GuardrailOptimizer";
@@ -260,6 +261,37 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   });
   draft = mergeUserOverrides(draft, input.overrides);
   draft.businessSpec = spec;
+
+  if (isHindiMode) {
+    const sessionId = spec.meta?.sessionId;
+    if (Array.isArray(draft.faqCards)) {
+      for (const faq of draft.faqCards) {
+        if (faq.answer) faq.answer = await ScriptLinter.lintHindiScript(faq.answer, sessionId);
+      }
+    }
+    if (Array.isArray(draft.objectionCards)) {
+      for (const obj of draft.objectionCards) {
+        const responseField = obj.response || obj.handling;
+        if (responseField) {
+          const linted = await ScriptLinter.lintHindiScript(responseField, sessionId);
+          if (obj.response !== undefined) obj.response = linted;
+          if (obj.handling !== undefined) obj.handling = linted;
+        }
+      }
+    }
+    if (Array.isArray(spec.callFlowPlan?.steps)) {
+      for (const step of spec.callFlowPlan.steps) {
+        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintHindiScript(step.scriptDirective, sessionId);
+        if (step.generatedLine) step.generatedLine = await ScriptLinter.lintHindiScript(step.generatedLine, sessionId);
+      }
+    }
+    if (Array.isArray(draft.callFlowSteps)) {
+      for (const step of draft.callFlowSteps) {
+        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintHindiScript(step.scriptDirective, sessionId);
+        if (step.generatedLine) step.generatedLine = await ScriptLinter.lintHindiScript(step.generatedLine, sessionId);
+      }
+    }
+  }
 
   // Register the planned tools on the draft, preserving each tool's JSON Schema.
   // This is the ONLY path by which tools reach the project record and the platform

@@ -4,6 +4,7 @@ import { FsmStateNode } from "@/lib/llm/types/CallFlowPlan";
 import { semanticDedupSlots } from "@/lib/compiler/assembler/PromptAssembler";
 import { isDerivedSlot } from "@/lib/compiler/constants/slotRegistry";
 import { SYSTEM_RUNTIME_TOOLS, getEmailTool } from "@/lib/compiler/constants/toolRegistry";
+import { ScriptLinter } from "@/lib/compiler/utils/ScriptLinter";
 import { logger } from "@/lib/logger";
 
 export class WorkflowArchitect {
@@ -86,8 +87,11 @@ export class WorkflowArchitect {
     ];
 
     const langDirective = isHindiOrHinglish
-      ? `\nLANGUAGE DIRECTIVE: Write all 'speechPrompt' lines inside the FSM nodes in Devanagari script (देवनागरी) Hindi. English terminology should be romanized.`
-      : "";
+      ? `\nLANGUAGE DIRECTIVE: Write 'speechPrompt' lines in natural, conversational ${languageMode === 'hinglish' ? 'Hinglish (mix of Hindi and English words, written in Devanagari script)' : 'Hindi (Devanagari script)'}. 
+CRITICAL RULES FOR HINDI/HINGLISH:
+1. NO NUMERIC DIGITS: Write all numbers as fully spelled-out words (e.g. write "दस" not "10"). NEVER output characters 0-9 in the script.
+2. NO DEVANAGARI TRANSLITERATION OF ENGLISH: Any word of English origin MUST be written in Roman/English script. Do NOT write English words in Devanagari.`
+      : `\nLANGUAGE DIRECTIVE: CRITICAL: Write all numbers as fully spelled-out words, NEVER use numeric digits (e.g., write "ten" not "10").`;
 
     const transferTopic = spec.capturedTopics?.find(t => t.topic === 'Live transfer & escalation');
     const escalationNumbers = spec.businessSnapshot?.policies?.escalationNumbers || [];
@@ -195,7 +199,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 14. COMPLEX PUSHBACK ROUTING: If a specific branch requires a multi-step response (e.g., 'acknowledge -> note follow-up -> redirect once -> close if still declined'), you MUST encode this exactly using a combination of a \`subLoop\` (for the redirect) and a terminal \`edge\` (for the close). Do not simplify it to a single edge.
 15. SYNC PROSE AND EDGES: If the user specified handling for objections, digressions, or edge cases (like 'customer busy' or 'why are you calling'), you MUST create explicit conditional edges or a subLoop in the relevant states to handle these paths structurally. Do not rely entirely on implicit LLM reasoning for explicit business rules.
 16. END_CALL REASONS & TERMINAL TAXONOMY: When closing the call, you MUST provide exactly one of these standardized reasons for the outcome: success, declined, opt_out, callback_handoff, abusive_caller, language_barrier, out_of_scope, wrong_number. Your closeVariants SHOULD map to these terminal states (e.g., T-BOOKED -> success, T-CALLBACK -> callback_handoff, T-DEAD -> declined, T-WRONGNUM -> wrong_number, T-DNC -> opt_out). CRITICAL: If the business context implies outbound calling or lead generation, you MUST explicitly generate edges for "wrong number" and "ask to stop calling / opt out", mapped to the \`wrong_number\` and \`opt_out\` terminal reasons.
-17. DATE/TIME VALIDATION: If a state collects a date or time slot, you MUST add specific constraints to its 'notes' array instructing the agent to validate the provided date/time against the system variables {{current_date}} and {{current_time}} to reject past dates or invalid slots.
+17. DATE/TIME VALIDATION: If a state collects a date or time slot, you MUST add specific constraints to its 'notes' array instructing the agent to: (1) Ask a clarifying question if a time is ambiguous (e.g., "12 बजे" without specifying AM/PM or दोपहर/रात). (2) Validate the proposed date/time strictly against the system variables {{current_date}} and {{current_time}} to reject past slots. (3) NEVER assert calendar availability or business claims (e.g., "we are very busy today") unless explicitly grounded in provided business context.
 18. MANDATORY RETRY POLICIES: EVERY state that has a \`slotsToCollect\` array MUST include a \`retryPolicy\` with \`maxAttempts\` and an \`onExhausted\` target state. Do not leave capture states open-ended.
 19. CONFIRMATION READ-BACK: If the overall flow collects 2 or more slots, you MUST include a dedicated confirmation state (id containing 'confirm' or 'readback') before the final resolution/booking step. This state must read back all collected details and allow the user to confirm or correct them via a subLoop.
 
@@ -273,6 +277,21 @@ Generate the strict JSON array of FsmStateNode now.`;
           }
         }
       });
+      
+      if (isHindiOrHinglish) {
+        for (const node of nodes) {
+          if (node.speechPrompt) {
+            node.speechPrompt = await ScriptLinter.lintHindiScript(node.speechPrompt, meta.sessionId);
+          }
+          if (Array.isArray(node.closeVariants)) {
+            for (const variant of node.closeVariants) {
+              if (variant.script) {
+                variant.script = await ScriptLinter.lintHindiScript(variant.script, meta.sessionId);
+              }
+            }
+          }
+        }
+      }
       
       return nodes;
     } catch (err) {
