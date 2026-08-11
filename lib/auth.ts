@@ -14,10 +14,13 @@ export interface CurrentUser {
  * rather than a change across every handler.
  */
 export async function getCurrentUser(): Promise<CurrentUser> {
-  let user = await prisma.user.findFirst();
+  let user = await prisma.user.findFirst({
+    select: { id: true, email: true, name: true }
+  });
   if (!user) {
     user = await prisma.user.create({
       data: { name: 'Default User', email: 'user@example.com' },
+      select: { id: true, email: true, name: true }
     });
   }
   return { id: user.id, email: user.email, name: user.name };

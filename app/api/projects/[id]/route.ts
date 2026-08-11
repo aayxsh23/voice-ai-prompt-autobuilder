@@ -2,6 +2,29 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { apiHandler, ApiError } from '@/lib/apiHandler';
 import { getCurrentUser, assertProjectOwner } from '@/lib/auth';
+import { z } from 'zod';
+
+const patchProjectSchema = z.object({
+  name: z.string().optional(),
+  agentName: z.string().optional(),
+  useCase: z.string().optional(),
+  industry: z.string().optional(),
+  status: z.string().optional(),
+  languageMode: z.string().optional(),
+  welcomeMessage: z.string().optional(),
+  finalPrompt: z.string().optional(),
+  businessSpec: z.string().optional(),
+  blueprintJson: z.string().optional(),
+  qualityScore: z.number().optional(),
+  completionScore: z.number().optional(),
+  safetyScore: z.number().optional(),
+  voiceStyleScore: z.number().optional(),
+  structureScore: z.number().optional(),
+  edgeCaseScore: z.number().optional(),
+  humanQualityScore: z.number().optional(),
+  hallucinationResistanceScore: z.number().optional(),
+  minimumManualEditScore: z.number().optional(),
+});
 
 // Scalar fields a client is allowed to update. Prevents mass-assignment of
 // tenancy/identity fields (userId, id) or route-managed fields (version, timestamps).
@@ -81,7 +104,13 @@ export const GET = apiHandler(async (_req: Request, { params }: { params: Promis
 export const PATCH = apiHandler(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
   const { id } = await params;
   await assertProjectOwner(id);
-  const body = await req.json();
+  const rawBody = await req.json();
+  
+  const parsed = patchProjectSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    throw new ApiError(400, "Bad Request: " + parsed.error.message);
+  }
+  const body = parsed.data;
 
   const curr = await prisma.promptProject.findUnique({ where: { id } });
 
@@ -100,7 +129,7 @@ export const PATCH = apiHandler(async (req: Request, { params }: { params: Promi
   // Build the update payload from allow-listed fields only.
   const data: Record<string, unknown> = {};
   for (const key of Object.keys(body)) {
-    if (EDITABLE_FIELDS.has(key)) data[key] = body[key];
+    if (EDITABLE_FIELDS.has(key)) data[key] = (body as any)[key];
   }
 
   // Auto increment version if finalPrompt meaningfully changed

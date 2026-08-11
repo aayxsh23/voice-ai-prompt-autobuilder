@@ -1,11 +1,22 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { apiHandler } from '@/lib/apiHandler';
+import { apiHandler, ApiError } from '@/lib/apiHandler';
 import { getCurrentUser } from '@/lib/auth';
+import { z } from 'zod';
+
+const createProjectSchema = z.object({
+  sessionId: z.string().optional(),
+  draft: z.record(z.string(), z.any()).optional(),
+  blueprint: z.record(z.string(), z.any()).optional(),
+});
 
 export const POST = apiHandler(async (req: Request) => {
-    const body = await req.json();
-    const { sessionId, draft, blueprint } = body;
+    const rawBody = await req.json();
+    const parsed = createProjectSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      throw new ApiError(400, "Bad Request: " + parsed.error.message);
+    }
+    const { sessionId, draft, blueprint } = parsed.data;
 
     const user = await getCurrentUser();
 
@@ -99,10 +110,15 @@ export const POST = apiHandler(async (req: Request) => {
     });
 
     if (sessionId) {
-      await prisma.builderSession.update({
-        where: { id: sessionId },
-        data: { generatedProjectId: project.id }
-      }).catch((e) => console.warn('[create-project] failed to link session to project:', e));
+      const session = await prisma.builderSession.findUnique({ where: { id: sessionId } });
+      if (session && session.userId === user.id) {
+        await prisma.builderSession.update({
+          where: { id: sessionId },
+          data: { generatedProjectId: project.id }
+        }).catch((e) => console.warn('[create-project] failed to link session to project:', e));
+      } else {
+        console.warn(`[create-project] unauthorized or missing session link attempt for id: ${sessionId}`);
+      }
     }
 
     return NextResponse.json(project);
