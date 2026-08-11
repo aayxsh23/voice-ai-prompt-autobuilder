@@ -5,8 +5,8 @@ import { apiHandler, ApiError } from '@/lib/apiHandler';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { logger } from '@/lib/logger';
 
-type Field = 'openingMessage' | 'callFlow' | 'guardrails';
-const VALID_FIELDS: Field[] = ['openingMessage', 'callFlow', 'guardrails'];
+type Field = 'openingMessage' | 'callFlow';
+const VALID_FIELDS: Field[] = ['openingMessage', 'callFlow'];
 
 /**
  * Models routinely answer a "one rule per line" request with a JSON array — of
@@ -36,7 +36,6 @@ export function coerceText(v: unknown): string {
 const SPEC: Record<Field, string> = {
   openingMessage: `"openingMessage": the agent's first spoken line. ONE or TWO short sentences, phone-natural, no markdown. Name the agent and the company, and state why the call is happening (or, for inbound, invite the caller to state their need). Reference a declared variable as {{variable_name}} ONLY if it is in the variables list.`,
   callFlow: `"callFlow": a numbered plain-language sketch of the call in simple English, 4 to 8 lines, one goal per line, formatted "1. Greet and introduce yourself\\n2. ...". This is a sketch the USER reads to check the shape of the call — NOT a prompt. So: no "Say:" directives, no exact dialogue, no tool calls, no branching syntax, no state ids, no markdown. Short imperative phrases only. Always include a closing step.`,
-  guardrails: `"guardrails": 4 to 6 enforceable rules, one per line, plain text, no bullets or numbering. Each must be specific to THIS business and checkable — a rule the agent could be caught breaking. Cover: what it must never promise or quote, what it must never claim to know, and at least one positive behaviour ("Always offer ... when ..."). Do NOT restate universal safety rules (self-harm, abuse, jailbreaks) — those are added by the compiler.`,
 };
 
 export const POST = apiHandler(async (req: Request) => {
@@ -68,7 +67,7 @@ export const POST = apiHandler(async (req: Request) => {
   const usesHindi = form.primaryLanguage === 'Hindi' || form.primaryLanguage === 'Hinglish' || isHinglish;
 
   const languageNote = usesHindi
-      ? `\nLANGUAGE: Write spoken lines (like openingMessage) in Devanagari script (देवनागरी). Keep English business terms (demo, software, billing, WhatsApp, email) in Roman script inside the sentence. Note: callFlow and guardrails are for the user to read, so they MUST ALWAYS be in simple English.`
+      ? `\nLANGUAGE: Write spoken lines (like openingMessage) in Devanagari script (देवनागरी). Keep English business terms (demo, software, billing, WhatsApp, email) in Roman script inside the sentence. Note: callFlow is for the user to read, so it MUST ALWAYS be in simple English.`
       : `\nLANGUAGE: Write in natural conversational English.`;
 
   const prompt = `You are drafting the starting point for a voice AI agent's configuration, from the call purpose the user just wrote. The user will read and edit whatever you produce, so keep it plain and honest — never pad it to look thorough.
@@ -81,8 +80,15 @@ AGENT CONTEXT:
 - Tone: ${form.voiceTone || 'professional'}
 - CALL PURPOSE: ${form.callPurpose}
 ${variables.length ? `- Pre-call variables available: ${variables.map((v: string) => `{{${v}}}`).join(', ')}` : '- No pre-call variables are declared.'}
-${form.callFlow && !fields.includes('callFlow') ? `\nEXISTING CALL FLOW (align with it, do not contradict it):\n${form.callFlow}` : ''}
-${form.guardrails && !fields.includes('guardrails') ? `\nEXISTING GUARDRAILS (align with them):\n${form.guardrails}` : ''}${languageNote}
+
+SETTINGS & CONSTRAINTS (Do not contradict these):
+- Disclose AI Identity: ${form.discloseAI ? 'Yes' : 'No'}
+- Recording Consent Required: ${form.recordingConsent ? 'Yes' : 'No'}
+- Off-topic Handling: ${form.digressionHandling || 'Answer briefly, then resume the script'}
+- Fallback on misunderstanding (after ${form.maxRetries || 2} retries): ${form.retryFallback || 'Transfer to a human agent'}
+- Live Transfer Enabled: ${form.liveTransferEnabled ? 'Yes' : 'No'}
+
+${form.callFlow && !fields.includes('callFlow') ? `\nEXISTING CALL FLOW (align with it, do not contradict it):\n${form.callFlow}` : ''}${languageNote}
 
 RULES:
 - Ground everything in the call purpose above. Never invent prices, hours, addresses, staff names, guarantees or policies.

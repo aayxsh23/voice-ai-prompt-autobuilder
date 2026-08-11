@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { PromptPackageDraft } from '@/lib/llm/types';
 import { SidebarGroup, SidebarLink, ToolChip, CompactRow } from './EditorComponents';
-import { FileText, Settings, Wrench, Variable, Check, Copy, ArrowRight, Loader2, ArrowLeft, AlertTriangle, UserCircle, ListTree, Brain, Shield, Zap, ChevronDown, ChevronRight, Activity, Phone, Send } from 'lucide-react';
+import { FileText, Settings, Wrench, Variable, Check, Copy, ArrowRight, Loader2, ArrowLeft, AlertTriangle, UserCircle, ListTree, Brain, Shield, Zap, ChevronDown, ChevronRight, Activity, Phone, Send, MessageSquare, Pencil, Eye } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { useRef } from 'react';
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChangeDraft, onSave, onBack, saving, mode = 'auto' }) => {
   const [activeTab, setActiveTab] = useState<'prompt' | 'settings' | 'tools' | 'variables' | 'outcomes'>('prompt');
   const [openPromptSection, setOpenPromptSection] = useState('identity');
+  const [editMode, setEditMode] = useState<Record<string, boolean>>({});
   const promptSectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const jumpToPromptSection = (key: string) => {
@@ -34,12 +36,26 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
     // Split by ### headers
     const parts = prompt.split(/(?=### )/g);
     parts.forEach(part => {
-      if (part.includes('AGENT IDENTITY')) sections.identity += part;
-      else if (part.includes('STATE MACHINE')) sections.flow += part;
-      else if (part.includes('BUSINESS CONTEXT') || part.includes('FAQ')) sections.knowledge += part;
-      else if (part.includes('SCOPE & BOUNDARIES')) sections.guardrails += part;
-      else if (part.includes('ESCALATION & ROUTING')) sections.escalation += part;
-      else sections.identity += part; // fallback
+      const headerLine = part.split('\n')[0].toUpperCase();
+      
+      if (headerLine.includes('IDENTITY') || headerLine.includes('LANGUAGE') || headerLine.includes('OUTPUT') || headerLine.includes('VOICE')) {
+        sections.identity += part;
+      }
+      else if (headerLine.includes('STATE MACHINE') || headerLine.includes('DYNAMIC VARIABLES') || headerLine.includes('CALL FLOW')) {
+        sections.flow += part;
+      }
+      else if (headerLine.includes('BUSINESS CONTEXT') || headerLine.includes('FAQ') || headerLine.includes('OBJECTION') || headerLine.includes('TROUBLESHOOTING') || headerLine.includes('COMPETITIVE')) {
+        sections.knowledge += part;
+      }
+      else if (headerLine.includes('SCOPE') || headerLine.includes('BOUNDARIES') || headerLine.includes('INTERRUPTS') || headerLine.includes('FALLBACKS')) {
+        sections.guardrails += part;
+      }
+      else if (headerLine.includes('ESCALATION') || headerLine.includes('ROUTING') || headerLine.includes('TOOLS')) {
+        sections.escalation += part;
+      }
+      else {
+        sections.identity += part; // fallback
+      }
     });
     return sections;
   };
@@ -146,6 +162,19 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                             <span>Name editing is disabled here. Use the 3-dots menu on the Home page to rename.</span>
                                         </p>
                                     </div>
+                                    {draft.businessSpec?.meta?.openingPhrase && (
+                                        <div className="pt-2">
+                                            <label className="flex items-center gap-2 text-[14px] font-medium text-ink mb-1.5">Opening Line</label>
+                                            <textarea 
+                                                className="input-field w-full min-h-[60px] resize-none bg-subtle/30" 
+                                                disabled 
+                                                value={draft.businessSpec.meta.openingPhrase} 
+                                            />
+                                            <p className="text-[12px] text-graphite pt-1.5">
+                                                This is the exact first line the agent will speak when the call connects.
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -220,18 +249,49 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                             
                                             {isOpen && (
                                                 <div className="px-4 pb-4 animate-fade-in">
+                                                    <div className="flex justify-end mb-2">
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setEditMode(prev => ({ ...prev, [section.key]: !prev[section.key] }))}
+                                                            className="flex items-center gap-1.5 text-[11px] font-medium text-graphite hover:text-ink transition-colors bg-subtle/50 px-2 py-1 rounded-md"
+                                                        >
+                                                            {editMode[section.key] ? (
+                                                                <><Eye className="w-3 h-3" /> Preview</>
+                                                            ) : (
+                                                                <><Pencil className="w-3 h-3" /> Edit Mode</>
+                                                            )}
+                                                        </button>
+                                                    </div>
                                                     <div className="relative">
                                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent rounded-l"></div>
-                                                        <textarea
-                                                            value={sectionContent}
-                                                            onChange={(e) => {
-                                                                const updatedSections = { ...parsedPrompt, [section.key]: e.target.value };
-                                                                const newPrompt = Object.values(updatedSections).filter(Boolean).join('\n\n');
-                                                                handlePromptChange(newPrompt);
-                                                            }}
-                                                            spellCheck={false}
-                                                            className="w-full h-[300px] resize-y font-mono text-[13px] leading-relaxed focus:border-accent focus:ring-1 focus:ring-accent-soft pl-4 bg-canvas/30 text-ink-soft outline-none border border-line rounded-md py-3"
-                                                        />
+                                                        {editMode[section.key] ? (
+                                                            <textarea
+                                                                value={sectionContent}
+                                                                onChange={(e) => {
+                                                                    const updatedSections = { ...parsedPrompt, [section.key]: e.target.value };
+                                                                    const newPrompt = Object.values(updatedSections).filter(Boolean).join('');
+                                                                    handlePromptChange(newPrompt);
+                                                                }}
+                                                                spellCheck={false}
+                                                                className="w-full h-[300px] resize-y font-mono text-[13px] leading-relaxed focus:border-accent focus:ring-1 focus:ring-accent-soft pl-4 bg-canvas/30 text-ink-soft outline-none border border-line rounded-md py-3"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full min-h-[150px] max-h-[500px] overflow-y-auto pl-5 pr-4 py-3 bg-white border border-line rounded-md">
+                                                                <ReactMarkdown
+                                                                    components={{
+                                                                        h3: ({node, ...props}) => <h3 className="text-[13px] font-bold mt-4 mb-2 text-ink uppercase tracking-wide border-b border-line pb-1" {...props} />,
+                                                                        h4: ({node, ...props}) => <h4 className="text-[12px] font-semibold mt-3 mb-1 text-ink uppercase tracking-wider" {...props} />,
+                                                                        ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                                                                        li: ({node, ...props}) => <li className="text-[13px] leading-[1.6] text-ink-soft" {...props} />,
+                                                                        p: ({node, ...props}) => <p className="text-[13px] leading-[1.6] text-ink-soft mb-3 last:mb-0" {...props} />,
+                                                                        strong: ({node, ...props}) => <strong className="font-semibold text-ink" {...props} />,
+                                                                        code: ({node, ...props}) => <code className="bg-canvas/50 px-1 py-0.5 rounded text-accent font-mono text-[12px]" {...props} />
+                                                                    }}
+                                                                >
+                                                                    {sectionContent}
+                                                                </ReactMarkdown>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -271,16 +331,24 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                      </div>
                      <div>
                        <label className="block text-[13px] font-medium text-ink mb-1.5">Primary Goal</label>
-                       <input 
-                         type="text"
-                         className="input-field" 
+                       <textarea 
+                         className="input-field w-full resize-none overflow-hidden min-h-[40px]" 
+                         rows={1}
                          value={draft.businessSpec?.meta?.primaryGoal || ''}
                          onChange={(e) => {
+                            e.target.style.height = 'auto';
+                            e.target.style.height = `${e.target.scrollHeight}px`;
                             const newDraft = { ...draft };
                             if (newDraft.businessSpec) {
                               newDraft.businessSpec.meta.primaryGoal = e.target.value;
                             }
                             onChangeDraft(newDraft);
+                         }}
+                         ref={(el) => {
+                           if (el) {
+                             el.style.height = 'auto';
+                             el.style.height = `${el.scrollHeight}px`;
+                           }
                          }}
                        />
                      </div>

@@ -4,6 +4,7 @@ import { apiHandler, ApiError } from '@/lib/apiHandler';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { BusinessSpecification } from '@/lib/llm/types';
 import { KnowledgeExtractor, EMPTY_KNOWLEDGE } from '@/lib/compiler/planners/KnowledgeExtractor';
+import { GuardrailOptimizer } from '@/lib/compiler/planners/GuardrailOptimizer';
 
 const REGION_PHONE_CODES: Record<string, string> = {
   US: '+1',
@@ -109,11 +110,18 @@ export const POST = apiHandler(async (req: Request) => {
   }
 
   /* ── 4. Guardrails → hard prohibitions ────────────────────────────────── */
-  const prohibitions = String(form.guardrails || '')
-    .split('\n')
-    .map((l) => l.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').trim())
-    .filter(Boolean)
-    .slice(0, 20);
+  const prohibitions = await GuardrailOptimizer.synthesizeGuardrails(
+    knowledge.guardrails || [],
+    {
+      callPurpose: primaryGoal,
+      industry: form.industry,
+      discloseAI: form.discloseAI,
+      recordingConsent: form.recordingConsent,
+      liveTransferEnabled: form.liveTransferEnabled,
+      digressionHandling: form.digressionHandling,
+      retryFallback: form.retryFallback
+    }
+  );
 
   /* ── 5. Disclosures ───────────────────────────────────────────────────── */
   const disclosures: string[] = [];

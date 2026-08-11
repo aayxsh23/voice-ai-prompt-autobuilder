@@ -25,6 +25,7 @@ export interface ExtractedKnowledge {
   objections: Array<{ trigger: string; response: string }>;
   troubleshootingSteps: Array<{ problem: string; steps: string[] }>;
   competitorComparisons: Array<{ competitor: string; differentiation: string }>;
+  guardrails: string[];
 }
 
 export const EMPTY_KNOWLEDGE: ExtractedKnowledge = {
@@ -36,6 +37,7 @@ export const EMPTY_KNOWLEDGE: ExtractedKnowledge = {
   objections: [],
   troubleshootingSteps: [],
   competitorComparisons: [],
+  guardrails: [],
 };
 
 /** Guards against a pasted 200-page manual blowing the model's context. */
@@ -92,9 +94,10 @@ ${body}
 """
 
 EXTRACTION RULES:
-1. NEVER invent, infer or round a fact that is not in the source. If something is absent, leave the field empty or the array short — an empty result is a correct result.
-2. Preserve exact figures, prices, phone numbers, addresses, URLs and named hours VERBATIM. Do not paraphrase numbers or summarise an address.
-3. Route each fact to exactly one destination and do not repeat it in another:
+1. GO IN-DEPTH AND EXTRACT EVERY GRANULAR DETAIL that might be beneficial for the prompt. Capture all nuanced business rules, implicit constraints, corner cases, and full step-by-step workflows. Do NOT over-summarize or drop long-tail knowledge.
+2. NEVER invent, infer or round a fact that is not in the source. If something is absent, leave the field empty or the array short — an empty result is a correct result.
+3. Preserve exact figures, prices, phone numbers, addresses, URLs and named hours VERBATIM. Do not paraphrase numbers or summarise an address.
+4. Route each fact to exactly one destination and do not repeat it in another:
    - operatingHours: opening hours / availability, as one readable line.
    - servicesOffered: products, plans, SKUs or services. One short line each, including price when the source states it.
    - policies.cancellation / policies.refunds: those two policies verbatim if present.
@@ -104,9 +107,10 @@ EXTRACTION RULES:
    - objections: pushback or general concerns ("too expensive", "not interested"), with the approved response (1-2 short spoken sentences).
    - troubleshootingSteps: multi-step repair flows or procedural guides. Each becomes { problem, steps: ["step 1", "step 2"] }.
    - competitorComparisons: how the company is different from or better than a specific competitor. Each becomes { competitor, differentiation }.
-4. Past call transcripts are a source of REAL caller questions — mine them for faqs and objections that the FAQ document missed.
-5. Spoken answers only in 'answer' and 'response': no bullet points, markdown, list syntax or reference numbers a person would not say aloud.
-6. Deduplicate aggressively. At most 40 faqs, 15 objections, 10 troubleshootingSteps, 10 competitorComparisons, 20 services, 15 otherPolicies, 15 capturedTopics.
+   - guardrails: Explicit constraints, hard prohibitions, or "never do X" rules that the agent must strictly follow.
+5. Past call transcripts are a source of REAL caller questions — mine them for faqs and objections that the FAQ document missed.
+6. Spoken answers only in 'answer' and 'response': no bullet points, markdown, list syntax or reference numbers a person would not say aloud.
+7. Deduplicate aggressively. At most 80 faqs, 30 objections, 20 troubleshootingSteps, 20 competitorComparisons, 40 services, 30 otherPolicies, 30 capturedTopics, 20 guardrails.
 
 Return ONLY valid JSON:
 {
@@ -117,7 +121,8 @@ Return ONLY valid JSON:
   "faqs": [{ "question": "string", "answer": "string" }],
   "objections": [{ "trigger": "string", "response": "string" }],
   "troubleshootingSteps": [{ "problem": "string", "steps": ["string"] }],
-  "competitorComparisons": [{ "competitor": "string", "differentiation": "string" }]
+  "competitorComparisons": [{ "competitor": "string", "differentiation": "string" }],
+  "guardrails": ["string"]
 }`;
 
     try {
@@ -132,32 +137,33 @@ Return ONLY valid JSON:
 
       return {
         operatingHours: typeof parsed.operatingHours === 'string' ? parsed.operatingHours.trim() : '',
-        servicesOffered: asStringArray(parsed.servicesOffered, 20),
+        servicesOffered: asStringArray(parsed.servicesOffered, 40),
         policies: {
           cancellation: typeof parsed.policies?.cancellation === 'string' ? parsed.policies.cancellation.trim() : '',
           refunds: typeof parsed.policies?.refunds === 'string' ? parsed.policies.refunds.trim() : '',
-          otherPolicies: asStringArray(parsed.policies?.otherPolicies, 15),
+          otherPolicies: asStringArray(parsed.policies?.otherPolicies, 30),
         },
         capturedTopics: (Array.isArray(parsed.capturedTopics) ? parsed.capturedTopics : [])
           .map((c) => ({ topic: String(c?.topic || '').trim(), summary: String(c?.summary || '').trim() }))
           .filter((c) => c.topic && c.summary)
-          .slice(0, 15),
+          .slice(0, 30),
         faqs: (Array.isArray(parsed.faqs) ? parsed.faqs : [])
           .map((f) => ({ question: String(f?.question || '').trim(), answer: String(f?.answer || '').trim() }))
           .filter((f) => f.question && f.answer)
-          .slice(0, 40),
+          .slice(0, 80),
         objections: (Array.isArray(parsed.objections) ? parsed.objections : [])
           .map((o) => ({ trigger: String(o?.trigger || '').trim(), response: String(o?.response || '').trim() }))
           .filter((o) => o.trigger && o.response)
-          .slice(0, 15),
+          .slice(0, 30),
         troubleshootingSteps: (Array.isArray(parsed.troubleshootingSteps) ? parsed.troubleshootingSteps : [])
           .map((t) => ({ problem: String(t?.problem || '').trim(), steps: asStringArray(t?.steps, 20) }))
           .filter((t) => t.problem && t.steps.length > 0)
-          .slice(0, 10),
+          .slice(0, 20),
         competitorComparisons: (Array.isArray(parsed.competitorComparisons) ? parsed.competitorComparisons : [])
           .map((c) => ({ competitor: String(c?.competitor || '').trim(), differentiation: String(c?.differentiation || '').trim() }))
           .filter((c) => c.competitor && c.differentiation)
-          .slice(0, 10),
+          .slice(0, 20),
+        guardrails: asStringArray(parsed.guardrails, 20),
       };
     } catch (err) {
       // Non-fatal: the prompt still compiles, it just has no knowledge-base facts.

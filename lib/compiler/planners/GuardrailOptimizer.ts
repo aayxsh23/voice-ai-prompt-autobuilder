@@ -4,6 +4,52 @@ import { logger } from "@/lib/logger";
 
 export class GuardrailOptimizer {
   /**
+   * Synthesizes custom guardrails from the form data and Knowledge Base.
+   * Merges explicit rules found in the KB with derived rules based on the form settings,
+   * while removing duplicates and contradictions.
+   */
+  public static async synthesizeGuardrails(
+    kbGuardrails: string[],
+    form: { callPurpose: string; industry: string; discloseAI: boolean; recordingConsent: boolean; liveTransferEnabled: boolean; digressionHandling: string; retryFallback: string; }
+  ): Promise<string[]> {
+    const systemPrompt = `You are a Guardrail Synthesizer for an AI voice agent.
+Your task is to produce a finalized list of 5-8 strict business guardrails (hard prohibitions or mandatory behaviors) for this agent.
+
+INPUT CONTEXT:
+- Industry: ${form.industry || 'Unknown'}
+- Call Purpose: ${form.callPurpose}
+- Settings: AI Disclosure=${form.discloseAI ? 'Yes' : 'No'}, Recording Consent=${form.recordingConsent ? 'Yes' : 'No'}, Live Transfer=${form.liveTransferEnabled ? 'Yes' : 'No'}, Off-topic=${form.digressionHandling || 'Answer briefly, then resume'}, Fallback=${form.retryFallback || 'Transfer'}
+
+KB GUARDRAILS (Explicit rules extracted from user's Knowledge Base):
+${kbGuardrails.length ? kbGuardrails.map(g => '- ' + g).join('\\n') : 'None'}
+
+RULES FOR SYNTHESIS:
+1. ALWAYS keep the exact KB Guardrails provided above, unless they contradict the form settings.
+2. Generate additional crucial guardrails based on the Settings and Call Purpose (e.g. if Live Transfer is enabled, add a rule about when to transfer).
+3. Do NOT duplicate rules. If the KB already covers it, don't generate it again.
+4. Each rule must be a single specific sentence. No bullets, no markdown in the output array.
+5. Return ONLY a valid JSON array of strings.`;
+
+    try {
+      const client = getLlmClient();
+      const responseRaw = await client.generateRaw!('Generate the final guardrails array.', 0.1, {
+        systemInstruction: systemPrompt,
+        contextLabel: 'guardrail-synthesizer',
+        json: true,
+      });
+      
+      const parsed = JSON.parse(responseRaw);
+      if (Array.isArray(parsed)) {
+        return parsed.map(String).filter(Boolean);
+      }
+      return kbGuardrails;
+    } catch (error) {
+      logger.error("GuardrailOptimizer.synthesizeGuardrails failed, returning KB guardrails", { error });
+      return kbGuardrails;
+    }
+  }
+
+  /**
    * Takes the raw contextual guardrail text and the project's spec.meta,
    * returns a pruned/rewritten version that only contains relevant rules.
    *

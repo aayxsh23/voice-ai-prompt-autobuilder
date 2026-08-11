@@ -41,7 +41,6 @@ export const POST = apiHandler(async (req: Request) => {
       ? { provided: kb.length > 0, chars: kb.length, excerpt: kb.slice(0, 4000) }
       : { provided: false },
     guardrailsAndHandling: {
-      guardrails: form.guardrails,
       discloseAI: form.discloseAI,
       recordingConsent: form.recordingConsent,
       disclosureText: form.disclosureText,

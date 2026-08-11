@@ -293,7 +293,6 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
 
         <div className="card mb-4 p-5">
           <h2 className="text-[16px] font-semibold text-ink mb-4">Guardrails &amp; call handling</h2>
-          <ReviewField label="Guardrails" rows={5} value={data.guardrails} onChange={(v) => setData((d) => ({ ...d, guardrails: v }))} />
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px] text-graphite">
             <span>AI disclosure: <span className="text-ink">{data.discloseAI ? 'Yes' : 'No'}</span></span>
             <span>Recording consent: <span className="text-ink">{data.recordingConsent ? 'Yes' : 'No'}</span></span>
@@ -372,20 +371,25 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
 
       <div className="flex-1 flex min-h-0">
         {/* Module nav */}
-        <nav aria-label="Builder sections" className="hidden md:block w-60 shrink-0 border-r border-line p-4 overflow-y-auto">
-          <div className="space-y-1">
+        <nav aria-label="Builder sections" className="hidden md:block w-72 lg:w-80 shrink-0 border-r border-line p-5 overflow-y-auto bg-canvas/40">
+          <div className="space-y-2">
             {completions.map(({ id, status }) => {
               const Icon = MODULES[id].icon;
               return (
                 <button key={id} type="button"
-                  className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] font-medium transition-colors ${
-                    activeModule === id ? 'bg-subtle text-ink' : 'text-graphite hover:bg-subtle hover:text-ink'
+                  className={`flex w-full items-start gap-3 rounded-xl px-3.5 py-3 text-left transition-all ${
+                    activeModule === id ? 'bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] ring-1 ring-line text-ink' : 'text-graphite hover:bg-subtle hover:text-ink'
                   }`}
                   aria-current={activeModule === id ? 'step' : undefined}
                   onClick={() => setActiveModule(id)}>
-                  <CompletionDot status={status} />
-                  <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{MODULES[id].label}</span>
+                  <div className="pt-0.5"><CompletionDot status={status} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Icon className={`w-4 h-4 shrink-0 ${activeModule === id ? 'text-accent' : ''}`} aria-hidden="true" />
+                      <span className={`text-[14px] font-bold truncate ${activeModule === id ? 'text-ink' : ''}`}>{MODULES[id].label}</span>
+                    </div>
+                    <p className={`text-[12px] leading-relaxed ${activeModule === id ? 'text-ink-soft' : 'text-graphite line-clamp-2'}`}>{MODULES[id].blurb}</p>
+                  </div>
                 </button>
               );
             })}
