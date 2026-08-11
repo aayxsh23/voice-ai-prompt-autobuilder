@@ -10,22 +10,15 @@
 
 Building system prompts for voice AI agents (like Bland, Retell, Vapi) is a complex, trial-and-error process. Getting the right mix of call flows, knowledge constraints, and tools often takes hours of manual tweaking. **Voice Agent Prompt Builder** solves this by leveraging an LLM to automate the prompt engineering process. Through a short, guided discovery conversation, it extracts your business needs and deterministically compiles a robust, production-ready system prompt package—saving you hours of manual work and ensuring high-quality, reliable agent behavior.
 
-## Visuals
-
-> **Agent Builder Demo**
-> 
-> *Here is where you'll see the conversational builder and prompt generation in action. (Add a GIF or screenshot of your UI here)*
-> ![Agent Builder Demo](./public/demo-placeholder.gif)
-
 ## Architecture
 
-Here is how the compiler, planners, and validators interact under the hood:
+Here is how the UI, compiler, planners, and validators interact under the hood:
 
 ```mermaid
 flowchart TD
-    A[Builder Chat] -->|/api/builder/chat| B(CoverageArchitect)
-    B -->|Extracts BusinessSpecification Patch| C[LLM]
-    B --> D{API: /api/builder/generate-review}
+    A[Dashboard / Create Agent] -->|BuilderForm.tsx| B(AutoFill API)
+    B -->|Generates Spec from Call Purpose| C[LLM]
+    A --> D{API: /api/builder/generate-review}
     
     subgraph Prompt Compiler [lib/pipeline/promptCompiler.ts]
         D --> E[WorkflowArchitect - Call Flow]
@@ -33,22 +26,29 @@ flowchart TD
         D --> G[ToolPlanner - Tool Schemas]
         E & F & G --> H[QwenProvider.generateWithCoT - Structured Draft]
         H --> I[Filter Default Guardrail Rules from DB]
-        I --> J[Assemble Unified Prompt - Markdown]
+        I --> O[GuardrailOptimizer - Contextualizes Rules]
+        O --> J[Assemble Unified Prompt - Markdown]
         J --> K[Validators - Flow, Fallback, Coherence]
+        K --> P[PromptJudge - Reviews Quality]
+        P -.->|If critical issues| E
     end
     
     K --> L[API: /api/builder/create-project]
     L --> M[(MongoDB)]
-    M --> N[Studio Workspace]
+    M --> N[Studio Workspace / AgentPromptEditor]
 ```
 
 ## Codebase Organization
 
 Navigating the repository:
 
-- **/app**: Contains the Next.js App Router setup, including API routes (`/api/*`), the builder interface (`/builder/*`), and the studio workspace (`/project/*`).
-- **/components**: Houses reusable UI components, dashboard elements, and layout pieces utilized across the application.
-- **/lib**: The core engine of the application. Contains database logic (`db.ts`), configuration (`config.ts`), LLM integration (`llm/`), the multi-stage compiler (`compiler/`), and validators (`pipeline/`).
+- **/app/api**: Contains the Next.js Route Handlers. Subfolders include `/api/builder` (for autofill, review generation, parsing) and `/api/projects` (for saving and fetching workspaces).
+- **/app/dashboard**: The projects dashboard and landing view.
+- **/app/project/[projectId]**: The Studio workspace page where the generated prompt package is refined, tested, and versioned.
+- **/components/dashboard**: Dashboard UI components, including the `CreateAgentModal.tsx`.
+- **/components/project**: Core builder components like `BuilderForm.tsx` (the step-by-step specification form) and `AgentPromptEditor.tsx` (for editing the compiled result).
+- **/lib/pipeline**: The core orchestration layer (`promptCompiler.ts`), which coordinates the compiler modules, validators, and the LLM-powered judge.
+- **/lib/compiler**: Contains specialized AI architects (`WorkflowArchitect`, `KnowledgeArchitect`, `ToolPlanner`) and the deterministic prompt assembler.
 
 ## Stack
 
