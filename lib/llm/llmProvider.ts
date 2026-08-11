@@ -128,7 +128,7 @@ function stripThinkTags(text: string): string {
 }
 
 function extractAndLogThinking(response: any, contextLabel = "LLM Call", sessionId?: string): string {
-  const choice = response.choices?.[0];
+  const choice = (response.choices as any)?.[0];
   const message = choice?.message || {};
   
   // 1. Check for native reasoning field (`reasoning_content` in vLLM/DeepSeek/Qwen APIs)
@@ -260,6 +260,7 @@ export class llmProvider implements LlmService {
   }
 
   async generateWithCoT(input: BlueprintJson): Promise<PromptPackageDraft> {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { overrides, ...llmInput } = input;
     const languageMode = input.languageMode || input.business?.languageMode || (input as any).businessSpec?.meta?.languageMode || 'english';
     // Primary output language follows the declared mode only (multilingual/English
@@ -421,17 +422,17 @@ SystemPrompt must follow plan:\n${JSON.stringify(plan, null, 2)}\nContext:\n${JS
 
   async generateFaqCards(input: BlueprintJson): Promise<{ question: string; answer: string }[]> {
     const draft = await this.generateReviewDraft(input);
-    return draft.faqCards || [];
+    return (draft.faqCards as any) || [];
   }
 
-  async generateObjectionCards(input: BlueprintJson): Promise<any[]> {
+  async generateObjectionCards(input: BlueprintJson): Promise<{ objection: string; handling: string; }[]> {
     const draft = await this.generateReviewDraft(input);
-    return draft.objectionCards || [];
+    return (draft.objectionCards as any) || [];
   }
 
   async generateEdgeCaseRules(input: BlueprintJson): Promise<{ scenario: string; action: string }[]> {
     const draft = await this.generateReviewDraft(input);
-    return draft.edgeCaseRules || [];
+    return (draft.edgeCaseRules as any) || [];
   }
 
   async generateTestScenarios(input: BlueprintJson): Promise<TestScenarioSpec[]> {

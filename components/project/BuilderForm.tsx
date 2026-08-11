@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useCallback, useState, useRef } from 'react';
-import { FileUploadZone, type UploadedFile } from './FileUploadZone';
+import React, { useState, useRef } from 'react';
 import {
   UserCircle,
   MessageSquare,
@@ -453,7 +452,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
       if (applied.length > 0) {
         setData((d) => {
           const next = { ...d };
-          applied.forEach((f) => { (next as any)[f] = String(out[f]).trim(); });
+          applied.forEach((f) => { (next as Record<string, unknown>)[f] = String(out[f]).trim(); });
           return next;
         });
         setDrafted((prev) => Array.from(new Set([...prev, ...applied])));
@@ -534,7 +533,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
                 placeholder="e.g. Meridian Dental"
             />
             {validationErrors.companyName && <p className="text-[12px] text-danger pt-1">Company name is required</p>}
-            <Guide>Used in greetings, disclosures and every reference to "us".</Guide>
+            <Guide>Used in greetings, disclosures and every reference to &quot;us&quot;.</Guide>
           </div>
           <div>
             <Label htmlFor="agentName">Agent name</Label>
@@ -638,7 +637,7 @@ export function BuilderForm({ data, setData, activeModule, setActiveModule, vali
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <Label htmlFor="retryFallback">If the AI doesn't understand the caller</Label>
+                        <Label htmlFor="retryFallback">If the AI doesn&apos;t understand the caller</Label>
                         <select id="retryFallback" className="input-field" value={data.retryFallback} onChange={(e) => set('retryFallback', e.target.value)}>
                             <option>Transfer to a human agent</option>
                             <option>End the call politely</option>

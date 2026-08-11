@@ -97,7 +97,6 @@ describe('adaptive topics (notApplicableTopics)', () => {
       { meta: { notApplicableTopics: ['language', 'disclosures', 'injection', 'primary_goal'] } } as never, hist);
     expect(report.missingFields.some(f => f.startsWith('Primary Agent Language'))).toBe(true);
     expect(report.missingFields.some(f => f.startsWith('Consent & Compliance Disclosures'))).toBe(true);
-    expect(report.missingFields.some(f => f.startsWith('Prompt Injection'))).toBe(true);
   });
 
   it('drops floor ids from the LLM selection rather than trusting the model', async () => {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { PromptPackageDraft } from '@/lib/llm/types';
 import { SidebarGroup, SidebarLink, ToolChip, CompactRow } from './EditorComponents';
-import { FileText, Settings, Wrench, Variable, Check, Copy, ArrowRight, Loader2, ArrowLeft, AlertTriangle, UserCircle, ListTree, Brain, Shield, Zap, ChevronDown, ChevronRight, Activity, Phone, Send, MessageSquare, Pencil, Eye } from 'lucide-react';
+import { FileText, Settings, Wrench, Variable, Check, Copy, Loader2, ArrowLeft, AlertTriangle, UserCircle, ListTree, Brain, Shield, Zap, ChevronDown, Activity, Phone, Send, Pencil, Eye } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useRef } from 'react';
 
@@ -226,7 +226,7 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                 ].map(section => {
                                     const isOpen = openPromptSection === section.key;
                                     const Icon = section.icon;
-                                    // @ts-ignore
+                                    // @ts-expect-error type inference failure for parsedPrompt keys
                                     const sectionContent = parsedPrompt[section.key];
                                     if (!sectionContent?.trim()) return null;
 
@@ -279,13 +279,13 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                                             <div className="w-full min-h-[150px] max-h-[500px] overflow-y-auto pl-5 pr-4 py-3 bg-white border border-line rounded-md">
                                                                 <ReactMarkdown
                                                                     components={{
-                                                                        h3: ({node, ...props}) => <h3 className="text-[13px] font-bold mt-4 mb-2 text-ink uppercase tracking-wide border-b border-line pb-1" {...props} />,
-                                                                        h4: ({node, ...props}) => <h4 className="text-[12px] font-semibold mt-3 mb-1 text-ink uppercase tracking-wider" {...props} />,
-                                                                        ul: ({node, ...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-                                                                        li: ({node, ...props}) => <li className="text-[13px] leading-[1.6] text-ink-soft" {...props} />,
-                                                                        p: ({node, ...props}) => <p className="text-[13px] leading-[1.6] text-ink-soft mb-3 last:mb-0" {...props} />,
-                                                                        strong: ({node, ...props}) => <strong className="font-semibold text-ink" {...props} />,
-                                                                        code: ({node, ...props}) => <code className="bg-canvas/50 px-1 py-0.5 rounded text-accent font-mono text-[12px]" {...props} />
+                                                                        h3: ({...props}) => <h3 className="text-[13px] font-bold mt-4 mb-2 text-ink uppercase tracking-wide border-b border-line pb-1" {...props} />,
+                                                                        h4: ({...props}) => <h4 className="text-[12px] font-semibold mt-3 mb-1 text-ink uppercase tracking-wider" {...props} />,
+                                                                        ul: ({...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                                                                        li: ({...props}) => <li className="text-[13px] leading-[1.6] text-ink-soft" {...props} />,
+                                                                        p: ({...props}) => <p className="text-[13px] leading-[1.6] text-ink-soft mb-3 last:mb-0" {...props} />,
+                                                                        strong: ({...props}) => <strong className="font-semibold text-ink" {...props} />,
+                                                                        code: ({...props}) => <code className="bg-canvas/50 px-1 py-0.5 rounded text-accent font-mono text-[12px]" {...props} />
                                                                     }}
                                                                 >
                                                                     {sectionContent}

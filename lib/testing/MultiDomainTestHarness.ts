@@ -81,7 +81,7 @@ export class MultiDomainTestHarness {
       const required = finalSpec.callFlowPlan?.requiredStages || [];
       const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
       const activeStates = finalSpec.callFlowPlan?.fsmStates || finalSpec.callFlowPlan?.steps || [];
-      const stateTokens = activeStates.map((s: any) => norm(`${s.id || s.stateId} ${s.stateName || s.objective}`));
+      const stateTokens = activeStates.map((s: Record<string, unknown>) => norm(`${s.id || s.stateId} ${s.stateName || s.objective}`));
       const covered = required.filter(r => stateTokens.some(t => t.includes(norm(r.id)))).length;
 
       const expectationFailures: string[] = [];
@@ -107,6 +107,7 @@ export class MultiDomainTestHarness {
         stageCoverage: `${covered}/${required.length}`,
         violations: [
           ...violations
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             .sort((a, _b) => (a.severity === 'critical' ? -1 : 1))
             .map(v => `[${v.severity}] ${v.contract}: ${v.description}`),
           ...expectationFailures.map(e => `[expectation] ${e}`),

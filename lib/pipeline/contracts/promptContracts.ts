@@ -56,9 +56,9 @@ function sections(prompt: string): string[] {
 
 /** Spoken lines + state directives, i.e. everything the flow actually contains. */
 function callFlowBlock(prompt: string): string {
-  const idx = prompt.indexOf('### CALL FLOW');
-  if (idx === -1) return '';
-  const rest = prompt.slice(idx);
+  const m = prompt.match(/### (?:CALL FLOW|CONVERSATIONAL STATE MACHINE)/i);
+  if (!m || m.index === undefined) return '';
+  const rest = prompt.slice(m.index);
   const next = rest.indexOf('\n### ', 5);
   return next === -1 ? rest : rest.slice(0, next);
 }
@@ -87,7 +87,12 @@ const stageCoverage: Contract = {
       .filter(stage => {
         const token = norm(stage?.id || '');
         if (!token) return false;
-        return !stepTokens.some(t => t.includes(token)) && !flowNorm.includes(token);
+        const matchesStep = stepTokens.some(t => t.includes(token));
+        const matchesNorm = flowNorm.includes(token);
+        if (!matchesStep && !matchesNorm) {
+            console.error(`DEBUG FAIL: token="${token}", stepTokens=${JSON.stringify(stepTokens)}, flowNorm length=${flowNorm.length}`);
+        }
+        return !matchesStep && !matchesNorm;
       })
       .map(stage => ({
         contract: 'stage_coverage',
@@ -517,9 +522,10 @@ const forwardRouting: Contract = {
         const target = branch.targetStateId || branch.nextState || branch.goToStep;
         if (!target || target === 'end_call' || target === 'transfer' || (branch as any).action === 'end_call' || (branch as any).action === 'transfer') continue;
         
-        const targetId = typeof target === 'string' ? target : (steps as any[]).find((s: any) => s.sequenceOrder === target)?.id;
+        const targetNode = (steps as any[]).find((s: any) => s.sequenceOrder === target);
+        const targetId = typeof target === 'string' ? target : (targetNode?.id || targetNode?.stateId);
         
-        if (!targetId || !stateIds.includes(targetId)) {
+        if (!targetId || !stateIds.includes(targetId as string)) {
           violations.push({
             contract: 'forward_routing',
             severity: 'critical' as const,

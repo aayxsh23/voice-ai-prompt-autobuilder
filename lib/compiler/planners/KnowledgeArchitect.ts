@@ -5,9 +5,9 @@ import { logger } from "@/lib/logger";
 
 export class KnowledgeArchitect {
   public static async planKnowledge(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['knowledgeBase']> {
-    const meta = spec.meta || {} as any;
-    const snap = spec.businessSnapshot || {} as any;
-    const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
+    const meta = spec.meta || {} as Record<string, unknown>;
+    const snap = spec.businessSnapshot || {} as Record<string, unknown>;
+    const languageMode = meta.languageMode || (spec as Record<string, unknown>).languageMode || 'english';
     // Primary output language follows the declared mode only (a multilingual/English
     // agent generates English FAQs and switches to Hindi live).
     const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
@@ -78,7 +78,7 @@ ${JSON.stringify({
 
 MANDATORY RULES:
 1. If any policy value in the business snapshot is 'None — confirmed by business', 'None — not specified', 'Standard cancellation policy applies.', or 'Standard refund policy applies.', do NOT generate FAQ entries about that topic! Only generate FAQs for topics where real, custom details were explicitly provided by the user.
-2. If any topic is listed in 'scopeExclusions' (${meta?.scopeExclusions && meta.scopeExclusions.length > 0 ? JSON.stringify(meta.scopeExclusions) : "[]"}), strictly skip it and do NOT generate FAQs or objection handlers for it.
+2. If any topic is listed in 'scopeExclusions' (${meta?.scopeExclusions && (meta.scopeExclusions as any).length > 0 ? JSON.stringify(meta.scopeExclusions) : "[]"}), strictly skip it and do NOT generate FAQs or objection handlers for it.
 3. CRITICAL: Never summarize, abstract, or omit exact addresses, phone numbers, exact locations, or URLs provided by the user. They must be preserved verbatim in the FAQs.
 4. EXHAUSTIVE EXTRACTION & EDGE CASES: Analyze the business context and generate a distinct FAQ or Objection handler for EVERY SINGLE item or edge case that might arise. Ensure you generate edge cases (objections) based on the business context provided. DO NOT duplicate items already present in the existingKnowledgeBase.
 5. You are augmenting the existing knowledge base. Only output the NEW faqs and objections you are adding.
@@ -93,7 +93,7 @@ Return a JSON object with:
         prompt,
         responseMimeType: "application/json",
         contextLabel: "KnowledgeArchitect",
-        sessionId: meta.sessionId
+        sessionId: meta.sessionId as string | undefined
       });
       const kb = safeParseJson(response.text, fallbackKB);
       const rawFaqs = Array.isArray(kb?.faqs) ? kb.faqs : [];
@@ -117,7 +117,7 @@ Return a JSON object with:
       };
     } catch (err) {
       logger.warn("KnowledgeArchitect fallback triggered", err);
-      return fallbackKB;
+      return fallbackKB as any;
     }
   }
 }

@@ -28,7 +28,6 @@ describe('MultiDomainTestHarness (Tier 2 — quality scorecard)', () => {
       // Report before asserting so a failure shows the whole picture, not just the
       // first domain to break.
       for (const r of summary.results) {
-        // eslint-disable-next-line no-console
         console.log(
           `${r.passed ? 'PASS' : 'FAIL'} ${r.id.padEnd(22)} contract=${r.contractScore} dialogue=${r.dialogueScore} judge=${r.judgeScore ?? '-'} stages=${r.stageCoverage} tokens=${r.estimatedTokens}` +
           (r.error ? `\n  error: ${r.error}` : '') +

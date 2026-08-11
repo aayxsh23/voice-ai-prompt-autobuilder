@@ -44,7 +44,7 @@ export const POST = apiHandler(async (req: Request) => {
         minimumManualEditScore: draft?.qualityReview?.minimumManualEditScore ?? 0,
         version: 1,
         variables: {
-          create: (draft?.dynamicVariables || []).map((v: any) => ({
+          create: (draft?.dynamicVariables || []).map((v: Record<string, unknown>) => ({
             key: v.key,
             label: v.label || v.key,
             type: v.type || "business",
@@ -56,7 +56,7 @@ export const POST = apiHandler(async (req: Request) => {
           }))
         },
         functions: {
-          create: (draft?.suggestedFunctions || []).map((f: any) => ({
+          create: (draft?.suggestedFunctions || []).map((f: Record<string, unknown>) => ({
             name: f.name,
             category: f.category || "Tool",
             description: f.description || "",
@@ -68,14 +68,14 @@ export const POST = apiHandler(async (req: Request) => {
           }))
         },
         knowledgeNotes: {
-          create: (draft?.knowledgeBaseSuggestions || []).map((k: any) => ({
+          create: (draft?.knowledgeBaseSuggestions || []).map((k: Record<string, unknown>) => ({
             title: k.title,
             content: k.content,
             category: k.category || "General"
           }))
         },
         testScenarios: {
-          create: (draft?.testScenarios || []).map((s: any) => ({
+          create: (draft?.testScenarios || []).map((s: Record<string, unknown>) => ({
             title: s.title,
             persona: s.persona || "easy caller",
             callerGoal: s.callerGoal || "",

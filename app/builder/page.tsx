@@ -4,7 +4,7 @@ import React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 
-export default function BuilderRootPage() {
+function BuilderContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [failed, setFailed] = React.useState(false);
@@ -30,21 +30,32 @@ export default function BuilderRootPage() {
     initSession();
   }, [router, searchParams]);
 
+  if (failed) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <h1 className="text-xl font-medium text-red-500 mb-2">Could not start session</h1>
+        <p className="text-zinc-400">Please try again later.</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-32 text-center">
-      {failed ? (
-        <>
-          <p className="text-[14px] text-ink">Could not start a session.</p>
-          <button type="button" onClick={() => window.location.reload()} className="btn btn-secondary">
-            Try again
-          </button>
-        </>
-      ) : (
-        <p className="flex items-center gap-2 text-[13px] text-graphite">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Starting session…
-        </p>
-      )}
+    <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      <p className="text-zinc-400">Initializing builder session...</p>
     </div>
+  );
+}
+
+export default function BuilderRootPage() {
+  return (
+    <React.Suspense fallback={
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+        <p className="text-zinc-400">Loading...</p>
+      </div>
+    }>
+      <BuilderContent />
+    </React.Suspense>
   );
 }

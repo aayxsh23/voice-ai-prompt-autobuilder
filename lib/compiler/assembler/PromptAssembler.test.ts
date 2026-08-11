@@ -117,7 +117,7 @@ describe('assembleUnifiedPrompt', () => {
       },
     };
     const outNoSignal = assembleUnifiedPrompt(specWithNoToolSignal, { dynamicVariables: [] });
-    expect(outNoSignal).not.toContain('**Required Extractions:** Extract and record [phone_number]');
+    expect(outNoSignal).not.toContain('Required Extractions: Extract and record [phone_number]');
 
     const specWithToolSignal: BusinessSpecification = {
       ...spec,
@@ -136,7 +136,7 @@ describe('assembleUnifiedPrompt', () => {
       },
     };
     const outWithSignal = assembleUnifiedPrompt(specWithToolSignal, { dynamicVariables: [] });
-    expect(outWithSignal).toContain('**Required Extractions:** Extract and record [phone_number]');
+    expect(outWithSignal).toContain('Required Extractions: Extract and record [phone_number]');
   });
 
   it('renders FSM new schema fields correctly without hardcoding retries', () => {

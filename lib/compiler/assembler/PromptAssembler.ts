@@ -121,7 +121,7 @@ function buildGlobalInterrupts(customRules?: string, region?: string): string {
   const currencyText = resolveCurrencyGuidance(region);
 
   const lines: string[] = [];
-  lines.push("### GLOBAL INTERRUPTS & FALLBACKS");
+  lines.push("### EMERGENCY & SAFETY OVERRIDES");
   lines.push("Active from every state. Apply immediately if triggered.");
   lines.push("");
   lines.push("Abuse/Profanity: Polite shutdown, no de-escalation -> end_call(reason=\"abusive_caller\").");
@@ -240,7 +240,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
   // Inject FSM protocols via ToolPlanner
   let fsmProtocols = '';
   if (Array.isArray(spec?.callFlowPlan?.fsmStates)) {
-    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates, spec.tools as any);
+    const protocols = ToolPlanner.resolveProtocols(spec.callFlowPlan.fsmStates as any, spec.tools as any);
     if (protocols.length > 0) {
       fsmProtocols = protocols.join('\n\n') + '\n\n';
     }
@@ -357,7 +357,7 @@ export function assembleUnifiedPrompt(spec: BusinessSpecification, draft?: any):
     const invoke = (name: string, args: Record<string, ToolArgValue>): string | null =>
       buildToolInvocation(name, args, registeredTools as any);
 
-    let requiredToolActions: string[] = [];
+    const requiredToolActions: string[] = [];
     slotsToCollect.forEach((slot: string) => {
       const specMatch = resolveSlotDigitSpec(slot, region);
       if (!specMatch) return;
@@ -950,11 +950,13 @@ VOICE RULES & TOOL SILENCE
     if (endCallTool && endCallTool.parameters?.properties?.reason) {
       const usedReasons = new Set<string>();
       const fsmStates = Array.isArray(spec?.callFlowPlan?.fsmStates) ? spec.callFlowPlan.fsmStates : [];
-      for (const state of fsmStates) {
+      for (const stateRaw of fsmStates) {
+        const state = stateRaw as any;
         if (state.entryAction?.tool === 'end_call' && state.entryAction.args?.reason) {
           usedReasons.add(state.entryAction.args.reason);
         }
-        for (const edge of state.edges || []) {
+        for (const edgeRaw of state.edges || []) {
+          const edge = edgeRaw as any;
           if (edge.action === 'end_call' && edge.reason) {
             usedReasons.add(edge.reason);
           }
@@ -1047,7 +1049,7 @@ export class PromptAssembler {
         }
       },
       callFlowPlan: {
-        steps: (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : (Array.isArray(specOrIr?.states) ? specOrIr.states : [])).map((s: any, idx: number) => ({
+        steps: (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : (Array.isArray(specOrIr?.states) ? specOrIr.states : (Array.isArray(specOrIr?.callFlowPlan?.steps) ? specOrIr.callFlowPlan.steps : []))).map((s: any, idx: number) => ({
           sequenceOrder: s?.sequenceOrder || idx + 1,
           stateId: s?.stateId || `step_${idx + 1}`,
           stateName: s?.stateName || s?.label || `Step ${idx + 1}`,

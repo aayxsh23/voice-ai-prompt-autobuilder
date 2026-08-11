@@ -90,7 +90,7 @@ async function repairStructurally(
 export type CompileInput = Partial<BlueprintJson> & {
   businessSpec?: BusinessSpecification;
   dynamicVariables?: DynamicVariableSpec[];
-  extractedIR?: Record<string, unknown>;
+  extractedIR?: any;
   overrides?: SchemaOverrides & { dynamicVariables?: DynamicVariableSpec[] };
   transcript?: ChatMessage[];
   sessionId?: string;
@@ -194,7 +194,20 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     // Deep-clone so we never mutate the caller's input object in place.
     spec = structuredClone(input.businessSpec);
   } else {
-    const biz = (input.business || {}) as any;
+    const biz = (input.business || {}) as {
+      companyName?: string;
+      businessName?: string;
+      agentName?: string;
+      industry?: string;
+      description?: string;
+      operatingHours?: string;
+      servicesOffered?: string[];
+      policies?: {
+        cancellation?: string;
+        refunds?: string;
+        escalationNumbers?: string[];
+      };
+    };
     const mission = (input.mission || {}) as CallMission;
     const tone = input.personality?.tone ? [input.personality.tone] : ["Professional", "Helpful"];
     spec = {
@@ -238,7 +251,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
   const needWorkflow = !spec.callFlowPlan.fsmStates || spec.callFlowPlan.fsmStates.length === 0;
   const needKnowledge = spec.knowledgeBase.faqs.length === 0 || spec.knowledgeBase.objections.length === 0 ||
-    (isHindiMode && !spec.knowledgeBase.faqs.some((f: any) => /[\u0900-\u097F]/.test(f.question + f.answer)));
+    (isHindiMode && !spec.knowledgeBase.faqs.some((f: { question?: string; answer?: string; }) => /[\u0900-\u097F]/.test((f.question || '') + (f.answer || ''))));
 
   // WorkflowArchitect and KnowledgeArchitect are independent, so run them concurrently.
   const [plannedFsmStates, plannedKb] = await Promise.all([
@@ -262,18 +275,19 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   draft = mergeUserOverrides(draft, input.overrides);
   draft.businessSpec = spec;
 
-  if (isHindiMode) {
+  if (spec.meta?.languageMode && spec.meta.languageMode !== 'english' && spec.meta.languageMode !== 'multilingual') {
+    const langCode = spec.meta.languageMode;
     const sessionId = spec.meta?.sessionId;
     if (Array.isArray(draft.faqCards)) {
       for (const faq of draft.faqCards) {
-        if (faq.answer) faq.answer = await ScriptLinter.lintHindiScript(faq.answer, sessionId);
+        if (faq.answer) faq.answer = await ScriptLinter.lintScript(faq.answer, langCode, sessionId);
       }
     }
     if (Array.isArray(draft.objectionCards)) {
       for (const obj of draft.objectionCards) {
         const responseField = obj.response || obj.handling;
         if (responseField) {
-          const linted = await ScriptLinter.lintHindiScript(responseField, sessionId);
+          const linted = await ScriptLinter.lintScript(responseField, langCode, sessionId);
           if (obj.response !== undefined) obj.response = linted;
           if (obj.handling !== undefined) obj.handling = linted;
         }
@@ -281,14 +295,16 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     }
     if (Array.isArray(spec.callFlowPlan?.steps)) {
       for (const step of spec.callFlowPlan.steps) {
-        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintHindiScript(step.scriptDirective, sessionId);
-        if (step.generatedLine) step.generatedLine = await ScriptLinter.lintHindiScript(step.generatedLine, sessionId);
+        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintScript(step.scriptDirective, langCode, sessionId);
+        const s = step as any;
+        if (typeof s.generatedLine === 'string') s.generatedLine = await ScriptLinter.lintScript(s.generatedLine, langCode, sessionId);
       }
     }
     if (Array.isArray(draft.callFlowSteps)) {
       for (const step of draft.callFlowSteps) {
-        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintHindiScript(step.scriptDirective, sessionId);
-        if (step.generatedLine) step.generatedLine = await ScriptLinter.lintHindiScript(step.generatedLine, sessionId);
+        const s = step as any;
+        if (s.scriptDirective) s.scriptDirective = await ScriptLinter.lintScript(s.scriptDirective as string, langCode, sessionId);
+        if (typeof s.generatedLine === 'string') s.generatedLine = await ScriptLinter.lintScript(s.generatedLine as string, langCode, sessionId);
       }
     }
   }
@@ -296,8 +312,8 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   // Register the planned tools on the draft, preserving each tool's JSON Schema.
   // This is the ONLY path by which tools reach the project record and the platform
   // export — without it the prompt text would be the only place tools are defined.
-  draft.suggestedFunctions = (Array.isArray(spec.tools) ? spec.tools : []).map((t: any) => ({
-    name: t?.name,
+  draft.suggestedFunctions = (Array.isArray(spec.tools) ? spec.tools : []).map((t: { name?: string; description?: string; associatedStateId?: string; parameters?: { required?: string[]; type?: string; properties?: any } }) => ({
+    name: t?.name || '',
     category: 'Tool',
     description: t?.description || '',
     purposeInPrompt: t?.associatedStateId ? `Invoked at state: ${t.associatedStateId}` : '',
@@ -305,7 +321,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     expectedOutputs: [],
     enabled: true,
     parameters: t?.parameters || { type: 'object', properties: {} },
-  })).filter((f: any) => !!f.name);
+  })).filter((f: { name: string }) => !!f.name);
 
   // Synchronize dynamicVariables hierarchy
   draft.dynamicVariables = resolveVariables(
@@ -317,9 +333,9 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   const steps = (Array.isArray(spec.callFlowPlan?.fsmStates) && spec.callFlowPlan.fsmStates.length > 0)
     ? spec.callFlowPlan.fsmStates
     : (Array.isArray(draft?.callFlowSteps) ? draft.callFlowSteps : []);
-  const allSlots = Array.from(new Set<string>(steps.flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
+  const allSlots = Array.from(new Set<string>(steps.flatMap((s: { slotsToCollect?: string[] }) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : []))).filter(Boolean);
   const allSlotsSet = new Set(allSlots);
-  const declaredVarKeys = new Set(draft.dynamicVariables.map((v: any) => v?.key).filter(Boolean));
+  const declaredVarKeys = new Set(draft.dynamicVariables.map((v: DynamicVariableSpec) => v?.key).filter(Boolean));
   
   for (const slot of allSlots) {
     if (!declaredVarKeys.has(slot)) {
@@ -338,7 +354,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   }
 
   // Set missing fieldDirections based on strict usage logic
-  draft.dynamicVariables.forEach((v: any) => {
+  draft.dynamicVariables.forEach((v: DynamicVariableSpec) => {
     if (allSlotsSet.has(v.key) || v.source === 'extraction') {
       v.fieldDirection = 'outfield';
     } else if (!v.fieldDirection) {
@@ -354,7 +370,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
       { key: 'current_time', label: 'Current Time', type: 'runtime' as const, description: 'The current time in the local timezone', fieldDirection: 'infield' as const, required: true, source: 'system', defaultValue: '' }
     ];
     for (const sv of sysVars) {
-      if (!draft.dynamicVariables.find((v: any) => v.key === sv.key)) {
+      if (!draft.dynamicVariables.find((v: DynamicVariableSpec) => v.key === sv.key)) {
         draft.dynamicVariables.push(sv);
       }
     }
@@ -370,7 +386,7 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     draft.appliedRules = draft.appliedRules || [];
   }
 
-  const rawGuardrails = (draft.appliedRules || [])
+  const rawGuardrails = ((draft.appliedRules as any[]) || [])
     .filter((r: any) => r?.category === 'GUARDRAILS' && r?.content)
     .map((r: any) => r.content)
     .join('\n\n');

@@ -80,7 +80,7 @@ describe('builder form gating', () => {
       kbEnabled: true,
       kbContent: '   ',
     };
-    expect(getBlockingGaps(d)).toContain('Knowledge base content (Knowledge Base)');
+    expect(getBlockingGaps(d)).toContain('Knowledge base content (Knowledge Base & Guardrails)');
   });
 
   it('blocks live transfer with no reachable number', () => {
@@ -92,7 +92,7 @@ describe('builder form gating', () => {
       liveTransferEnabled: true,
       transferNumbers: [{ label: 'Manager', number: '' }],
     };
-    expect(getBlockingGaps(d)).toContain('At least one transfer number (Guardrails & Call Handling)');
+    expect(getBlockingGaps(d)).toContain('At least one transfer number (Settings)');
   });
 });
 

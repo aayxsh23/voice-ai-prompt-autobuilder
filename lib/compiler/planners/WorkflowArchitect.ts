@@ -21,15 +21,15 @@ export class WorkflowArchitect {
       ...SYSTEM_RUNTIME_TOOLS.map(t => t.name),
       getEmailTool(toneListForTools).name,
       ...(Array.isArray(spec.tools) ? spec.tools.map((t: any) => t?.name).filter(Boolean) : []),
-    ]));
+    ] as string[]));
 
-    const callDirection = (meta.callDirection || '').toLowerCase() || (
+    const callDirection = ((meta.callDirection as any) || '').toLowerCase() || (
       /\b(inbound|customer support|helpline|receptionist|incoming|answer calls|handle queries|receive calls|support line)\b/i.test(`${primaryGoal} ${meta.agentName} ${meta.companyName}`) ? 'inbound' : 'outbound'
     );
     const isInbound = callDirection === 'inbound';
 
     const existingSlots = new Set<string>();
-    const allDynamicVars = Array.isArray((spec as any).dynamicVariables) ? (spec as any).dynamicVariables : [];
+    const allDynamicVars = (Array.isArray((spec as any).dynamicVariables) ? (spec as any).dynamicVariables : []) as any;
     const infieldsList = allDynamicVars.filter((v: any) => v && (v.fieldDirection === 'infield' || v.source === 'crm' || v.source === 'api'));
     const outfieldsList = allDynamicVars.filter((v: any) => v && v.key && v.fieldDirection !== 'infield' && v.source !== 'crm' && v.source !== 'api');
     semanticDedupSlots(outfieldsList.map((o: any) => o.key)).forEach((key: string) => existingSlots.add(key));
@@ -125,7 +125,7 @@ BUSINESS SNAPSHOT:
 - **Operating Hours:** ${snap.operatingHours || "N/A"}
 - **Services:** ${snap.servicesOffered?.join(', ') || "N/A"}
 - **Call Direction:** ${isInbound ? "INBOUND (Customer calls us)" : "OUTBOUND (We call customer)"}
-${spec.callFlowPlan?.script || spec.callFlowPlan?.steps?.length ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec.callFlowPlan.script || JSON.stringify(spec.callFlowPlan.steps, null, 2)}\n` : ""}${transferContext}
+${(Array.isArray((spec?.callFlowPlan as any)?.steps) && ((spec!.callFlowPlan as any)!.steps as any)?.length > 0) ? `\nUSER-DEFINED CALL FLOW LOGIC (CRITICAL):\nThe user has explicitly defined the following logic/steps. You MUST strictly follow this routing, branching, and these spoken actions when generating the FSM state nodes. If the user provided conditional conversational logic (e.g. 'if X, pitch Y', or specific cross-selling rules), you MUST preserve this exact conditional logic (using edges, notes, or closeVariants). Do NOT simplify or replace the logic with generic variables.\n${spec?.callFlowPlan?.script || JSON.stringify(spec?.callFlowPlan?.steps, null, 2)}\n` : ""}${transferContext}
 
 CONTEXT VARIABLES & EXTRACTIONS:
 ${infieldsList.length > 0 ? `Known Pre-Call Infields (Available before call): ${JSON.stringify(infieldsList.map((v: any) => v.key))}\n` : ""}
@@ -206,8 +206,8 @@ MANDATORY STATE MACHINE DESIGN RULES:
 Generate the strict JSON array of FsmStateNode now.`;
 
     try {
-      if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0) {
-        return (spec.callFlowPlan as any).fsmStates || spec.callFlowPlan?.userDefinedSteps;
+      if ((spec.callFlowPlan?.userDefinedSteps?.length ?? 0) > 0 || (spec.callFlowPlan as any)?.fsmStates?.length > 0 || (spec.callFlowPlan as any)?.steps?.length > 0) {
+        return (spec.callFlowPlan as any).fsmStates || spec.callFlowPlan?.userDefinedSteps || (spec.callFlowPlan as any)?.steps;
       }
 
       const response = await llmClient.generate({
@@ -278,15 +278,16 @@ Generate the strict JSON array of FsmStateNode now.`;
         }
       });
       
-      if (isHindiOrHinglish) {
+      if (languageMode && languageMode !== 'english' && languageMode !== 'multilingual') {
+        const langCode = languageMode;
         for (const node of nodes) {
           if (node.speechPrompt) {
-            node.speechPrompt = await ScriptLinter.lintHindiScript(node.speechPrompt, meta.sessionId);
+            node.speechPrompt = await ScriptLinter.lintScript(node.speechPrompt, langCode, meta.sessionId);
           }
           if (Array.isArray(node.closeVariants)) {
             for (const variant of node.closeVariants) {
               if (variant.script) {
-                variant.script = await ScriptLinter.lintHindiScript(variant.script, meta.sessionId);
+                variant.script = await ScriptLinter.lintScript(variant.script, langCode, meta.sessionId);
               }
             }
           }

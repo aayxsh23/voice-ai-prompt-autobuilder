@@ -18,11 +18,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
-  CheckCircle,
-  Edit3,
   Loader2,
   AlertTriangle,
-  Copy,
 } from 'lucide-react';
 import type { PromptPackageDraft } from '@/lib/llm/types';
 import { AgentPromptEditor } from '@/components/project/AgentPromptEditor';
@@ -76,7 +73,6 @@ export default function FormBuilderPage({ params }: { params: Promise<{ sessionI
 
   const [draft, setDraft] = useState<PromptPackageDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Record<string, boolean>>({});
 
   useEffect(() => {

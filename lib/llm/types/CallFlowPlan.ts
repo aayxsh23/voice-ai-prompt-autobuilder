@@ -1,6 +1,6 @@
 export interface ToolInvocation {
   tool: string;
-  args: Record<string, any>;
+  args: Record<string, Record<string, unknown>>;
   executeBeforeSpeech?: boolean;
   speechPrompt?: string;
 }
@@ -15,11 +15,12 @@ export interface FsmEdge {
 
 export interface FsmSubProtocol {
   name: string;
-  args?: Record<string, any>;
-  rules?: any[];
+  args?: Record<string, Record<string, unknown>>;
+  rules?: Record<string, unknown>[];
 }
 
 export interface FsmStateNode {
+  [key: string]: any;
   id: string;
   objective: string;
   speechPrompt?: string;
@@ -87,7 +88,7 @@ export interface CallFlowPlan {
   outOfScopeTopics: string[];
   
   entryRouting?: Array<{ trigger: string; targetStateId: string }>;
-  userDefinedSteps?: any[];
+  userDefinedSteps?: Record<string, unknown>[];
 
   interruptionPolicy?: string;
   digressionPolicy?: string;

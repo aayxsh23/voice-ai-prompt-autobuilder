@@ -1,85 +1,149 @@
 import { llmClient } from "@/lib/llm/llmProvider";
 import { logger } from "@/lib/logger";
 
-const DIGIT_TO_HINDI: Record<string, string> = {
-  '0': 'शून्य',
-  '1': 'एक',
-  '2': 'दो',
-  '3': 'तीन',
-  '4': 'चार',
-  '5': 'पांच',
-  '6': 'छह',
-  '7': 'सात',
-  '8': 'आठ',
-  '9': 'नौ'
+interface LinterLanguageConfig {
+  languageName: string;
+  nativeScript: string;
+  loanLanguage: string;
+  loanScript: string;
+  digitMap: Record<string, string>;
+}
+
+const LANGUAGE_REGISTRY: Record<string, LinterLanguageConfig> = {
+  "hindi": {
+    languageName: "Hindi",
+    nativeScript: "Devanagari",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'शून्य', '1': 'एक', '2': 'दो', '3': 'तीन', '4': 'चार', '5': 'पांच', '6': 'छह', '7': 'सात', '8': 'आठ', '9': 'नौ' }
+  },
+  "hinglish": {
+    languageName: "Hinglish",
+    nativeScript: "Devanagari",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'शून्य', '1': 'एक', '2': 'दो', '3': 'तीन', '4': 'चार', '5': 'पांच', '6': 'छह', '7': 'सात', '8': 'आठ', '9': 'नौ' }
+  },
+  "marathi": {
+    languageName: "Marathi",
+    nativeScript: "Devanagari",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'शून्य', '1': 'एक', '2': 'दोन', '3': 'तीन', '4': 'चार', '5': 'पाच', '6': 'सहा', '7': 'सात', '8': 'आठ', '9': 'नऊ' }
+  },
+  "kannada": {
+    languageName: "Kannada",
+    nativeScript: "Kannada",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'ಸೊನ್ನೆ', '1': 'ಒಂದು', '2': 'ಎರಡು', '3': 'ಮೂರು', '4': 'ನಾಲ್ಕು', '5': 'ಐದು', '6': 'ಆರು', '7': 'ಏಳು', '8': 'ಎಂಟು', '9': 'ಒಂಬತ್ತು' }
+  },
+  "tamil": {
+    languageName: "Tamil",
+    nativeScript: "Tamil",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'சுழியம்', '1': 'ஒன்று', '2': 'இரண்டு', '3': 'மூன்று', '4': 'நான்கு', '5': 'ஐந்து', '6': 'ஆறு', '7': 'ஏழு', '8': 'எட்டு', '9': 'ஒன்பது' }
+  },
+  "telugu": {
+    languageName: "Telugu",
+    nativeScript: "Telugu",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'సున్నా', '1': 'ఒకటి', '2': 'రెండు', '3': 'మూడు', '4': 'నాలుగు', '5': 'ఐదు', '6': 'ఆరు', '7': 'ఏడు', '8': 'ఎనిమిది', '9': 'తొమ్మిది' }
+  },
+  "gujarati": {
+    languageName: "Gujarati",
+    nativeScript: "Gujarati",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'શૂન્ય', '1': 'એક', '2': 'બે', '3': 'ત્રણ', '4': 'ચાર', '5': 'પાંચ', '6': 'છ', '7': 'સાત', '8': 'આઠ', '9': 'નવ' }
+  },
+  "bengali": {
+    languageName: "Bengali",
+    nativeScript: "Bengali",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'শূন্য', '1': 'এক', '2': 'দুই', '3': 'তিন', '4': 'চার', '5': 'পাঁচ', '6': 'ছয়', '7': 'সাত', '8': 'আট', '9': 'নয়' }
+  },
+  "punjabi": {
+    languageName: "Punjabi",
+    nativeScript: "Gurmukhi",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'ਸਿਫ਼ਰ', '1': 'ਇੱਕ', '2': 'ਦੋ', '3': 'ਤਿੰਨ', '4': 'ਚਾਰ', '5': 'ਪੰਜ', '6': 'ਛੇ', '7': 'ਸੱਤ', '8': 'ਅੱਠ', '9': 'ਨੌਂ' }
+  },
+  "malayalam": {
+    languageName: "Malayalam",
+    nativeScript: "Malayalam",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'പൂജ്യം', '1': 'ഒന്ന്', '2': 'രണ്ട്', '3': 'മൂന്ന്', '4': 'നാല്', '5': 'അഞ്ച്', '6': 'ആറ്', '7': 'ഏഴ്', '8': 'എട്ട്', '9': 'ഒമ്പത്' }
+  },
+  "urdu": {
+    languageName: "Urdu",
+    nativeScript: "Nastaliq",
+    loanLanguage: "English",
+    loanScript: "Roman",
+    digitMap: { '0': 'صفر', '1': 'ایک', '2': 'دو', '3': 'تین', '4': 'چار', '5': 'پانچ', '6': 'چھ', '7': 'سات', '8': 'آٹھ', '9': 'نو' }
+  }
 };
 
-const LINTER_INSTRUCTION = `You are a strict text linter for Hindi and Hinglish voice agent scripts.
-Your only job is to perform two precise formatting tasks on the provided text. Do NOT change the meaning, tone, or overall structure of the text. Do NOT translate the text into English if it is in Hindi.
-
-TASK 1: ENGLISH LOANWORDS & PROPER NOUNS -> ROMAN SCRIPT
-Any word of English origin, AND all proper nouns (such as city names, company names, software names, etc.), that are written in Devanagari script MUST be converted back to Roman/English script. This applies EVEN to extremely common Indian business terms. Never leave an English-origin word or a proper noun in Devanagari.
-Examples of words to convert:
-- "सॉफ्टवेयर" -> "software"
-- "ट्रेनिंग" -> "training"
-- "शेड्यूल" -> "schedule"
-- "बिलिंग" -> "billing"
-- "इनवॉइस" -> "invoice"
-- "रिकॉर्ड" -> "record"
-- "क्वालिटी" -> "quality"
-- "कॉल" -> "call"
-- "नंबर" -> "number"
-- "डेमो" -> "demo"
-- "ओनर" -> "owner"
-- "ऑफिस" -> "office"
-- "हेड ऑफिस" -> "head office"
-- "कंपनी" -> "company"
-- "कस्टमर" -> "customer"
-- "दिल्ली" -> "Delhi"
-- "मुंबई" -> "Mumbai"
-
-TASK 2: NUMERIC DIGITS -> SPELLED OUT WORDS
-All numeric digits (0-9) MUST be spelled out fully as Hindi words (if in a Hindi context).
-Examples:
-- "10" -> "दस"
-- "2" -> "दो"
-- "45" -> "पैंतालीस"
-- "9827" -> "नौ आठ दो सात" (for phone numbers/codes, spell digit by digit)
-
-Return ONLY the cleaned, linted text. Do not add any commentary, quotes, or markdown formatting.`;
-
 export class ScriptLinter {
-  /**
-   * Applies a deterministic, LLM-powered lint pass over generated Hindi/Hinglish text
-   * to fix transliterated English loanwords and numeric digits.
-   */
-  public static async lintHindiScript(text: string, sessionId?: string): Promise<string> {
-    if (!text || !text.trim()) {
+  public static async lintScript(text: string, langCode: string, sessionId?: string): Promise<string> {
+    if (!text || !text.trim()) return text;
+
+    const config = LANGUAGE_REGISTRY[langCode.toLowerCase()];
+    if (!config) {
+      logger.warn(`No linter config for ${langCode}, skipping lint.`);
       return text;
     }
 
+    let processedText = text;
+
     try {
-      // Pass 1: LLM Rewrite
+      const promptText = this.buildPrompt(config, text);
+      
       const response = await llmClient.generate({
-        systemInstruction: LINTER_INSTRUCTION,
-        prompt: text,
+        systemInstruction: "You are a strict JSON-only data extractor for TTS normalization.",
+        prompt: promptText,
         contextLabel: "ScriptLinter",
         sessionId
       });
-      
-      let lintedText = response.text || text;
 
-      // Pass 2: Deterministic Regex Failsafe for digits
-      // If the LLM missed any digits, we strictly replace them with Hindi words digit-by-digit.
-      lintedText = lintedText.replace(/\d/g, (match) => {
-        return " " + (DIGIT_TO_HINDI[match] || match) + " ";
-      }).replace(/\s+/g, ' ').trim();
-
-      return lintedText;
+      const jsonMatch = response.text?.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        const substitutions: { original: string, replacement: string }[] = JSON.parse(jsonMatch[0]);
+        
+        for (const sub of substitutions) {
+          processedText = processedText.split(sub.original).join(sub.replacement);
+        }
+      }
     } catch (err) {
-      logger.error("ScriptLinter failed to lint script, returning original", err);
-      // Failsafe: at least run the regex
-      return text.replace(/\d/g, (match) => " " + (DIGIT_TO_HINDI[match] || match) + " ").replace(/\s+/g, ' ').trim();
+      logger.error("ScriptLinter LLM extraction failed, relying purely on regex failsafe", err);
     }
+
+    processedText = processedText.replace(/\d/g, (match) => {
+      return " " + (config.digitMap[match] || match) + " ";
+    }).replace(/\s+/g, ' ').trim();
+
+    return processedText;
+  }
+
+  private static buildPrompt(config: LinterLanguageConfig, text: string): string {
+    return `Analyze the following ${config.languageName} script written for a Text-To-Speech engine.
+
+TASK 1: Extract any ${config.loanLanguage} loanwords, tech terms, or proper nouns that are currently written in ${config.nativeScript} script. Provide their correct ${config.loanScript} script equivalent.
+TASK 2: Extract any raw numeric digits (0-9) and provide their spelled-out ${config.languageName} word equivalent.
+
+RETURN ONLY A JSON ARRAY OF SUBSTITUTIONS. Do NOT return the rewritten text. Do NOT wrap the JSON in markdown code blocks.
+Example format:
+[
+  { "original": "सॉफ्टवेयर", "replacement": "software" },
+  { "original": "9827", "replacement": "नौ आठ दो सात" }
+]
+
+TEXT TO ANALYZE:
+"${text}"`;
   }
 }

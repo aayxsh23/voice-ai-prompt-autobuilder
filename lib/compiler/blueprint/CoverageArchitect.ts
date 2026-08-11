@@ -52,7 +52,7 @@ interface CoverageContext {
   hoursStr: string;
   cancelStr: string;
   refundStr: string;
-  callFlowSteps: any[];
+  callFlowSteps: Record<string, unknown>[];
 }
 
 interface CoverageRule {

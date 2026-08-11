@@ -103,8 +103,9 @@ export interface GapAuditResult {
 }
 
 export interface DynamicVariableSpec {
+  [key: string]: any;
   key: string;
-  label: string;
+  label?: string;
   type: 'business' | 'caller' | 'task' | 'tool_output' | 'runtime' | 'static';
   fieldDirection?: 'infield' | 'outfield';
   required: boolean;
@@ -114,6 +115,7 @@ export interface DynamicVariableSpec {
 }
 
 export interface SuggestedFunctionSpec {
+  [key: string]: any;
   name: string;
   category: string;
   description: string;
@@ -173,7 +175,7 @@ export interface PromptPackageDraft {
   verbatimLines?: { stepLabel: string; exactLine: string }[];
   transferConditions?: TransferCondition[];
   callFlowScript?: string;
-  callFlowSteps?: any[];
+  callFlowSteps?: Record<string, unknown>[];
   emergencyTriggers?: string[];
   outOfScopeTopics?: string[];
   guardrails?: {
@@ -184,7 +186,7 @@ export interface PromptPackageDraft {
   optimizedGuardrails?: string;
   systemPromptCompiled?: boolean;
   operationalContext?: Record<string, string>;
-  appliedRules?: any[];
+  appliedRules?: Record<string, unknown>[];
   validationStatus?: 'success' | 'warning' | 'failed_review_required';
   validationErrors?: string[];
   validationWarnings?: string[];
@@ -209,7 +211,7 @@ export interface SimulationTurnOutput {
   nextRequiredField: string;
   guardrailTriggered: boolean;
   issueNotes: string;
-  toolCalls?: Array<{ name: string; arguments: Record<string, any> }>;
+  toolCalls?: Array<{ name: string; arguments: Record<string, Record<string, unknown>> }>;
   estimatedLatencyMs?: number;
   interruptionDetected?: boolean;
   interruptionHandled?: string;
@@ -225,7 +227,7 @@ export interface BlueprintJson {
   conversation: ConversationDesign;
   personality: VoicePersonality;
   followupAnswers: Record<string, string>;
-  extractedIR?: any;
+  extractedIR?: Record<string, unknown>;
   compiledSystemPrompt?: string;
   overrides?: SchemaOverrides;
 }
@@ -391,7 +393,9 @@ export function safeParseJson<T>(raw: string, fallback: T): T {
 export * from './types/CallFlowPlan';
 
 export interface BusinessSpecification {
+  [key: string]: any;
   meta: {
+    [key: string]: any;
     companyName: string;
     agentName: string;
     industry: string;
@@ -497,7 +501,7 @@ export interface BusinessSpecification {
       isFallback?: boolean;
       isTerminal?: boolean;
     }>;
-    fsmStates?: any[];
+    fsmStates?: Record<string, unknown>[];
   };
   knowledgeBase: {
     faqs: Array<{ question: string; answer: string; isFallback?: boolean }>;
@@ -508,7 +512,7 @@ export interface BusinessSpecification {
   tools: Array<{
     name: string;
     description: string;
-    parameters: Record<string, any>;
+    parameters: Record<string, Record<string, unknown>>;
     associatedStateId: string;
   }>;
   extractedEntities?: {

@@ -65,3 +65,11 @@ Structure/
 .claude/
 *.restored
 DB_INSPECTION.md
+
+# Temporary agent output files
+*.diff
+lint-output.txt
+lint_json.json
+lint_results.txt
+test-results.json
+ts_errors.txt

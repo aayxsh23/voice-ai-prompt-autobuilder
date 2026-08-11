@@ -1,11 +1,9 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { AgentPromptEditor } from '@/components/project/AgentPromptEditor';
-import { Badge } from '@/components/ui';
 
 interface Project {
   id: string;
@@ -15,8 +13,8 @@ interface Project {
   finalPrompt?: string;
   welcomeMessage?: string;
   businessSpec?: string;
-  variables?: any[];
-  functions?: any[];
+  variables?: Record<string, unknown>[];
+  functions?: Record<string, unknown>[];
 }
 
 export default function ProjectStudioPage({ params }: { params: Promise<{ projectId: string }> }) {
@@ -63,8 +61,6 @@ export default function ProjectStudioPage({ params }: { params: Promise<{ projec
       </p>
     );
   }
-
-  const isPublished = project.status === 'published';
 
   return (
     <div className="flex flex-col h-screen w-full bg-canvas animate-fade-in-up">

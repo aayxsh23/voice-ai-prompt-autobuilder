@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Plus, Search, Loader2 } from 'lucide-react';
 import { Button, Input } from '@/components/ui';
 import { PromptProjectCard } from '@/components/dashboard/PromptProjectCard';
@@ -172,7 +171,7 @@ export default function DashboardPage() {
           <div className="w-full max-w-sm rounded-lg border border-line bg-surface p-5 shadow-lg">
             <h3 className="text-[15px] font-semibold text-ink mb-2">Delete project?</h3>
             <p className="text-[13px] text-graphite mb-5">
-              Permanently delete "{projectToDelete.name}"? This cannot be undone.
+              Permanently delete &quot;{projectToDelete.name}&quot;? This cannot be undone.
             </p>
             <div className="flex justify-end gap-2">
               <button

@@ -8,13 +8,13 @@ export class ToolPlanner {
    * Plans tools for a prompt compilation, returning the system tools plus the user-provided tools.
    */
   public static async planTools(spec: Partial<BusinessSpecification>): Promise<BusinessSpecification['tools']> {
-    const meta = spec.meta || {} as any;
+    const meta = spec.meta || {} as Record<string, unknown>;
     const toneList = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
     
     // Always inject end_call (every flow terminates)
     const immutableSystemTools = [...SYSTEM_RUNTIME_TOOLS.filter(t => t.name === 'end_call')];
     
-    const allSlots = Array.from(new Set<string>((spec.callFlowPlan?.fsmStates || []).flatMap((s: any) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])))).filter(Boolean);
+    const allSlots = Array.from(new Set<string>((spec.callFlowPlan?.fsmStates || []).flatMap((s: Record<string, unknown>) => Array.isArray(s?.slotsToCollect) ? s.slotsToCollect : (Array.isArray(s?.collectsVariable) ? s.collectsVariable : [])))).filter(Boolean);
     const hasEmailSlot = allSlots.some(s => resolveSlotDigitSpec(s)?.mode === 'email');
     const hasDigitSlot = allSlots.some(s => resolveSlotDigitSpec(s)?.mode === 'digits');
     
@@ -45,7 +45,7 @@ export class ToolPlanner {
       .filter(Boolean);
 
     const hasTransferDestinations = (Array.isArray(escalationNumbers) && escalationNumbers.length > 0)
-      || (Array.isArray(spec.tools) && spec.tools.some((t: any) => t?.name === 'transfer_call'));
+      || (Array.isArray(spec.tools) && spec.tools.some((t: Record<string, unknown>) => t?.name === 'transfer_call'));
 
     if (hasTransferDestinations) {
       immutableSystemTools.push({
@@ -86,7 +86,7 @@ export class ToolPlanner {
   public static describeToolForPrompt(tool: ToolDefinition, index: number): string {
     const props = tool.parameters?.properties || {};
     const required = new Set(tool.parameters?.required || []);
-    const params = Object.entries(props).map(([name, schema]: [string, any]) => {
+    const params = Object.entries(props).map(([name, schema]: any) => {
       const type = schema?.type || 'any';
       const desc = schema?.description ? ` — "${schema.description}"` : '';
       const req = required.has(name) ? '' : ' (optional)';
