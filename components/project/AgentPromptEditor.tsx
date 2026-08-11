@@ -17,50 +17,7 @@ interface Props {
 
 export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChangeDraft, onSave, onBack, saving, mode = 'auto' }) => {
   const [activeTab, setActiveTab] = useState<'prompt' | 'settings' | 'tools' | 'variables' | 'outcomes'>('prompt');
-  const [openPromptSection, setOpenPromptSection] = useState('identity');
   const [editMode, setEditMode] = useState<Record<string, boolean>>({});
-  const promptSectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
-
-  const jumpToPromptSection = (key: string) => {
-      setOpenPromptSection(key);
-      setTimeout(() => {
-          const el = promptSectionRefs.current[key];
-          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 60);
-  };
-
-  const parsePromptSections = (prompt: string) => {
-    const sections = { identity: '', flow: '', knowledge: '', guardrails: '', escalation: '' };
-    if (!prompt) return sections;
-    
-    // Split by ### headers
-    const parts = prompt.split(/(?=### )/g);
-    parts.forEach(part => {
-      const headerLine = part.split('\n')[0].toUpperCase();
-      
-      if (headerLine.includes('IDENTITY') || headerLine.includes('LANGUAGE') || headerLine.includes('OUTPUT') || headerLine.includes('VOICE')) {
-        sections.identity += part;
-      }
-      else if (headerLine.includes('STATE MACHINE') || headerLine.includes('DYNAMIC VARIABLES') || headerLine.includes('CALL FLOW')) {
-        sections.flow += part;
-      }
-      else if (headerLine.includes('BUSINESS CONTEXT') || headerLine.includes('FAQ') || headerLine.includes('OBJECTION') || headerLine.includes('TROUBLESHOOTING') || headerLine.includes('COMPETITIVE')) {
-        sections.knowledge += part;
-      }
-      else if (headerLine.includes('SCOPE') || headerLine.includes('BOUNDARIES') || headerLine.includes('INTERRUPTS') || headerLine.includes('FALLBACKS')) {
-        sections.guardrails += part;
-      }
-      else if (headerLine.includes('ESCALATION') || headerLine.includes('ROUTING') || headerLine.includes('TOOLS')) {
-        sections.escalation += part;
-      }
-      else {
-        sections.identity += part; // fallback
-      }
-    });
-    return sections;
-  };
-
-  const parsedPrompt = parsePromptSections(draft.finalPrompt || '');
 
   const [copied, setCopied] = useState(false);
 
@@ -178,33 +135,6 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                 </div>
                             </div>
                         </div>
-
-                        <div>
-                            <span className="block text-[11px] font-semibold text-graphite/70 uppercase tracking-wider mb-2">Prompt Sections</span>
-                            
-                            {mode !== 'scratch' && (
-                                <div className="sticky top-0 z-10 -mx-1 px-1 py-2 bg-canvas/95 backdrop-blur">
-                                    <div className="flex items-center gap-2 overflow-x-auto">
-                                        {[
-                                            { key: 'identity', title: 'Identity & Voice', icon: UserCircle },
-                                            { key: 'flow', title: 'Call Flow', icon: ListTree },
-                                            { key: 'knowledge', title: 'Knowledge Base', icon: Brain },
-                                            { key: 'guardrails', title: 'Guardrails & Safety', icon: Shield },
-                                            { key: 'escalation', title: 'Escalation & Tools', icon: Zap }
-                                        ].map(section => (
-                                            <button
-                                                key={section.key}
-                                                type="button"
-                                                onClick={() => jumpToPromptSection(section.key)}
-                                                className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium border transition-colors ${openPromptSection === section.key ? 'bg-accent text-white border-accent' : 'bg-white text-graphite border-line hover:border-line-strong hover:text-ink'}`}
-                                            >
-                                                <section.icon className="w-3.5 h-3.5" /> {section.title}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
                         {mode === 'scratch' ? (
                             <div className="card flex-1 flex flex-col h-full border-0 shadow-none bg-transparent">
                                 <textarea
@@ -216,91 +146,64 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                 />
                             </div>
                         ) : (
-                            <div className="space-y-3">
-                                {[
-                                    { key: 'identity', title: 'Identity & Voice', subtitle: 'Who the agent is, its persona, tone, and voice mechanics.', icon: UserCircle, color: 'text-accent', bg: 'bg-accent-soft' },
-                                    { key: 'flow', title: 'Call Flow', subtitle: 'The state machine and dynamic variables the agent follows.', icon: ListTree, color: 'text-accent', bg: 'bg-accent-soft' },
-                                    { key: 'knowledge', title: 'Knowledge Base', subtitle: 'Business facts, FAQs, and objection handling.', icon: Brain, color: 'text-accent', bg: 'bg-accent-soft' },
-                                    { key: 'guardrails', title: 'Guardrails & Safety', subtitle: 'Scope boundaries, fallbacks, and global interrupts.', icon: Shield, color: 'text-accent', bg: 'bg-accent-soft' },
-                                    { key: 'escalation', title: 'Escalation & Tools', subtitle: 'Transfer routing and the tool contract.', icon: Zap, color: 'text-accent', bg: 'bg-accent-soft' }
-                                ].map(section => {
-                                    const isOpen = openPromptSection === section.key;
-                                    const Icon = section.icon;
-                                    // @ts-expect-error type inference failure for parsedPrompt keys
-                                    const sectionContent = parsedPrompt[section.key];
-                                    if (!sectionContent?.trim()) return null;
-
-                                    return (
-                                        <div key={section.key} ref={(el) => { promptSectionRefs.current[section.key] = el; }} className="card bg-white shadow-sm overflow-hidden scroll-mt-16">
-                                            <button
-                                                type="button"
-                                                onClick={() => setOpenPromptSection(isOpen ? '' : section.key)}
-                                                className="w-full flex items-center gap-3 p-4 text-left hover:bg-subtle/60 transition-colors"
-                                            >
-                                                <span className={`inline-flex items-center justify-center w-8 h-8 rounded-md shrink-0 ${isOpen ? 'bg-accent-soft text-accent' : 'bg-subtle text-graphite'}`}>
-                                                    <Icon className="w-4 h-4" />
-                                                </span>
-                                                <span className="flex-1 min-w-0">
-                                                    <span className="block text-[14px] font-semibold text-ink">{section.title}</span>
-                                                    <span className="block text-[12px] text-graphite truncate">{isOpen ? section.subtitle : (sectionContent.slice(0, 100).replace(/\n/g, ' '))}</span>
-                                                </span>
-                                                <ChevronDown className={`w-4 h-4 text-graphite shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-                                            </button>
-                                            
-                                            {isOpen && (
-                                                <div className="px-4 pb-4 animate-fade-in">
-                                                    <div className="flex justify-end mb-2">
-                                                        <button 
-                                                            type="button" 
-                                                            onClick={() => setEditMode(prev => ({ ...prev, [section.key]: !prev[section.key] }))}
-                                                            className="flex items-center gap-1.5 text-[11px] font-medium text-graphite hover:text-ink transition-colors bg-subtle/50 px-2 py-1 rounded-md"
-                                                        >
-                                                            {editMode[section.key] ? (
-                                                                <><Eye className="w-3 h-3" /> Preview</>
-                                                            ) : (
-                                                                <><Pencil className="w-3 h-3" /> Edit Mode</>
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                    <div className="relative">
-                                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent rounded-l"></div>
-                                                        {editMode[section.key] ? (
-                                                            <textarea
-                                                                value={sectionContent}
-                                                                onChange={(e) => {
-                                                                    const updatedSections = { ...parsedPrompt, [section.key]: e.target.value };
-                                                                    const newPrompt = Object.values(updatedSections).filter(Boolean).join('');
-                                                                    handlePromptChange(newPrompt);
-                                                                }}
-                                                                spellCheck={false}
-                                                                className="w-full h-[300px] resize-y font-mono text-[13px] leading-relaxed focus:border-accent focus:ring-1 focus:ring-accent-soft pl-4 bg-canvas/30 text-ink-soft outline-none border border-line rounded-md py-3"
-                                                            />
-                                                        ) : (
-                                                            <div className="w-full min-h-[150px] max-h-[500px] overflow-y-auto pl-5 pr-4 py-3 bg-white border border-line rounded-md">
-                                                                <ReactMarkdown
-                                                                    components={{
-                                                                        h3: ({...props}) => <h3 className="text-[13px] font-bold mt-4 mb-2 text-ink uppercase tracking-wide border-b border-line pb-1" {...props} />,
-                                                                        h4: ({...props}) => <h4 className="text-[12px] font-semibold mt-3 mb-1 text-ink uppercase tracking-wider" {...props} />,
-                                                                        ul: ({...props}) => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
-                                                                        li: ({...props}) => <li className="text-[13px] leading-[1.6] text-ink-soft" {...props} />,
-                                                                        p: ({...props}) => <p className="text-[13px] leading-[1.6] text-ink-soft mb-3 last:mb-0" {...props} />,
-                                                                        strong: ({...props}) => <strong className="font-semibold text-ink" {...props} />,
-                                                                        code: ({...props}) => <code className="bg-canvas/50 px-1 py-0.5 rounded text-accent font-mono text-[12px]" {...props} />
-                                                                    }}
-                                                                >
-                                                                    {sectionContent}
-                                                                </ReactMarkdown>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
+                            <div className="card bg-white shadow-sm overflow-hidden">
+                                <div className="p-4 flex flex-col h-full animate-fade-in">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <div>
+                                            <span className="block text-[14px] font-semibold text-ink">System Prompt</span>
+                                            <span className="block text-[12px] text-graphite">The complete compiled instructions for the AI.</span>
                                         </div>
-                                    );
-                                })}
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setEditMode(prev => ({ ...prev, full: !prev.full }))}
+                                            className="flex items-center gap-1.5 text-[11px] font-medium text-graphite hover:text-ink transition-colors bg-subtle/50 px-2 py-1 rounded-md"
+                                        >
+                                            {editMode['full'] ? (
+                                                <><Eye className="w-3 h-3" /> Preview</>
+                                            ) : (
+                                                <><Pencil className="w-3 h-3" /> Edit Mode</>
+                                            )}
+                                        </button>
+                                    </div>
+                                    <div className="relative flex-1">
+                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent rounded-l"></div>
+                                        {editMode['full'] ? (
+                                            <textarea
+                                                value={draft.finalPrompt || ''}
+                                                onChange={(e) => handlePromptChange(e.target.value)}
+                                                spellCheck={false}
+                                                className="w-full min-h-[500px] resize-y font-mono text-[13px] leading-relaxed focus:border-accent focus:ring-1 focus:ring-accent-soft pl-4 bg-canvas/30 text-ink-soft outline-none border border-line rounded-md py-3"
+                                            />
+                                        ) : (
+                                            <div className="w-full min-h-[500px] max-h-[800px] overflow-y-auto pl-5 pr-4 py-3 bg-white border border-line rounded-md prose prose-sm max-w-none">
+                                                <ReactMarkdown
+                                                    components={{
+                                                        h1: ({node, ...props}) => <h1 className="text-xl font-bold mt-4 mb-2 text-ink" {...props} />,
+                                                        h2: ({node, ...props}) => <h2 className="text-lg font-bold mt-4 mb-2 text-ink" {...props} />,
+                                                        h3: ({node, ...props}) => <h3 className="text-base font-bold mt-3 mb-1 text-ink" {...props} />,
+                                                        p: ({node, ...props}) => <p className="mb-2 leading-relaxed" {...props} />,
+                                                        ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-2 space-y-1" {...props} />,
+                                                        ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
+                                                        li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                                                        code: ({node, className, children, ...props}) => {
+                                                            const match = /language-(\w+)/.exec(className || '');
+                                                            const isInline = !match && !className;
+                                                            return isInline ? (
+                                                                <code className="bg-subtle text-ink-strong px-1.5 py-0.5 rounded text-[0.9em] font-mono" {...props}>{children}</code>
+                                                            ) : (
+                                                                <code className="block bg-surface border border-line rounded-md p-3 text-[12px] overflow-x-auto text-ink-soft font-mono" {...props}>{children}</code>
+                                                            );
+                                                        }
+                                                    }}
+                                                >
+                                                    {draft.finalPrompt || '*No prompt generated.*'}
+                                                </ReactMarkdown>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                         )}
-                        </div>
                     </div>
                 </div>
              )}

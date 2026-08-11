@@ -106,6 +106,14 @@ Navigating the repository:
 3. The system's **CoverageArchitect** will identify gaps and prompt you for more details (like opening hours, FAQs, and booking tools).
 4. Once the specification is complete, the compiler generates a ready-to-use markdown prompt that you can export or copy-paste directly into your preferred telephony provider.
 
+## Security Hardening
+This platform is hardened for secure enterprise use. Key security measures include:
+- **HTTP Basic Authentication:** Site-wide lockout capability using `TESTING_USERNAME` and `TESTING_PASSWORD` environment variables (handled via Next.js Proxy/Middleware).
+- **IDOR / BOLA Prevention:** Strict ownership assertion mechanisms for sessions and projects across all backend API routes.
+- **Input Validation:** Incoming request payloads are validated using strict Zod schemas to prevent NoSQL injection and ensure data integrity.
+- **LLM Prompt Injection Protections:** Critical methods isolate user inputs (like `caller_message`) using XML delimiters within the LLM context to prevent prompt injection and unauthorized overrides.
+- **Secure Data Queries:** Optimized Prisma queries explicitly select non-sensitive fields to prevent data leakage.
+
 ## Scripts
 
 | Script | Purpose |
