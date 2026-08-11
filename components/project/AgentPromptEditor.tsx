@@ -215,7 +215,7 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                      <div>
                        <label className="block text-[13px] font-medium text-ink mb-1.5">Primary Language</label>
                        <select 
-                         className="input-field max-w-sm" 
+                         className="input-field max-w-sm mb-1.5" 
                          value={draft.businessSpec?.meta?.languageMode || 'english'}
                          onChange={(e) => {
                             const newDraft = { ...draft };
@@ -230,7 +230,42 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                          <option value="hinglish">Hinglish</option>
                          <option value="multilingual">Multilingual</option>
                        </select>
-                       <p className="text-[12px] text-graphite mt-1.5">The primary language the agent will speak.</p>
+                       <p className="text-[12px] text-graphite mb-3">The primary language the agent will speak.</p>
+
+                       {draft.businessSpec?.meta?.languageMode === 'multilingual' && (
+                          <div className="flex flex-col sm:flex-row gap-4 max-w-sm mt-3">
+                             <div className="flex-1">
+                               <label className="block text-[12px] font-medium text-ink mb-1.5">Primary</label>
+                               <input 
+                                  className="input-field w-full" 
+                                  placeholder="e.g. English"
+                                  value={draft.businessSpec?.meta?.primaryLanguage || ''}
+                                  onChange={(e) => {
+                                     const newDraft = { ...draft };
+                                     if (newDraft.businessSpec) {
+                                       newDraft.businessSpec.meta.primaryLanguage = e.target.value;
+                                     }
+                                     onChangeDraft(newDraft);
+                                  }}
+                               />
+                             </div>
+                             <div className="flex-1">
+                               <label className="block text-[12px] font-medium text-ink mb-1.5">Secondary</label>
+                               <input 
+                                  className="input-field w-full" 
+                                  placeholder="e.g. Spanish"
+                                  value={draft.businessSpec?.meta?.secondaryLanguage || ''}
+                                  onChange={(e) => {
+                                     const newDraft = { ...draft };
+                                     if (newDraft.businessSpec) {
+                                       newDraft.businessSpec.meta.secondaryLanguage = e.target.value;
+                                     }
+                                     onChangeDraft(newDraft);
+                                  }}
+                               />
+                             </div>
+                          </div>
+                       )}
                      </div>
                      <div>
                        <label className="block text-[13px] font-medium text-ink mb-1.5">Primary Goal</label>
@@ -263,9 +298,18 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                <div className="card p-6 overflow-y-auto animate-fade-in-up">
                   <h2 className="text-[16px] font-semibold text-ink mb-2">Function Tools</h2>
                   <p className="text-[13px] text-graphite mb-6">Tools the agent can call during the conversation.</p>
-                  <div className="flex flex-wrap gap-2 mb-4">
+                  <div className="flex flex-col gap-3 mb-4">
                      {(draft.suggestedFunctions || []).map((t, i) => (
-                        <ToolChip key={i} name={t.name} />
+                        <div key={i} className="flex items-start gap-4 p-3 border border-line rounded-lg bg-white shadow-sm">
+                           <div className="shrink-0 pt-0.5 min-w-[180px]">
+                              <ToolChip name={t.name} />
+                           </div>
+                           <div className="flex-1 min-w-0">
+                              <p className="text-[13px] text-ink leading-relaxed">
+                                 {t.description || "No description provided."}
+                              </p>
+                           </div>
+                        </div>
                      ))}
                      {(!draft.suggestedFunctions || draft.suggestedFunctions.length === 0) && (
                         <p className="text-[13px] text-faint italic">No tools suggested for this prompt.</p>
