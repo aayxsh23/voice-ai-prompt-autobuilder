@@ -213,33 +213,69 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                   <h2 className="text-[16px] font-semibold text-ink mb-6">Agent Settings</h2>
                   <div className="space-y-6">
                      <div>
-                       <label className="block text-[13px] font-medium text-ink mb-1.5">Primary Language</label>
-                       <select 
-                         className="input-field max-w-sm mb-1.5" 
-                         value={draft.businessSpec?.meta?.languageMode || 'english'}
-                         onChange={(e) => {
-                            const newDraft = { ...draft };
-                            if (newDraft.businessSpec) {
-                              newDraft.businessSpec.meta.languageMode = e.target.value as any;
-                            }
-                            onChangeDraft(newDraft);
-                         }}
-                       >
-                         <option value="english">English (US)</option>
-                         <option value="hindi">Hindi</option>
-                         <option value="hinglish">Hinglish</option>
-                         <option value="multilingual">Multilingual</option>
-                       </select>
-                       <p className="text-[12px] text-graphite mb-3">The primary language the agent will speak.</p>
+                       <label className="block text-[13px] font-medium text-ink mb-3">Language Mode</label>
+                       
+                       <div className="flex bg-subtle p-1 rounded-lg w-max mb-4">
+                           <button
+                               type="button"
+                               className={`px-4 py-1.5 text-[13px] font-medium rounded-md transition-colors ${draft.businessSpec?.meta?.languageMode !== 'multilingual' ? 'bg-white text-ink shadow-sm' : 'text-graphite hover:text-ink'}`}
+                               onClick={() => {
+                                   const newDraft = { ...draft };
+                                   if (newDraft.businessSpec) {
+                                       newDraft.businessSpec.meta.languageMode = newDraft.businessSpec.meta.primaryLanguage || 'english';
+                                   }
+                                   onChangeDraft(newDraft);
+                               }}
+                           >
+                               Single Language
+                           </button>
+                           <button
+                               type="button"
+                               className={`px-4 py-1.5 text-[13px] font-medium rounded-md transition-colors ${draft.businessSpec?.meta?.languageMode === 'multilingual' ? 'bg-white text-ink shadow-sm' : 'text-graphite hover:text-ink'}`}
+                               onClick={() => {
+                                   const newDraft = { ...draft };
+                                   if (newDraft.businessSpec) {
+                                       newDraft.businessSpec.meta.languageMode = 'multilingual';
+                                   }
+                                   onChangeDraft(newDraft);
+                               }}
+                           >
+                               Multilingual
+                           </button>
+                       </div>
 
-                       {draft.businessSpec?.meta?.languageMode === 'multilingual' && (
-                          <div className="flex flex-col sm:flex-row gap-4 max-w-sm mt-3">
+                       {draft.businessSpec?.meta?.languageMode !== 'multilingual' ? (
+                          <div>
+                              <select 
+                                  className="input-field max-w-sm w-full"
+                                  value={draft.businessSpec?.meta?.primaryLanguage || draft.businessSpec?.meta?.languageMode || 'english'}
+                                  onChange={(e) => {
+                                      const newDraft = { ...draft };
+                                      if (newDraft.businessSpec) {
+                                          newDraft.businessSpec.meta.primaryLanguage = e.target.value;
+                                          newDraft.businessSpec.meta.languageMode = e.target.value as any;
+                                      }
+                                      onChangeDraft(newDraft);
+                                  }}
+                              >
+                                  <option value="english">English</option>
+                                  <option value="hindi">Hindi</option>
+                                  <option value="hinglish">Hinglish</option>
+                                  <option value="spanish">Spanish</option>
+                                  <option value="french">French</option>
+                                  <option value="german">German</option>
+                                  <option value="arabic">Arabic</option>
+                                  <option value="portuguese">Portuguese</option>
+                              </select>
+                              <p className="text-[12px] text-graphite mt-1.5">The primary language the agent will speak.</p>
+                          </div>
+                       ) : (
+                          <div className="flex flex-col sm:flex-row gap-4 max-w-md">
                              <div className="flex-1">
                                <label className="block text-[12px] font-medium text-ink mb-1.5">Primary</label>
-                               <input 
+                               <select 
                                   className="input-field w-full" 
-                                  placeholder="e.g. English"
-                                  value={draft.businessSpec?.meta?.primaryLanguage || ''}
+                                  value={draft.businessSpec?.meta?.primaryLanguage || 'english'}
                                   onChange={(e) => {
                                      const newDraft = { ...draft };
                                      if (newDraft.businessSpec) {
@@ -247,14 +283,22 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                      }
                                      onChangeDraft(newDraft);
                                   }}
-                               />
+                               >
+                                  <option value="english">English</option>
+                                  <option value="hindi">Hindi</option>
+                                  <option value="hinglish">Hinglish</option>
+                                  <option value="spanish">Spanish</option>
+                                  <option value="french">French</option>
+                                  <option value="german">German</option>
+                                  <option value="arabic">Arabic</option>
+                                  <option value="portuguese">Portuguese</option>
+                               </select>
                              </div>
                              <div className="flex-1">
                                <label className="block text-[12px] font-medium text-ink mb-1.5">Secondary</label>
-                               <input 
+                               <select 
                                   className="input-field w-full" 
-                                  placeholder="e.g. Spanish"
-                                  value={draft.businessSpec?.meta?.secondaryLanguage || ''}
+                                  value={draft.businessSpec?.meta?.secondaryLanguage || 'spanish'}
                                   onChange={(e) => {
                                      const newDraft = { ...draft };
                                      if (newDraft.businessSpec) {
@@ -262,7 +306,16 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                      }
                                      onChangeDraft(newDraft);
                                   }}
-                               />
+                               >
+                                  <option value="english">English</option>
+                                  <option value="hindi">Hindi</option>
+                                  <option value="hinglish">Hinglish</option>
+                                  <option value="spanish">Spanish</option>
+                                  <option value="french">French</option>
+                                  <option value="german">German</option>
+                                  <option value="arabic">Arabic</option>
+                                  <option value="portuguese">Portuguese</option>
+                               </select>
                              </div>
                           </div>
                        )}
@@ -300,12 +353,12 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                   <p className="text-[13px] text-graphite mb-6">Tools the agent can call during the conversation.</p>
                   <div className="flex flex-col gap-3 mb-4">
                      {(draft.suggestedFunctions || []).map((t, i) => (
-                        <div key={i} className="flex items-start gap-4 p-3 border border-line rounded-lg bg-white shadow-sm">
-                           <div className="shrink-0 pt-0.5 min-w-[180px]">
+                        <div key={i} className="flex items-stretch border border-line rounded-lg bg-white shadow-sm overflow-hidden hover:border-line-strong transition-colors">
+                           <div className="w-[260px] shrink-0 p-3 flex items-center bg-canvas/40 border-r border-line">
                               <ToolChip name={t.name} />
                            </div>
-                           <div className="flex-1 min-w-0">
-                              <p className="text-[13px] text-ink leading-relaxed">
+                           <div className="flex-1 p-3.5 flex items-center">
+                              <p className="text-[13px] text-ink-soft leading-relaxed m-0">
                                  {t.description || "No description provided."}
                               </p>
                            </div>
