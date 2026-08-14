@@ -222,7 +222,7 @@ export const AgentPromptEditor: React.FC<Props> = ({ projectName, draft, onChang
                                onClick={() => {
                                    const newDraft = { ...draft };
                                    if (newDraft.businessSpec) {
-                                       newDraft.businessSpec.meta.languageMode = newDraft.businessSpec.meta.primaryLanguage || 'english';
+                                       newDraft.businessSpec.meta.languageMode = (newDraft.businessSpec.meta.primaryLanguage || 'english').toLowerCase() as any;
                                    }
                                    onChangeDraft(newDraft);
                                }}

@@ -246,6 +246,11 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
     spec.meta.sessionId = input.sessionId;
   }
 
+  // Globally normalize languageMode to avoid case-sensitivity bugs from legacy saved drafts
+  if (spec.meta?.languageMode) {
+    spec.meta.languageMode = spec.meta.languageMode.toLowerCase() as any;
+  }
+
   // Hydrate via specialist planners if missing steps/KB (or if Hindi/Hinglish mode and
   // missing Devanagari). Mode is the source of truth \u2014 not a mention of Hindi support.
   const isHindiMode = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish';
@@ -275,36 +280,46 @@ export async function compilePromptPackage(input: CompileInput): Promise<PromptP
   draft = mergeUserOverrides(draft, input.overrides);
   draft.businessSpec = spec;
 
-  if (spec.meta?.languageMode && spec.meta.languageMode !== 'english' && spec.meta.languageMode !== 'multilingual') {
-    const langCode = spec.meta.languageMode;
+  const isHindiOrHinglish = spec.meta?.languageMode === 'hindi' || spec.meta?.languageMode === 'hinglish' || 
+    (spec.meta?.languageMode === 'multilingual' && (spec.meta?.primaryLanguage?.toLowerCase() === 'hindi' || spec.meta?.primaryLanguage?.toLowerCase() === 'hinglish' || spec.meta?.secondaryLanguage?.toLowerCase() === 'hindi' || spec.meta?.secondaryLanguage?.toLowerCase() === 'hinglish'));
+
+  if (spec.meta?.languageMode && spec.meta.languageMode !== 'english' && (spec.meta.languageMode !== 'multilingual' || isHindiOrHinglish)) {
+    const langCode = spec.meta.languageMode === 'multilingual' ? (spec.meta.primaryLanguage?.toLowerCase() === 'hindi' || spec.meta.primaryLanguage?.toLowerCase() === 'hinglish' ? spec.meta.primaryLanguage.toLowerCase() : (spec.meta.secondaryLanguage || 'hindi').toLowerCase()) : spec.meta.languageMode;
     const sessionId = spec.meta?.sessionId;
+    
+    const textsToLint: { obj: any, key: string, text: string }[] = [];
+
     if (Array.isArray(draft.faqCards)) {
       for (const faq of draft.faqCards) {
-        if (faq.answer) faq.answer = await ScriptLinter.lintScript(faq.answer, langCode, sessionId);
+        if (faq.answer) textsToLint.push({ obj: faq, key: 'answer', text: faq.answer });
       }
     }
     if (Array.isArray(draft.objectionCards)) {
       for (const obj of draft.objectionCards) {
-        const responseField = obj.response || obj.handling;
-        if (responseField) {
-          const linted = await ScriptLinter.lintScript(responseField, langCode, sessionId);
-          if (obj.response !== undefined) obj.response = linted;
-          if (obj.handling !== undefined) obj.handling = linted;
-        }
+        if (obj.response) textsToLint.push({ obj, key: 'response', text: obj.response });
+        if (obj.handling && obj.handling !== obj.response) textsToLint.push({ obj, key: 'handling', text: obj.handling });
       }
     }
     if (Array.isArray(spec.callFlowPlan?.steps)) {
       for (const step of spec.callFlowPlan.steps) {
-        if (step.scriptDirective) step.scriptDirective = await ScriptLinter.lintScript(step.scriptDirective, langCode, sessionId);
+        if (step.scriptDirective) textsToLint.push({ obj: step, key: 'scriptDirective', text: step.scriptDirective });
         const s = step as any;
-        if (typeof s.generatedLine === 'string') s.generatedLine = await ScriptLinter.lintScript(s.generatedLine, langCode, sessionId);
+        if (typeof s.generatedLine === 'string' && s.generatedLine) textsToLint.push({ obj: s, key: 'generatedLine', text: s.generatedLine });
       }
     }
     if (Array.isArray(draft.callFlowSteps)) {
       for (const step of draft.callFlowSteps) {
         const s = step as any;
-        if (s.scriptDirective) s.scriptDirective = await ScriptLinter.lintScript(s.scriptDirective as string, langCode, sessionId);
-        if (typeof s.generatedLine === 'string') s.generatedLine = await ScriptLinter.lintScript(s.generatedLine as string, langCode, sessionId);
+        if (s.scriptDirective) textsToLint.push({ obj: s, key: 'scriptDirective', text: s.scriptDirective });
+        if (typeof s.generatedLine === 'string' && s.generatedLine) textsToLint.push({ obj: s, key: 'generatedLine', text: s.generatedLine });
+      }
+    }
+
+    if (textsToLint.length > 0) {
+      const rawTexts = textsToLint.map(t => t.text);
+      const lintedTexts = await ScriptLinter.lintScriptsBatch(rawTexts, langCode, sessionId);
+      for (let i = 0; i < textsToLint.length; i++) {
+        textsToLint[i].obj[textsToLint[i].key] = lintedTexts[i];
       }
     }
   }

@@ -130,6 +130,56 @@ export class ScriptLinter {
     return processedText;
   }
 
+  public static async lintScriptsBatch(texts: string[], langCode: string, sessionId?: string): Promise<string[]> {
+    if (!texts || texts.length === 0) return texts;
+
+    const config = LANGUAGE_REGISTRY[langCode.toLowerCase()];
+    if (!config) {
+      logger.warn(`No linter config for ${langCode}, skipping batch lint.`);
+      return texts;
+    }
+
+    const filteredTexts = texts.filter(t => t && t.trim().length > 0);
+    if (filteredTexts.length === 0) return texts;
+
+    const combinedText = filteredTexts.join('\n---\n');
+    let substitutions: { original: string, replacement: string }[] = [];
+
+    try {
+      const promptText = this.buildPrompt(config, combinedText);
+      const response = await llmClient.generate({
+        systemInstruction: "You are a strict JSON-only data extractor for TTS normalization.",
+        prompt: promptText,
+        contextLabel: "ScriptLinterBatch",
+        sessionId
+      });
+
+      const jsonMatch = response.text?.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (jsonMatch) {
+        substitutions = JSON.parse(jsonMatch[0]);
+      }
+    } catch (err) {
+      logger.error("ScriptLinter LLM batch extraction failed, relying purely on regex failsafe", err);
+    }
+
+    return texts.map(text => {
+      if (!text || !text.trim()) return text;
+      let processedText = text;
+      
+      for (const sub of substitutions) {
+        if (sub.original && sub.replacement) {
+          processedText = processedText.split(sub.original).join(sub.replacement);
+        }
+      }
+      
+      processedText = processedText.replace(/\d/g, (match) => {
+        return " " + (config.digitMap[match] || match) + " ";
+      }).replace(/\s+/g, ' ').trim();
+
+      return processedText;
+    });
+  }
+
   private static buildPrompt(config: LinterLanguageConfig, text: string): string {
     return `Analyze the following ${config.languageName} script written for a Text-To-Speech engine.
 

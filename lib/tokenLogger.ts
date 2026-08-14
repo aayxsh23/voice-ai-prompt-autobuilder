@@ -15,14 +15,14 @@ export interface TokenLogEntry {
 
 export function logTokenUsage(sessionId: string, contextLabel: string, usage: TokenUsage) {
   try {
-    const logsDir = path.join(process.cwd(), 'logs', 'tokens');
+    const logsDir = path.join(process.cwd(), 'logs', sessionId);
     
     // Ensure the directory exists
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
     }
 
-    const logFile = path.join(logsDir, `${sessionId}.jsonl`);
+    const logFile = path.join(logsDir, 'tokens.jsonl');
     
     const entry: TokenLogEntry = {
       timestamp: new Date().toISOString(),

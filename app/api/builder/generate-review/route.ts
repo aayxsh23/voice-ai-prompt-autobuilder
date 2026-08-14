@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { compilePromptPackage } from '@/lib/pipeline/promptCompiler';
 import { apiHandler, ApiError } from '@/lib/apiHandler';
 import { rateLimit, clientKey } from '@/lib/rateLimit';
 import { BusinessSpecification } from '@/lib/llm/types';
 import { KnowledgeExtractor, EMPTY_KNOWLEDGE } from '@/lib/compiler/planners/KnowledgeExtractor';
 import { GuardrailOptimizer } from '@/lib/compiler/planners/GuardrailOptimizer';
+import { logger } from '@/lib/logger';
 
 const REGION_PHONE_CODES: Record<string, string> = {
   US: '+1',
@@ -239,6 +242,21 @@ export const POST = apiHandler(async (req: Request) => {
 
   // languageMode is read off businessSpec.meta downstream — passing it again here
   // would only re-narrow it to the blueprint's older three-value union.
+  
+  // Write the user's form response and the parsed spec to the session log directory
+  if (sessionId) {
+    try {
+      const logsDir = path.join(process.cwd(), 'logs', sessionId);
+      if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(logsDir, 'user_response.json'), JSON.stringify(form, null, 2), 'utf8');
+      fs.writeFileSync(path.join(logsDir, 'passed_to_llm.json'), JSON.stringify(spec, null, 2), 'utf8');
+    } catch (err) {
+      logger.error('Failed to write form logs to session directory', err);
+    }
+  }
+  
   const draft = await compilePromptPackage({ businessSpec: spec, sessionId });
 
   return NextResponse.json(draft);

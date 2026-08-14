@@ -13,7 +13,10 @@ export class WorkflowArchitect {
     const snap = spec.businessSnapshot || {} as any;
     const languageMode = meta.languageMode || (spec as any).languageMode || 'english';
     const requiredStages = (spec.callFlowPlan as any)?.requiredStages || (meta as any)?._requiredStages || [];
-    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish';
+    
+    // Check primary/secondary language in case of multilingual mode
+    const isHindiOrHinglish = languageMode === 'hindi' || languageMode === 'hinglish' || 
+      (languageMode === 'multilingual' && (meta.primaryLanguage?.toLowerCase() === 'hindi' || meta.primaryLanguage?.toLowerCase() === 'hinglish' || meta.secondaryLanguage?.toLowerCase() === 'hindi' || meta.secondaryLanguage?.toLowerCase() === 'hinglish'));
     const primaryGoal = meta.primaryGoal || meta.description || "Assist callers professionally";
 
     const toneListForTools = Array.isArray(meta.toneProfile) ? meta.toneProfile : [String(meta.toneProfile || "")];
@@ -278,18 +281,28 @@ Generate the strict JSON array of FsmStateNode now.`;
         }
       });
       
-      if (languageMode && languageMode !== 'english' && languageMode !== 'multilingual') {
-        const langCode = languageMode;
+      if (languageMode && languageMode !== 'english' && (languageMode !== 'multilingual' || isHindiOrHinglish)) {
+        const langCode = languageMode === 'multilingual' ? (meta.primaryLanguage?.toLowerCase() === 'hindi' || meta.primaryLanguage?.toLowerCase() === 'hinglish' ? meta.primaryLanguage.toLowerCase() : (meta.secondaryLanguage || 'hindi').toLowerCase()) : languageMode;
+        
+        const textsToLint: { obj: any, key: string, text: string }[] = [];
         for (const node of nodes) {
           if (node.speechPrompt) {
-            node.speechPrompt = await ScriptLinter.lintScript(node.speechPrompt, langCode, meta.sessionId);
+             textsToLint.push({ obj: node, key: 'speechPrompt', text: node.speechPrompt });
           }
           if (Array.isArray(node.closeVariants)) {
             for (const variant of node.closeVariants) {
               if (variant.script) {
-                variant.script = await ScriptLinter.lintScript(variant.script, langCode, meta.sessionId);
+                 textsToLint.push({ obj: variant, key: 'script', text: variant.script });
               }
             }
+          }
+        }
+
+        if (textsToLint.length > 0) {
+          const rawTexts = textsToLint.map(t => t.text);
+          const lintedTexts = await ScriptLinter.lintScriptsBatch(rawTexts, langCode, meta.sessionId);
+          for (let i = 0; i < textsToLint.length; i++) {
+             textsToLint[i].obj[textsToLint[i].key] = lintedTexts[i];
           }
         }
       }
