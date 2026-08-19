@@ -60,6 +60,8 @@ AGENTS.md
 UI changes/
 logs/
 Structure/
+code_dataaa/
+scripts/
 
 # Junk and temporary files
 .claude/
@@ -73,3 +75,8 @@ lint_json.json
 lint_results.txt
 test-results.json
 ts_errors.txt
+
+# local scripts and testing
+check.ts
+scripts/export_guardrails.ts
+scripts/export_all_guardrails.ts

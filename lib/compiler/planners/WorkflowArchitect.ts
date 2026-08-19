@@ -90,11 +90,12 @@ export class WorkflowArchitect {
     ];
 
     const langDirective = isHindiOrHinglish
-      ? `\nLANGUAGE DIRECTIVE: Write 'speechPrompt' lines in natural, conversational ${languageMode === 'hinglish' ? 'Hinglish (mix of Hindi and English words, written in Devanagari script)' : 'Hindi (Devanagari script)'}. 
+      ? `\nLANGUAGE DIRECTIVE: Write 'speechPrompt' lines in natural, conversational ${languageMode === 'hinglish' ? 'Hinglish (mix of Hindi and English words)' : 'Hindi'}. 
 CRITICAL RULES FOR HINDI/HINGLISH:
-1. NO NUMERIC DIGITS: Write all numbers as fully spelled-out words (e.g. write "दस" not "10"). NEVER output characters 0-9 in the script.
-2. NO DEVANAGARI TRANSLITERATION OF ENGLISH: Any word of English origin MUST be written in Roman/English script. Do NOT write English words in Devanagari.`
-      : `\nLANGUAGE DIRECTIVE: CRITICAL: Write all numbers as fully spelled-out words, NEVER use numeric digits (e.g., write "ten" not "10").`;
+1. SCRIPT REQUIREMENT: ALL spoken text ('speechPrompt' and 'script' fields) MUST be written in Devanagari script (देवनागरी), NOT Roman/English script. Never generate Romanized Hindi (e.g., write "क्या आप" NOT "kya aap").
+2. NO NUMERIC DIGITS IN SPEECH: Write all numbers as fully spelled-out words (e.g. write "दस" not "10") ONLY in 'speechPrompt' and 'script' fields. NEVER output characters 0-9 in the spoken script. Leave JSON numerical properties (like maxTurns, maxAttempts) as standard digits.
+3. NO DEVANAGARI TRANSLITERATION OF ENGLISH: Any word of English origin (like WhatsApp, registered, alternate, number) MUST be written in Roman/English script within the Devanagari sentence. Do NOT write English words in Devanagari.`
+      : `\nLANGUAGE DIRECTIVE: CRITICAL: Write all numbers as fully spelled-out words, NEVER use numeric digits (e.g., write "ten" not "10") ONLY in 'speechPrompt' and 'script' fields. Leave JSON numerical properties (like maxTurns, maxAttempts) as standard digits.`;
 
     const transferTopic = spec.capturedTopics?.find(t => t.topic === 'Live transfer & escalation');
     const escalationNumbers = spec.businessSnapshot?.policies?.escalationNumbers || [];
@@ -190,7 +191,7 @@ MANDATORY STATE MACHINE DESIGN RULES:
 5. FLEXIBLE VALIDATION: For data types with variable formats (phone numbers, locations, dates), add a notes entry instructing the agent to accept reasonable variations. Never reject input outright — confirm with the caller instead.
 6. CALL DIRECTION & IDENTITY:
    - If Inbound: State 1 MUST greet and ask how to help.
-   - If Outbound: State 1 MUST introduce the agent and verify the caller's identity.
+   - If Outbound: State 1 MUST introduce the agent and verify the caller's identity. CRITICAL: Structurally separate the agent's identity, the company's identity, and the purpose of the call. Never grammatically blend these elements together (e.g., do not use the agent's name as an adjective for a product/service, and do not conflate the company name with the call objective). Maintain clear, distinct sentence boundaries for "Who I am", "Where I am calling from", and "Why I am calling".
    - AI DISCLOSURE: ${denyAiDisclosure ? "DO NOT disclose AI identity. Present as a human." : "Proactively disclose that the agent is an AI."}
 7. ROUTING & EDGES: Every state MUST have edges indicating how to proceed based on conditions. The final state MUST use 'end_call' as its id and invoke the 'end_call' tool. For the closing state (or any state preceding end_call/transfer_call), you MUST provide distinct closeVariants for different outcomes (e.g., success, declined, opt_out, callback_handoff, transfer_accepted, transfer_declined, transfer_failed) so the agent's sign-off matches the actual conversation outcome (e.g. not saying 'see you soon' to someone who opted out).
 8. REGISTERED TOOLS ONLY: You may only invoke tools from this list: ${JSON.stringify(registeredToolNames)}. Do not invent tools.
